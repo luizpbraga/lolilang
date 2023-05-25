@@ -31,7 +31,7 @@ fn peekChar(self: *const Self) u8 {
 }
 
 fn skipWhiteSpace(self: *Self) void {
-    while (self.ch == ' ' or self.ch == '\t' or self.ch == '\r') self.readChar();
+    while (self.ch == ' ' or self.ch == '\n' or self.ch == '\t' or self.ch == '\r') self.readChar();
 }
 
 fn readIdentifier(self: *Self) []const u8 {
