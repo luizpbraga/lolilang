@@ -3,28 +3,42 @@ const Lexer = @import("Lexer.zig");
 const Parser = @import("Parser.zig");
 const ast = @import("asc.zig");
 
-pub fn main() !void {
+pub fn main() !void {}
+
+test "eval Program" {
     const allocator = std.heap.page_allocator;
-    const input =
-        \\return x;
-        \\return 10;
-        \\return 9999;
-    ;
+    var stmts = std.ArrayList(ast.Statement).init(allocator);
+    defer stmts.deinit();
 
-    var lexer = Lexer.init(input);
-    var p = Parser.new(&lexer);
+    var stmt = ast.Statement{
+        .var_statement = .{
+            .token = .{
+                .type = .@"var",
+                .literal = "var",
+            },
+            .name = .{
+                .token = .{
+                    .type = .identifier,
+                    .literal = "myVar",
+                },
+                .value = "myVar",
+            },
+            .value = .{
+                .identifier = .{
+                    .token = .{
+                        .type = .identifier,
+                        .literal = "anotherVar",
+                    },
+                    .value = "anotherVar ",
+                },
+            },
+        },
+    };
 
-    var program = try p.parseProgram(allocator);
-    defer program.statements.deinit();
+    try stmts.append(stmt);
 
-    try std.testing.expect(program.statements.items.len == 3);
-
-    // var tok = lexer.nextToken();
-    // _ = tok;
-    // while (tok.type != .eof) {
-    //     std.debug.print("{} {s}\n", .{ tok.type, tok.literal });
-    //     tok = lexer.nextToken();
-    // }
+    var program = ast.Program{ .statements = stmts };
+    std.debug.print("{s}", .{program.string()});
 }
 
 test "Parse RETURN statements: Size" {
