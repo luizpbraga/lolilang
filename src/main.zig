@@ -1,22 +1,26 @@
 const std = @import("std");
 const Lexer = @import("Lexer.zig");
+const Parser = @import("Parser.zig");
+const ast = @import("asc.zig");
 
 pub fn main() !void {
+    const allocator = std.heap.page_allocator;
     const input =
-        \\var five = 5;
-        \\var ten = 10;
-        \\const add = fn(x, y) {
-        \\  return (x + y) / 2 * 100 > 1;
-        \\};
-        \\var result = if (x > 2) add(five, ten) < else !true;
-        \\const p = 5 == 3;
+        \\ var add = fn(x,y) { return x+y;};
     ;
 
-    var l = Lexer.init(input);
-    while (true) {
-        var t = l.nextToken();
-        std.debug.print("{} {s}\n", .{ t.type, t.literal });
-        if (t.type == .eof) break;
+    var lexer = Lexer.init(input);
+    var tok = lexer.nextToken();
+    var p = Parser.new(&lexer);
+
+    var program = try p.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    std.debug.print("{}", .{program.statements.items.len});
+
+    while (tok.type != .eof) {
+        std.debug.print("{} {s}\n", .{ tok.type, tok.literal });
+        tok = lexer.nextToken();
     }
 }
 

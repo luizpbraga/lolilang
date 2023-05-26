@@ -48,9 +48,8 @@ fn newToken(token_type: TokenType) Token {
 }
 
 pub fn nextToken(self: *Self) Token {
-    defer self.readChar();
     self.skipWhiteSpace();
-    return switch (self.ch) {
+    var tok = switch (self.ch) {
         '=' => switch (self.peekChar()) {
             '=' => newToken(.@"=="),
             '>' => newToken(.@"=>"),
@@ -65,7 +64,6 @@ pub fn nextToken(self: *Self) Token {
         '/' => newToken(.@"/"),
         '*' => newToken(.@"*"),
         '+' => newToken(.@"+"),
-        '-' => newToken(.@"-"),
         ';' => newToken(.@";"),
         '(' => newToken(.@"("),
         ')' => newToken(.@")"),
@@ -73,19 +71,23 @@ pub fn nextToken(self: *Self) Token {
         '}' => newToken(.@"}"),
         0 => newToken(.eof),
         // identifiers
-        'a'...'z', 'A'...'Z', '_' => x: {
+        'a'...'z', 'A'...'Z', '_' => {
             const literal = self.readIdentifier();
             const token_type = Token.lookupIdentfier(literal);
-            break :x Token{ .type = token_type, .literal = literal };
+            return Token{ .type = token_type, .literal = literal };
         },
 
-        '0'...'9' => x: {
+        '0'...'9' => {
             const token_type = TokenType.int;
             const literal = self.readNumber();
-            break :x Token{ .type = token_type, .literal = literal };
+            return Token{ .type = token_type, .literal = literal };
         },
         else => newToken(.illegal),
     };
+
+    // this code is unrechable for identifiers
+    self.readChar();
+    return tok;
 }
 
 fn isLetter(ch: u8) bool {

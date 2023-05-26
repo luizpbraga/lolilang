@@ -21,12 +21,13 @@ fn start() !void {
         var tok = lexer.nextToken();
 
         while (tok.type != .eof) {
-            std.debug.print("{} {s}\n", .{ tok.type, tok.literal });
             tok = lexer.nextToken();
+            std.debug.print("{} {s}\n", .{ tok.type, tok.literal });
         }
     }
 }
 
 pub fn main() !void {
     try start();
+    std.debug.print("\n{s}\n", .{"loli go brrr"});
 }
