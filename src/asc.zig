@@ -1,18 +1,49 @@
 const std = @import("std");
 const Token = @import("Token.zig");
 
-pub const None = struct {
-    pub fn tokenLiteral() []const u8 {}
+// interface
+pub const Node = union {
+    expression: Expression,
+    statement: Statement,
+
+    fn tokenLiteral(self: *Node) []const u8 {
+        return switch (self) {
+            inline else => |node| node.tokenLiteral(),
+        };
+    }
+
+    fn string(self: *Node) []const u8 {
+        return switch (self) {
+            inline else => |node| node.tokenLiteral(),
+        };
+    }
 };
 
-pub const Statement = struct {
-    node: None,
-    pub fn statementNone() void {}
+/// implements Node,
+/// interface: {return, var, expression} statements
+pub const Statement = union {
+    // implements Node,
+    var_statement: VarStatement,
+    return_statement: ReturnStatement,
+
+    fn statementNode(self: *Statement) void {
+        switch (self) {
+            inline else => |x| x.statementNode(),
+        }
+    }
+
+    // interface methods
+    fn tokenLiteral() []const u8 {}
+    fn string() []const u8 {}
 };
 
-pub const Expression = struct {
-    node: None,
-    pub fn expressionNone() void {}
+/// implements Node,
+pub const Expression = union {
+    fn expressionNode() void {}
+
+    // interface methods
+    fn tokenLiteral() []const u8 {}
+    fn string() []const u8 {}
 };
 
 //--------------------------------------------
@@ -21,10 +52,9 @@ pub const Identifier = struct {
     token: Token, //= .identifier,
     value: []const u8,
 
-    pub fn expressionNone(self: *const Identifier) void {
+    pub fn expressionNode(self: *const Identifier) void {
         _ = self;
     }
-
     pub fn tokenLiteral(self: *const Identifier) []const u8 {
         return self.token.literal;
     }
@@ -38,16 +68,44 @@ pub const Program = struct {
     }
 };
 
+// ------------------------------------------------------------------------
+
 pub const VarStatement = struct {
     token: Token, //= .@"var",
     name: Identifier,
     value: Expression,
 
-    pub fn statementNone(self: *const VarStatement) void {
+    pub fn statementNode(self: *const VarStatement) void {
         _ = self;
     }
 
     pub fn tokenLiteral(self: *const VarStatement) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const ReturnStatement = struct {
+    token: Token,
+    value: Expression,
+
+    pub fn statementNode(self: *const ReturnStatement) void {
+        _ = self;
+    }
+
+    pub fn tokenLiteral(self: *const ReturnStatement) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const ExpressionStatement = struct {
+    token: Token, // fist token only
+    expression: Expression,
+
+    pub fn statementNode(self: *const ExpressionStatement) void {
+        _ = self;
+    }
+
+    pub fn tokenLiteral(self: *const ExpressionStatement) []const u8 {
         return self.token.literal;
     }
 };

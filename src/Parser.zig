@@ -41,8 +41,24 @@ fn expectPeek(self: *Self, token_type: Token.TokenType) bool {
     if (self.peekTokenIs(token_type)) {
         self.nextToken();
         return true;
+    } else {
+        return false;
     }
-    return false;
+}
+
+pub fn parseReturnStatement(self: *Self) ParseError!ast.ReturnStatement {
+    var stmt = ast.ReturnStatement{
+        .token = self.cur_token,
+        .value = undefined,
+    };
+
+    self.nextToken();
+
+    while (!self.curTokenIs(.@";")) {
+        self.nextToken();
+    }
+
+    return stmt;
 }
 
 pub fn parseVarStatement(self: *Self) ParseError!ast.VarStatement {
@@ -53,7 +69,7 @@ pub fn parseVarStatement(self: *Self) ParseError!ast.VarStatement {
     };
 
     if (!self.expectPeek(.identifier)) {
-        std.log.err("Expect Identifier", .{});
+        std.log.err("Expect Identifier, found '{s}'", .{self.cur_token.literal});
         return error.UnexpectToken;
     }
 
@@ -63,7 +79,7 @@ pub fn parseVarStatement(self: *Self) ParseError!ast.VarStatement {
     };
 
     if (!self.expectPeek(.@"=")) {
-        std.log.err("Expect Assignment Token (=)", .{});
+        std.log.err("Expect Assignment Token (=), found '{s}'", .{self.cur_token.literal});
         return error.UnexpectToken;
     }
 
@@ -76,10 +92,9 @@ pub fn parseVarStatement(self: *Self) ParseError!ast.VarStatement {
 }
 
 fn parseStatement(self: *Self) !?ast.Statement {
-    // TODO:
-    // Statement => union{ ... };
     return switch (self.cur_token.type) {
-        .@"var" => try self.parseVarStatement(),
+        .@"var" => .{ .var_statement = try self.parseVarStatement() },
+        .@"return" => .{ .return_statement = try self.parseReturnStatement() },
         else => null,
     };
 }
