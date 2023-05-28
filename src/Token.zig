@@ -1,4 +1,7 @@
 const Self = @This();
+type: TokenType,
+literal: []const u8,
+
 const std = @import("std");
 
 pub const keywords = std.ComptimeStringMap(TokenType, .{
@@ -58,9 +61,6 @@ pub const TokenType = enum {
     @"or",
     @"and",
 };
-
-type: TokenType,
-literal: []const u8,
 
 pub fn lookupIdentfier(ident: []const u8) TokenType {
     return if (keywords.has(ident)) keywords.get(ident).? else .identifier;

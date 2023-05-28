@@ -1,7 +1,7 @@
 const std = @import("std");
 const Token = @import("Token.zig");
 
-const allocator = std.heap.page_allocator;
+// const allocator = std.heap.page_allocator;
 
 // interface
 pub const Node = union {
@@ -14,12 +14,12 @@ pub const Node = union {
         };
     }
 
-    fn string(self: *const Node) []const u8 {
-        return switch (self.*) {
-            .statements => |n| n.string(),
-            .expression => |n| n.string(),
-        };
-    }
+    // fn string(self: *const Node) []const u8 {
+    //     return switch (self.*) {
+    //         .statements => |n| n.string(),
+    //         .expression => |n| n.string(),
+    //     };
+    // }
 };
 
 /// implements Node,
@@ -28,6 +28,7 @@ pub const Statement = union(enum) {
     // implements Node,
     var_statement: VarStatement,
     return_statement: ReturnStatement,
+    expression_statement: ExpressionStatement,
 
     fn statementNode(self: *const Statement) void {
         switch (self.*) {
@@ -37,19 +38,23 @@ pub const Statement = union(enum) {
 
     // interface methods
     fn tokenLiteral(self: *const Statement) []const u8 {
-        _ = self;
-    }
-
-    fn string(self: *const Statement) []const u8 {
         return switch (self.*) {
-            inline else => |x| x.string(),
+            inline else => |x| x.tokenLiteral(),
         };
     }
+
+    // fn string(self: *const Statement) []const u8 {
+    //     return switch (self.*) {
+    //         inline else => |x| x.string(),
+    //     };
+    // }
 };
 
 /// implements Node,
 pub const Expression = union(enum) {
     identifier: Identifier,
+    integer_literal: IntegerLiteral,
+    prefix_expression: PrefixExpression,
 
     fn expressionNode(self: *const Expression) void {
         _ = self;
@@ -57,12 +62,16 @@ pub const Expression = union(enum) {
 
     // interface methods
     fn tokenLiteral(self: *const Expression) []const u8 {
-        _ = self;
+        return switch (self.*) {
+            inline else => |exp| exp.tokenLiteral(),
+        };
     }
 
-    fn string(self: *const Expression) []const u8 {
-        return self.identifier.string();
-    }
+    // fn string(self: *const Expression) []const u8 {
+    //     return switch (self.*) {
+    //         inline else => |exp| exp.string(),
+    //     };
+    // }
 };
 
 //--------------------------------------------
@@ -78,9 +87,9 @@ pub const Identifier = struct {
         return self.token.literal;
     }
 
-    pub fn string(self: *const Identifier) []const u8 {
-        return self.value;
-    }
+    // pub fn string(self: *const Identifier) []const u8 {
+    //     return self.value;
+    // }
 };
 
 pub const Program = struct {
@@ -90,18 +99,18 @@ pub const Program = struct {
         return if (self.statements.items.len > 0) self.statements.items[0].tokenLiteral() else "";
     }
 
-    /// caller must free the memory
-    pub fn string(self: *const Program) []const u8 {
-        var buff_list = std.ArrayList(u8).init(allocator);
-        errdefer buff_list.deinit();
+    // /// caller must free the memory
+    // pub fn string(self: *const Program) []const u8 {
+    //     var buff_list = std.ArrayList(u8).init(allocator);
+    //     errdefer buff_list.deinit();
 
-        for (self.statements.items) |*stmt| {
-            const stmt_string = stmt.string();
-            buff_list.writer().writeAll(stmt_string) catch unreachable;
-        }
+    //     for (self.statements.items) |*stmt| {
+    //         const stmt_string = stmt.string();
+    //         buff_list.writer().writeAll(stmt_string) catch unreachable;
+    //     }
 
-        return buff_list.toOwnedSlice() catch unreachable;
-    }
+    //     return buff_list.toOwnedSlice() catch unreachable;
+    // }
 };
 
 // ------------------------------------------------------------------------
@@ -119,19 +128,19 @@ pub const VarStatement = struct {
         return self.token.literal;
     }
 
-    pub fn string(self: *const VarStatement) []const u8 {
-        return if (self.value) |value|
-            std.fmt.allocPrint(allocator, "{s} {s} = {s};", .{
-                self.tokenLiteral(),
-                self.name.string(),
-                value.string(),
-            }) catch unreachable
-        else
-            std.fmt.allocPrint(allocator, "{s} {s};", .{
-                self.tokenLiteral(),
-                self.name.string(),
-            }) catch unreachable;
-    }
+    // pub fn string(self: *const VarStatement) []const u8 {
+    //     return if (self.value) |value|
+    //         std.fmt.allocPrint(allocator, "{s} {s} = {s};", .{
+    //             self.tokenLiteral(),
+    //             self.name.string(),
+    //             value.string(),
+    //         }) catch unreachable
+    //     else
+    //         std.fmt.allocPrint(allocator, "{s} {s};", .{
+    //             self.tokenLiteral(),
+    //             self.name.string(),
+    //         }) catch unreachable;
+    // }
 };
 
 pub const ReturnStatement = struct {
@@ -146,12 +155,16 @@ pub const ReturnStatement = struct {
         return self.token.literal;
     }
 
-    pub fn string(self: *const ReturnStatement) []const u8 {
-        return if (self.value) |value|
-            std.fmt.allocPrint(allocator, "{s} {s};", .{ self.tokenLiteral(), value.string() }) catch unreachable
-        else
-            std.fmt.allocPrint(allocator, "{s};", .{self.tokenLiteral()}) catch unreachable;
-    }
+    // pub fn string(self: *const ReturnStatement) []const u8 {
+    //     return if (self.value) |value|
+    //         std.fmt.allocPrint(
+    //             allocator,
+    //             "{s} {s};",
+    //             .{ self.tokenLiteral(), value.string() },
+    //         ) catch unreachable
+    //     else
+    //         std.fmt.allocPrint(allocator, "{s};", .{self.tokenLiteral()}) catch unreachable;
+    // }
 };
 
 pub const ExpressionStatement = struct {
@@ -166,10 +179,45 @@ pub const ExpressionStatement = struct {
         return self.token.literal;
     }
 
-    pub fn string(self: *const ExpressionStatement) []const u8 {
-        if (self.expression) |exp| {
-            return exp.string();
-        }
-        return "";
+    // pub fn string(self: *const ExpressionStatement) []const u8 {
+    //     if (self.expression) |exp| {
+    //         return exp.string();
+    //     }
+    //     return "";
+    // }
+};
+
+pub const IntegerLiteral = struct {
+    token: Token,
+    value: i64,
+
+    pub fn expressionNode() void {}
+
+    pub fn tokenLiteral(self: *const IntegerLiteral) []const u8 {
+        return self.token.literal;
     }
+
+    // pub fn string(self: *const IntegerLiteral) []const u8 {
+    //     return self.token.literal;
+    // }
+};
+
+pub const PrefixExpression = struct {
+    token: Token,
+    operator: []const u8,
+    right: ?*Expression = null,
+
+    pub fn expressionNode() void {}
+
+    pub fn tokenLiteral(self: *const PrefixExpression) []const u8 {
+        return self.token.literal;
+    }
+
+    // pub fn string(self: *const PrefixExpression) []const u8 {
+    //     return std.fmt.allocPrint(
+    //         allocator,
+    //         "({s}{s})",
+    //         .{ self.operator, self.right.?.string() },
+    //     ) catch unreachable;
+    // }
 };

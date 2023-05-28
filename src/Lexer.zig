@@ -64,6 +64,7 @@ pub fn nextToken(self: *Self) Token {
         '/' => newToken(.@"/"),
         '*' => newToken(.@"*"),
         '+' => newToken(.@"+"),
+        '-' => newToken(.@"-"),
         ';' => newToken(.@";"),
         '(' => newToken(.@"("),
         ')' => newToken(.@")"),
