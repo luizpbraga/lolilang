@@ -50,6 +50,7 @@ fn newToken(token_type: TokenType) Token {
 pub fn nextToken(self: *Self) Token {
     self.skipWhiteSpace();
     var tok = switch (self.ch) {
+        // TODO: fix == and !=
         '=' => switch (self.peekChar()) {
             '=' => newToken(.@"=="),
             '>' => newToken(.@"=>"),
