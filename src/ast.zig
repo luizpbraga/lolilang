@@ -40,8 +40,10 @@ pub const Expression = union(enum) {
     identifier: Identifier,
     integer_literal: IntegerLiteral,
     boolean: Boolean,
+
     prefix_expression: PrefixExpression,
     infix_expression: InfixExpression,
+    if_expression: IfExpression,
 
     fn expressionNode(self: *const Expression) void {
         _ = self;
@@ -52,6 +54,17 @@ pub const Expression = union(enum) {
         return switch (self.*) {
             inline else => |exp| exp.tokenLiteral(),
         };
+    }
+};
+
+pub const IfExpression = struct {
+    token: Token,
+    condition: Expression,
+    consequence: BlockStatement,
+    alternative: BlockStatement,
+
+    pub fn tokenLiteral(self: *const IfExpression) []const u8 {
+        return self.token.literal;
     }
 };
 
@@ -118,6 +131,16 @@ pub const ExpressionStatement = struct {
         return self.token.literal;
     }
 };
+
+pub const BlockStatement = struct {
+    token: Token,
+    statement: std.ArrayList(Statement),
+
+    pub fn tokenLiteral(self: *const BlockStatement) []const u8 {
+        return self.token.literal;
+    }
+};
+// --------------------------------------------------------------------
 
 pub const IntegerLiteral = struct {
     token: Token,

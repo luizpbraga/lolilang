@@ -1,8 +1,29 @@
 const std = @import("std");
 const Lexer = @import("Lexer.zig");
 const Parser = @import("Parser.zig");
-const ast = @import("asc.zig");
+const ast = @import("ast.zig");
 const TokenType = @import("Token.zig").TokenType;
+
+// TODO: implement helper function e.g. testInfixExpression, testIdentifier, testBooleanLiteral...
+
+test "If Expression" {
+    const allocator = std.testing.allocator;
+    var lexer = Lexer.init("if (x < y) {x}");
+    var parser = Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    if (program.statements.items.len != 1) {
+        std.log.err("len: {d}", .{program.statements.items.len});
+        return error.NotEnoughStatements;
+    }
+
+    var stmt = program.statements.items[0].expression_statement;
+    var exp = stmt.expression.?.if_expression;
+    _ = exp;
+}
 
 test "Group Exp" {
     const allocator = std.testing.allocator;
@@ -306,7 +327,8 @@ test "eval Program" {
     try stmts.append(stmt);
 
     var program = ast.Program{ .statements = stmts };
-    std.debug.print("{s}", .{program.tokenLiteral()});
+    _ = program;
+    // std.debug.print("{s}", .{program.tokenLiteral()});
     // try std.testing.expect( std.mem.eql(u8, "var myVar = anotherVar;", program.tokenLiteral()) );
 }
 

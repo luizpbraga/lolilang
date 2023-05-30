@@ -1,7 +1,7 @@
 const std = @import("std");
 const Token = @import("Token.zig");
 const Lexer = @import("Lexer.zig");
-const ast = @import("asc.zig");
+const ast = @import("ast.zig");
 
 const Self = @This();
 const prefixParseFn = *const fn (*Self) anyerror!ast.Expression;
@@ -68,6 +68,7 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) Self {
     p.registerInfix(.@"/", parseInfixExpression);
     p.registerInfix(.@">", parseInfixExpression);
     p.registerInfix(.@"<", parseInfixExpression);
+    p.registerPrefix(.@"if", parseIfExpression);
 
     return p;
 }
@@ -299,4 +300,9 @@ fn parseInfixExpression(self: *Self, left: *ast.Expression) anyerror!ast.Express
     }
 
     return .{ .infix_expression = expression };
+}
+
+fn parseIfExpression(self: *Self) anyerror!ast.Expression {
+    _ = self;
+    @panic("TODO: implemented");
 }
