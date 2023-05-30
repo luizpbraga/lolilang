@@ -54,8 +54,11 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) Self {
 
     p.registerPrefix(.identifier, parseIdentifier);
     p.registerPrefix(.int, parseIntegerLiteral);
+    p.registerPrefix(.true, parseBoolean);
+    p.registerPrefix(.false, parseBoolean);
     p.registerPrefix(.@"!", parsePrefixExpression);
     p.registerPrefix(.@"-", parsePrefixExpression);
+    p.registerPrefix(.@"(", parseGroupExpression);
 
     p.registerInfix(.@"+", parseInfixExpression);
     p.registerInfix(.@"-", parseInfixExpression);
@@ -237,6 +240,21 @@ fn parseIntegerLiteral(self: *Self) anyerror!ast.Expression {
             },
         },
     };
+}
+
+fn parseBoolean(self: *Self) anyerror!ast.Expression {
+    return .{ .boolean = .{ .token = self.cur_token, .value = self.curTokenIs(.true) } };
+}
+
+//  BUG
+fn parseGroupExpression(self: *Self) anyerror!ast.Expression {
+    self.nextToken();
+
+    var exp = try self.parseExpression(Precedence.lower);
+
+    if (!self.expectPeek(.@")")) return error.MissingParentese;
+
+    return exp.?.*;
 }
 
 fn parsePrefixExpression(self: *Self) anyerror!ast.Expression {

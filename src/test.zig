@@ -2,15 +2,92 @@ const std = @import("std");
 const Lexer = @import("Lexer.zig");
 const Parser = @import("Parser.zig");
 const ast = @import("asc.zig");
+const TokenType = @import("Token.zig").TokenType;
 
-// pub fn main() !void {
-//     const allocator = std.heap.page_allocator;
+test "Group Exp" {
+    const allocator = std.testing.allocator;
+    var lexer = Lexer.init("((-(5 + 5) * 5) == 10) != !true");
+    var parser = Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    if (program.statements.items.len != 1) {
+        std.log.err("len: {d}", .{program.statements.items.len});
+        return error.NotEnoughStatements;
+    }
+
+    // var stmt = program.statements.items[0].expression_statement;
+    // var exp = stmt.expression.?;
+    // std.debug.print("{}", .{exp});
+}
+
+test "eval Boolean" {
+    const allocator = std.testing.allocator;
+    var lexer = Lexer.init("false");
+    var parser = Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    if (program.statements.items.len != 1) {
+        std.log.err("len: {d}", .{program.statements.items.len});
+        return error.NotEnoughStatements;
+    }
+
+    var stmt = program.statements.items[0].expression_statement;
+    var exp = stmt.expression.?;
+
+    try std.testing.expect(false == exp.boolean.value);
+}
+
+test "Boolean" {
+    const allocator = std.testing.allocator;
+    const tests = [_]struct {
+        l: bool,
+        r: bool,
+        op: []const u8,
+        input: []const u8,
+    }{
+        .{ .input = "true == true", .l = true, .r = true, .op = "==" },
+        .{ .input = "false == false", .l = false, .r = false, .op = "==" },
+        .{ .input = "false != true", .l = false, .r = true, .op = "!=" },
+    };
+
+    for (tests) |x| {
+        var lexer = Lexer.init(x.input);
+        var parser = Parser.new(allocator, &lexer);
+        defer parser.deinit();
+
+        const program = try parser.parseProgram(allocator);
+        defer program.statements.deinit();
+
+        if (program.statements.items.len != 1) {
+            std.log.err("len: {d}", .{program.statements.items.len});
+            return error.NotEnoughStatements;
+        }
+
+        var stmt = program.statements.items[0].expression_statement;
+
+        var exp = stmt.expression.?.infix_expression;
+
+        const operator = exp.operator;
+
+        if (!std.mem.eql(u8, operator, x.op))
+            return error.UnexpectedOP;
+
+        const left = exp.left.?.boolean;
+        const right = exp.right.?.boolean;
+
+        if (left.value != x.l or right.value != x.r)
+            return error.UnexpectedValue;
+    }
+}
+
 test "Parse Infix OP " {
     const allocator = std.testing.allocator;
-    const input = "10 + 5;";
-    _ = input;
-    const output = 5;
-    _ = output;
 
     const tests = [_]struct {
         l: usize,
@@ -88,8 +165,6 @@ test "Parse Prefix OP (!)" {
     if (output != integer.value) {
         return error.UnexpectedValue;
     }
-
-    std.debug.print("{}", .{integer.value});
 }
 
 test "parse Prefix OP (-)" {
@@ -104,10 +179,10 @@ test "parse Prefix OP (-)" {
     const program = try parser.parseProgram(allocator);
     defer program.statements.deinit();
 
-    for (program.statements.items) |item| {
-        //     std.debug.print("{}\n\n", .{item.expression_statement.expression.?});
-        std.debug.print("\n\n{}\n\n", .{item.expression_statement.expression.?.prefix_expression.right.?});
-    }
+    // for (program.statements.items) |item| {
+    //     //     std.debug.print("{}\n\n", .{item.expression_statement.expression.?});
+    //     std.debug.print("\n\n{}\n\n", .{item.expression_statement.expression.?.prefix_expression.right.?});
+    // }
 
     if (program.statements.items.len != 1) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -127,8 +202,6 @@ test "parse Prefix OP (-)" {
     if (output != -integer.value) {
         return error.UnexpectedValue;
     }
-
-    std.debug.print("{}", .{integer.value});
 }
 
 test "Eval Integer Literal Expression" {
@@ -234,6 +307,7 @@ test "eval Program" {
 
     var program = ast.Program{ .statements = stmts };
     std.debug.print("{s}", .{program.tokenLiteral()});
+    // try std.testing.expect( std.mem.eql(u8, "var myVar = anotherVar;", program.tokenLiteral()) );
 }
 
 test "Parse RETURN statements: Size" {
@@ -273,11 +347,35 @@ test "Token test" {
         \\var x = 100 + if (!true) 5 else -10;
         \\-5;
     ;
+
+    const tokens = [_]TokenType{
+        .@"var",
+        .identifier,
+        .@"=",
+        .int,
+        .@"+",
+        .@"if",
+        .@"(",
+        .@"!",
+        .true,
+        .@")",
+        .int,
+        .@"else",
+        .@"-",
+        .int,
+        .@";",
+        .@"-",
+        .int,
+        .@";",
+    };
+
     var lexer = Lexer.init(input);
     var tok = lexer.nextToken();
 
+    var i: usize = 0;
     while (tok.type != .eof) {
-        std.debug.print("{} {s}\n", .{ tok.type, tok.literal });
+        try std.testing.expect(tok.type == tokens[i]);
         tok = lexer.nextToken();
+        i += 1;
     }
 }
