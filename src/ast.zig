@@ -39,6 +39,7 @@ pub const Statement = union(enum) {
 pub const Expression = union(enum) {
     identifier: Identifier,
     integer_literal: IntegerLiteral,
+    function_literal: FunctionLiteral,
     boolean: Boolean,
 
     prefix_expression: PrefixExpression,
@@ -59,11 +60,34 @@ pub const Expression = union(enum) {
 
 pub const IfExpression = struct {
     token: Token,
-    condition: Expression,
-    consequence: BlockStatement,
-    alternative: BlockStatement,
+    condition: ?*Expression = null,
+    consequence: ?BlockStatement = null,
+    alternative: ?BlockStatement = null,
 
     pub fn tokenLiteral(self: *const IfExpression) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const PrefixExpression = struct {
+    token: Token,
+    operator: []const u8,
+    right: ?*Expression = null,
+
+    pub fn expressionNode() void {}
+
+    pub fn tokenLiteral(self: *const PrefixExpression) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const InfixExpression = struct {
+    token: Token,
+    left: ?*Expression = null,
+    operator: []const u8,
+    right: ?*Expression = null,
+
+    pub fn tokenLiteral(self: *const InfixExpression) []const u8 {
         return self.token.literal;
     }
 };
@@ -134,7 +158,7 @@ pub const ExpressionStatement = struct {
 
 pub const BlockStatement = struct {
     token: Token,
-    statement: std.ArrayList(Statement),
+    statements: std.ArrayList(Statement),
 
     pub fn tokenLiteral(self: *const BlockStatement) []const u8 {
         return self.token.literal;
@@ -162,25 +186,12 @@ pub const Boolean = struct {
     }
 };
 
-pub const PrefixExpression = struct {
+pub const FunctionLiteral = struct {
     token: Token,
-    operator: []const u8,
-    right: ?*Expression = null,
+    parameters: ?std.ArrayList(*Identifier) = null,
+    body: ?BlockStatement = null,
 
-    pub fn expressionNode() void {}
-
-    pub fn tokenLiteral(self: *const PrefixExpression) []const u8 {
-        return self.token.literal;
-    }
-};
-
-pub const InfixExpression = struct {
-    token: Token,
-    left: ?*Expression = null,
-    operator: []const u8,
-    right: ?*Expression = null,
-
-    pub fn tokenLiteral(self: *const InfixExpression) []const u8 {
+    pub fn tokenLiteral(self: *const Boolean) []const u8 {
         return self.token.literal;
     }
 };

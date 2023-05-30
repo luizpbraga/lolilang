@@ -3,23 +3,30 @@ const Token = @import("Token.zig");
 const Lexer = @import("Lexer.zig");
 const ast = @import("ast.zig");
 
+// TODO: removel null and implement parsing error msg
+
 const Self = @This();
-const prefixParseFn = *const fn (*Self) anyerror!ast.Expression;
-const infixParseFn = *const fn (*Self, *ast.Expression) anyerror!ast.Expression;
+const PrefixParseFn = *const fn (*Self) anyerror!?ast.Expression;
+const InfixParseFn = *const fn (*Self, *ast.Expression) anyerror!ast.Expression;
 
 lexer: *Lexer,
 cur_token: Token,
 peek_token: Token,
 allocator: std.mem.Allocator,
-trash: std.ArrayList(*ast.Expression),
-infix_parse_fns: std.AutoHashMap(Token.TokenType, infixParseFn),
-prefix_parse_fns: std.AutoHashMap(Token.TokenType, prefixParseFn),
 
-fn registerPrefix(self: *Self, token_type: Token.TokenType, func: prefixParseFn) void {
+exp_trash: std.ArrayList(*ast.Expression),
+stmt_trash: std.ArrayList(ast.Statement),
+iden_trash: std.ArrayList(*ast.Identifier),
+blk_trash: std.ArrayList(*std.ArrayList(ast.Statement)),
+
+infix_parse_fns: std.AutoHashMap(Token.TokenType, InfixParseFn),
+prefix_parse_fns: std.AutoHashMap(Token.TokenType, PrefixParseFn),
+
+fn registerPrefix(self: *Self, token_type: Token.TokenType, func: PrefixParseFn) void {
     self.prefix_parse_fns.put(token_type, func) catch unreachable;
 }
 
-fn registerInfix(self: *Self, token_type: Token.TokenType, func: infixParseFn) void {
+fn registerInfix(self: *Self, token_type: Token.TokenType, func: InfixParseFn) void {
     self.infix_parse_fns.put(token_type, func) catch unreachable;
 }
 
@@ -34,8 +41,8 @@ fn nextToken(self: *Self) void {
 }
 
 pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) Self {
-    var prefix_parse_fns = std.AutoHashMap(Token.TokenType, prefixParseFn).init(allocator);
-    var infix_parse_fns = std.AutoHashMap(Token.TokenType, infixParseFn).init(allocator);
+    var prefix_parse_fns = std.AutoHashMap(Token.TokenType, PrefixParseFn).init(allocator);
+    var infix_parse_fns = std.AutoHashMap(Token.TokenType, InfixParseFn).init(allocator);
 
     var p = Self{
         .lexer = lexer,
@@ -44,10 +51,16 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) Self {
         .prefix_parse_fns = prefix_parse_fns,
         .infix_parse_fns = infix_parse_fns,
         .allocator = allocator,
-        .trash = undefined,
+        .exp_trash = undefined,
+        .stmt_trash = undefined,
+        .blk_trash = undefined,
+        .iden_trash = undefined,
     };
 
-    p.trash = std.ArrayList(*ast.Expression).init(p.allocator);
+    p.exp_trash = std.ArrayList(*ast.Expression).init(p.allocator);
+    p.stmt_trash = std.ArrayList(ast.Statement).init(p.allocator);
+    p.blk_trash = std.ArrayList(*std.ArrayList(ast.Statement)).init(p.allocator);
+    p.iden_trash = std.ArrayList(*ast.Identifier).init(p.allocator);
 
     p.nextToken();
     p.nextToken();
@@ -59,6 +72,9 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) Self {
     p.registerPrefix(.@"!", parsePrefixExpression);
     p.registerPrefix(.@"-", parsePrefixExpression);
     p.registerPrefix(.@"(", parseGroupExpression);
+    p.registerPrefix(.@"if", parseIfExpression);
+    p.registerPrefix(.@"else", parseIfExpression);
+    p.registerPrefix(.@"fn", parseFunctionLiteral);
 
     p.registerInfix(.@"+", parseInfixExpression);
     p.registerInfix(.@"-", parseInfixExpression);
@@ -68,7 +84,6 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) Self {
     p.registerInfix(.@"/", parseInfixExpression);
     p.registerInfix(.@">", parseInfixExpression);
     p.registerInfix(.@"<", parseInfixExpression);
-    p.registerPrefix(.@"if", parseIfExpression);
 
     return p;
 }
@@ -76,11 +91,18 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) Self {
 pub fn deinit(self: *Self) void {
     self.prefix_parse_fns.deinit();
     self.infix_parse_fns.deinit();
-    for (self.trash.items) |f| self.allocator.destroy(f);
-    self.trash.deinit();
+
+    for (self.exp_trash.items) |f| self.allocator.destroy(f);
+    self.exp_trash.deinit();
+
+    for (self.blk_trash.items) |stmt| {
+        stmt.deinit();
+        self.allocator.destroy(stmt);
+    }
+    self.blk_trash.deinit();
 }
 
-fn parseIdentifier(self: *const Self) anyerror!ast.Expression {
+fn parseIdentifier(self: *const Self) anyerror!?ast.Expression {
     return .{ .identifier = ast.Identifier{
         .token = self.cur_token,
         .value = self.cur_token.literal,
@@ -204,8 +226,9 @@ fn parseExpression(self: *Self, precedence: Precedence) !?*ast.Expression {
     };
 
     var letf_exp = try self.allocator.create(ast.Expression);
-    letf_exp.* = try prefix_fn(self);
-    try self.trash.append(letf_exp);
+    try self.exp_trash.append(letf_exp);
+
+    letf_exp.* = if (try prefix_fn(self)) |expression| expression else return null;
 
     while (!self.peekTokenIs(.@";") and @enumToInt(precedence) < @enumToInt(self.peekPrecedence())) {
         const infix_fn = self.infix_parse_fns.get(self.peek_token.type) orelse return letf_exp;
@@ -231,7 +254,7 @@ pub fn parseProgram(self: *Self, allocator: std.mem.Allocator) !ast.Program {
     return program;
 }
 
-fn parseIntegerLiteral(self: *Self) anyerror!ast.Expression {
+fn parseIntegerLiteral(self: *Self) anyerror!?ast.Expression {
     return .{
         .integer_literal = ast.IntegerLiteral{
             .token = self.cur_token,
@@ -243,12 +266,12 @@ fn parseIntegerLiteral(self: *Self) anyerror!ast.Expression {
     };
 }
 
-fn parseBoolean(self: *Self) anyerror!ast.Expression {
+fn parseBoolean(self: *Self) anyerror!?ast.Expression {
     return .{ .boolean = .{ .token = self.cur_token, .value = self.curTokenIs(.true) } };
 }
 
 //  BUG
-fn parseGroupExpression(self: *Self) anyerror!ast.Expression {
+fn parseGroupExpression(self: *Self) anyerror!?ast.Expression {
     self.nextToken();
 
     var exp = try self.parseExpression(Precedence.lower);
@@ -258,7 +281,7 @@ fn parseGroupExpression(self: *Self) anyerror!ast.Expression {
     return exp.?.*;
 }
 
-fn parsePrefixExpression(self: *Self) anyerror!ast.Expression {
+fn parsePrefixExpression(self: *Self) anyerror!?ast.Expression {
     var expression = ast.PrefixExpression{
         .operator = self.cur_token.literal,
         .token = self.cur_token,
@@ -280,7 +303,7 @@ fn parsePrefixExpression(self: *Self) anyerror!ast.Expression {
 
 fn parseInfixExpression(self: *Self, left: *ast.Expression) anyerror!ast.Expression {
     var new_left = try self.allocator.create(ast.Expression);
-    try self.trash.append(new_left);
+    try self.exp_trash.append(new_left);
     new_left.* = left.*;
 
     var expression = ast.InfixExpression{
@@ -302,7 +325,103 @@ fn parseInfixExpression(self: *Self, left: *ast.Expression) anyerror!ast.Express
     return .{ .infix_expression = expression };
 }
 
-fn parseIfExpression(self: *Self) anyerror!ast.Expression {
-    _ = self;
-    @panic("TODO: implemented");
+fn parseIfExpression(self: *Self) anyerror!?ast.Expression {
+    var expression = ast.IfExpression{
+        .token = self.cur_token,
+    };
+
+    if (!self.expectPeek(.@"(")) return null;
+
+    self.nextToken();
+
+    expression.condition = if (try self.parseExpression(Precedence.lower)) |exp| exp else return null;
+
+    if (!self.expectPeek(.@")")) return null;
+    if (!self.expectPeek(.@"{")) return null;
+
+    expression.consequence = try self.parseBlockStatement();
+
+    if (self.peekTokenIs(.@"else")) {
+        self.nextToken();
+        if (!self.expectPeek(.@"{")) return null;
+        expression.alternative = try self.parseBlockStatement();
+    }
+
+    return .{ .if_expression = expression };
+}
+
+fn parseBlockStatement(self: *Self) anyerror!ast.BlockStatement {
+    var stmts = try self.allocator.create(std.ArrayList(ast.Statement));
+    stmts.* = std.ArrayList(ast.Statement).init(self.allocator);
+    errdefer stmts.deinit();
+
+    var block = ast.BlockStatement{
+        .token = self.cur_token,
+        .statements = undefined,
+    };
+
+    self.nextToken();
+
+    while (!self.curTokenIs(.@"}") and !self.curTokenIs(.eof)) {
+        var stmt = try self.parseStatement();
+        try stmts.append(stmt);
+        self.nextToken();
+    }
+
+    block.statements = stmts.*;
+    try self.blk_trash.append(stmts);
+
+    return block;
+}
+
+fn parseFunctionLiteral(self: *Self) anyerror!?ast.Expression {
+    var lit = ast.FunctionLiteral{ .token = self.cur_token };
+
+    if (!self.expectPeek(.@"(")) return null;
+
+    lit.parameters = if (try self.parseFunctionParameters()) |params| params else return null;
+
+    if (!self.expectPeek(.@"{")) return null;
+
+    lit.body = try self.parseBlockStatement();
+
+    return .{ .function_literal = lit };
+}
+
+fn parseFunctionParameters(self: *Self) anyerror!?std.ArrayList(*ast.Identifier) {
+    var indentifiers = std.ArrayList(*ast.Identifier).init(self.allocator);
+    errdefer indentifiers.deinit();
+
+    if (self.peekTokenIs(.@")")) {
+        self.nextToken();
+        return indentifiers;
+    }
+
+    self.nextToken();
+
+    var ident = try self.allocator.create(ast.Identifier);
+    ident.* = ast.Identifier{
+        .token = self.cur_token,
+        .value = self.cur_token.literal,
+    };
+
+    try indentifiers.append(ident);
+    try self.iden_trash.append(ident);
+
+    while (self.peekTokenIs(.@",")) {
+        self.nextToken();
+        self.nextToken();
+
+        var ident2 = try self.allocator.create(ast.Identifier);
+        ident2.* = ast.Identifier{
+            .token = self.cur_token,
+            .value = self.cur_token.literal,
+        };
+        try indentifiers.append(ident2);
+        try self.iden_trash.append(ident2);
+    }
+
+    if (!self.expectPeek(.@")")) return null;
+
+    return indentifiers;
 }

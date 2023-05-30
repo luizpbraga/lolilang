@@ -5,6 +5,114 @@ const ast = @import("ast.zig");
 const TokenType = @import("Token.zig").TokenType;
 
 // TODO: implement helper function e.g. testInfixExpression, testIdentifier, testBooleanLiteral...
+//
+pub fn main() !void {
+    // const allocator = std.heap.page_allocator;
+    // var lexer = Lexer.init("if (x < y) {x} else {y}");
+    // var parser = Parser.new(allocator, &lexer);
+    // defer parser.deinit();
+
+    // const program = try parser.parseProgram(allocator);
+    // defer program.statements.deinit();
+
+    // if (program.statements.items.len != 1) {
+    //     std.log.err("len: {d}", .{program.statements.items.len});
+    //     return error.NotEnoughStatements;
+    // }
+}
+
+fn testIdentifier(exp: *ast.Expression, value: []const u8) !void {
+    const ident = exp.identifier;
+
+    if (!std.mem.eql(u8, ident.value, value)) {
+        std.log.err("find {s} expected {s}\n", .{ ident.value, value });
+        return error.UnexpectedValue;
+    }
+
+    if (!std.mem.eql(u8, ident.tokenLiteral(), value)) {
+        std.log.err("find {s} expected {s}\n", .{ ident.tokenLiteral(), value });
+        return error.UnexpectedValue;
+    }
+}
+
+fn testIntegerLiteral(exp: *ast.Expression, value: i64) !void {
+    const integer = exp.integer_literal;
+    var buff: [10]u8 = undefined;
+    const value_str = try std.fmt.bufPrint(&buff, "{d}", .{value});
+
+    if (integer.value != value)
+        return error.UnexpectedValue;
+
+    if (!std.mem.eql(u8, integer.tokenLiteral(), value_str))
+        return error.UnexpectedValue;
+}
+
+fn testLiteralExpression(exp: *ast.Expression, expected: anytype) !void {
+    if (@TypeOf(expected) == i64) {
+        try testIntegerLiteral(exp, expected);
+    } else {
+        try testIdentifier(exp, expected);
+    }
+}
+
+fn testInfixExpression(exp: *ast.Expression, left: anytype, op: []const u8, right: anytype) !void {
+    var opExp = exp.infix_expression;
+
+    try testLiteralExpression(opExp.left.?, left);
+
+    if (!std.mem.eql(u8, op, opExp.operator))
+        return error.UnexpectedOP;
+
+    try testLiteralExpression(opExp.right.?, right);
+}
+
+test "Function Literal" {
+    const allocator = std.testing.allocator;
+    var lexer = Lexer.init("fn() {}");
+    var parser = Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    if (program.statements.items.len != 1) {
+        std.log.err("len: {d}", .{program.statements.items.len});
+        return error.NotEnoughStatements;
+    }
+}
+
+test "If Else Expression" {
+    const allocator = std.testing.allocator;
+    var lexer = Lexer.init("if (x < y) {x} else {y}");
+    var parser = Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    if (program.statements.items.len != 1) {
+        std.log.err("len: {d}", .{program.statements.items.len});
+        return error.NotEnoughStatements;
+    }
+
+    var stmt = program.statements.items[0].expression_statement;
+    var exp = stmt.expression.?.if_expression;
+
+    try testInfixExpression(exp.condition.?, "x", "<", "y");
+
+    if (exp.consequence.?.statements.items.len != 1)
+        return error.ConsequenceIs1Statement;
+
+    var consequence = exp.consequence.?.statements.items[0].expression_statement;
+
+    try testIdentifier(consequence.expression.?, "x");
+
+    if (exp.alternative == null)
+        return error.AlternativeStatementsWasNotNull;
+
+    var alternative = exp.alternative.?.statements.items[0].expression_statement;
+    try testIdentifier(alternative.expression.?, "y");
+}
 
 test "If Expression" {
     const allocator = std.testing.allocator;
@@ -22,7 +130,17 @@ test "If Expression" {
 
     var stmt = program.statements.items[0].expression_statement;
     var exp = stmt.expression.?.if_expression;
-    _ = exp;
+
+    try testInfixExpression(exp.condition.?, "x", "<", "y");
+
+    if (exp.consequence.?.statements.items.len != 1)
+        return error.ConsequenceIs1Statement;
+
+    var consequence = exp.consequence.?.statements.items[0].expression_statement;
+    _ = consequence;
+
+    if (exp.alternative != null)
+        return error.AlternativeStatementsWasNotNull;
 }
 
 test "Group Exp" {
