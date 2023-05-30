@@ -52,12 +52,17 @@ pub fn nextToken(self: *Self) Token {
     var tok = switch (self.ch) {
         // TODO: fix == and !=
         '=' => switch (self.peekChar()) {
-            '=' => newToken(.@"=="),
-            '>' => newToken(.@"=>"),
+            '=' => x: {
+                self.readChar();
+                break :x newToken(.@"==");
+            },
             else => newToken(.@"="),
         },
         '!' => switch (self.peekChar()) {
-            '=' => newToken(.@"!="),
+            '=' => x: {
+                self.readChar();
+                break :x newToken(.@"!=");
+            },
             else => newToken(.@"!"),
         },
         '>' => newToken(.@">"),

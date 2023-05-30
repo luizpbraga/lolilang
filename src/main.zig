@@ -2,17 +2,103 @@ const std = @import("std");
 const Lexer = @import("Lexer.zig");
 const Parser = @import("Parser.zig");
 const ast = @import("asc.zig");
-pub fn main() !void {
-    const allocator = std.heap.page_allocator;
-    // }
-    // test "parse Prefix OP" {
-    // const allocator = std.testing.allocator;
+
+// pub fn main() !void {
+//     const allocator = std.heap.page_allocator;
+test "Parse Infix OP " {
+    const allocator = std.testing.allocator;
+    const input = "10 + 5;";
+    _ = input;
+    const output = 5;
+    _ = output;
+
+    const tests = [_]struct {
+        l: usize,
+        r: usize,
+        op: []const u8,
+        input: []const u8,
+    }{
+        .{ .input = "10 + 5", .l = 10, .r = 5, .op = "+" },
+        .{ .input = "10 - 5", .l = 10, .r = 5, .op = "-" },
+        .{ .input = "10 * 5", .l = 10, .r = 5, .op = "*" },
+        .{ .input = "10 / 5", .l = 10, .r = 5, .op = "/" },
+        .{ .input = "10 > 5", .l = 10, .r = 5, .op = ">" },
+        .{ .input = "10 < 5", .l = 10, .r = 5, .op = "<" },
+        .{ .input = "10 == 5", .l = 10, .r = 5, .op = "==" },
+        .{ .input = "10 != 5", .l = 10, .r = 5, .op = "!=" },
+    };
+
+    for (tests) |x| {
+        var lexer = Lexer.init(x.input);
+        var parser = Parser.new(allocator, &lexer);
+        defer parser.deinit();
+
+        const program = try parser.parseProgram(allocator);
+        defer program.statements.deinit();
+
+        if (program.statements.items.len != 1) {
+            std.log.err("len: {d}", .{program.statements.items.len});
+            return error.NotEnoughStatements;
+        }
+
+        var stmt = program.statements.items[0].expression_statement;
+
+        var exp = stmt.expression.?.infix_expression;
+
+        const operator = exp.operator;
+
+        if (!std.mem.eql(u8, operator, x.op))
+            return error.UnexpectedOP;
+
+        const left = exp.left.?.integer_literal;
+        const right = exp.right.?.integer_literal;
+
+        if (left.value != x.l or right.value != x.r)
+            return error.UnexpectedValue;
+    }
+}
+
+test "Parse Prefix OP (!)" {
+    const allocator = std.testing.allocator;
+    const input = "!5;";
+    const output = 5;
+
+    var lexer = Lexer.init(input);
+    var parser = Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    if (program.statements.items.len != 1) {
+        std.log.err("len: {d}", .{program.statements.items.len});
+        return error.NotEnoughStatements;
+    }
+
+    var stmt = program.statements.items[0].expression_statement;
+
+    var exp = stmt.expression.?.prefix_expression;
+
+    if (.@"!" != exp.token.type) {
+        return error.UnexpecedOperator;
+    }
+
+    var integer = exp.right.?.integer_literal;
+
+    if (output != integer.value) {
+        return error.UnexpectedValue;
+    }
+
+    std.debug.print("{}", .{integer.value});
+}
+
+test "parse Prefix OP (-)" {
+    const allocator = std.testing.allocator;
     const input = "-5;";
     const output = -5;
 
     var lexer = Lexer.init(input);
     var parser = Parser.new(allocator, &lexer);
-
     defer parser.deinit();
 
     const program = try parser.parseProgram(allocator);

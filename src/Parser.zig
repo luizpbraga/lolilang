@@ -56,9 +56,10 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) Self {
     p.registerPrefix(.int, parseIntegerLiteral);
     p.registerPrefix(.@"!", parsePrefixExpression);
     p.registerPrefix(.@"-", parsePrefixExpression);
+
     p.registerInfix(.@"+", parseInfixExpression);
     p.registerInfix(.@"-", parseInfixExpression);
-    p.registerInfix(.@"=", parseInfixExpression);
+    p.registerInfix(.@"==", parseInfixExpression);
     p.registerInfix(.@"!=", parseInfixExpression);
     p.registerInfix(.@"*", parseInfixExpression);
     p.registerInfix(.@"/", parseInfixExpression);
@@ -71,7 +72,7 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) Self {
 pub fn deinit(self: *Self) void {
     self.prefix_parse_fns.deinit();
     self.infix_parse_fns.deinit();
-    // for (self.trash.items) |f| self.allocator.destroy(f); segfasult??
+    for (self.trash.items) |f| self.allocator.destroy(f);
     self.trash.deinit();
 }
 
@@ -162,7 +163,7 @@ pub const Precedence = enum {
 
     pub fn peek(token_type: Token.TokenType) Precedence {
         return switch (token_type) {
-            .@"=", .@"!=" => .equals,
+            .@"==", .@"!=" => .equals,
             .@">", .@"<" => .lessgreater,
             .@"+", .@"-" => .sum,
             .@"/", .@"*" => .product,
@@ -193,21 +194,22 @@ fn parseExpressionStatement(self: *Self) anyerror!ast.ExpressionStatement {
 }
 
 fn parseExpression(self: *Self, precedence: Precedence) !?*ast.Expression {
-    _ = precedence;
+    const prefix_fn = self.prefix_parse_fns.get(self.cur_token.type) orelse {
+        std.log.warn("** the prefix_fn is: null **\n", .{});
+        return null;
+    };
 
-    const prefix_fn = self.prefix_parse_fns.get(self.cur_token.type);
+    var letf_exp = try self.allocator.create(ast.Expression);
+    letf_exp.* = try prefix_fn(self);
+    try self.trash.append(letf_exp);
 
-    if (prefix_fn) |func| {
-        // BUG
-        var letf_exp = try self.allocator.create(ast.Expression);
-        letf_exp.* = try func(self);
-        try self.trash.append(letf_exp);
-        return letf_exp;
+    while (!self.peekTokenIs(.@";") and @enumToInt(precedence) < @enumToInt(self.peekPrecedence())) {
+        const infix_fn = self.infix_parse_fns.get(self.peek_token.type) orelse return letf_exp;
+        self.nextToken();
+        letf_exp.* = try infix_fn(self, letf_exp);
     }
 
-    std.debug.print("** the prefix_fn is: null **\n", .{});
-
-    return null;
+    return letf_exp;
 }
 
 pub fn parseProgram(self: *Self, allocator: std.mem.Allocator) !ast.Program {
@@ -258,10 +260,14 @@ fn parsePrefixExpression(self: *Self) anyerror!ast.Expression {
 }
 
 fn parseInfixExpression(self: *Self, left: *ast.Expression) anyerror!ast.Expression {
+    var new_left = try self.allocator.create(ast.Expression);
+    try self.trash.append(new_left);
+    new_left.* = left.*;
+
     var expression = ast.InfixExpression{
         .token = self.cur_token,
         .operator = self.cur_token.literal,
-        .left = left,
+        .left = new_left,
     };
 
     var precedence = self.currentPrecedence();
