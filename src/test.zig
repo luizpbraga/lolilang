@@ -68,18 +68,69 @@ fn testInfixExpression(exp: *ast.Expression, left: anytype, op: []const u8, righ
 
 test "Function Literal" {
     const allocator = std.testing.allocator;
-    var lexer = Lexer.init("fn() {}");
-    var parser = Parser.new(allocator, &lexer);
-    defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const tests = [_]struct {
+        input: []const u8,
+        len: usize,
+    }{
+        // .{ .input = "fn(){};", .len = 0 },
+        .{ .input = "fn(x, y){ x + y; };", .len = 2 },
+        // .{ .input = "fn(x, y, z){};", .len = 3 },
+        // .{ .input = "fn(x, y, z){ var x = 10; };", .len = 3 },
+    };
 
-    if (program.statements.items.len != 1) {
-        std.log.err("len: {d}", .{program.statements.items.len});
-        return error.NotEnoughStatements;
+    for (tests) |x| {
+        var lexer = Lexer.init(x.input);
+        var parser = Parser.new(allocator, &lexer);
+        defer parser.deinit();
+
+        const program = try parser.parseProgram(allocator);
+        defer program.statements.deinit();
+
+        if (program.statements.items.len != 1) {
+            std.log.err("len: {d}", .{program.statements.items.len});
+            return error.NotEnoughStatements;
+        }
+
+        var stmt = program.statements.items[0].expression_statement;
+
+        var func = stmt.expression.?.function_literal;
+
+        if (func.parameters.?.len != x.len) {
+            std.log.err("\n{s}\n", .{x.input});
+            return error.WrongParmeterLengh;
+        }
+
+        if (!std.mem.eql(u8, func.parameters.?[0].value, "x"))
+            return error.UnexpectedValue;
+
+        if (func.body.?.statements.len != 1)
+            return error.WrongFunctionBody;
+
+        var body_stmt = func.body.?.statements[0].expression_statement;
+
+        try testInfixExpression(body_stmt.expression.?, "x", "+", "y");
     }
 }
+
+// test "var x = (((( 10 ))))" {
+//     const allocator = std.testing.allocator;
+//     var lexer = Lexer.init("var x = 10;");
+//     var parser = Parser.new(allocator, &lexer);
+//     defer parser.deinit();
+
+//     const program = try parser.parseProgram(allocator);
+//     defer program.statements.deinit();
+
+//     if (program.statements.items.len != 1) {
+//         std.log.err("len: {d}", .{program.statements.items.len});
+//         return error.NotEnoughStatements;
+//     }
+
+//     var stmt = program.statements.items[0].var_statement;
+//     std.debug.print("\n{s}\n", .{stmt.tokenLiteral()});
+//     std.debug.print("\n{s} {s}\n", .{ stmt.tokenLiteral(), stmt.name.value });
+// }
 
 test "If Else Expression" {
     const allocator = std.testing.allocator;
@@ -100,17 +151,17 @@ test "If Else Expression" {
 
     try testInfixExpression(exp.condition.?, "x", "<", "y");
 
-    if (exp.consequence.?.statements.items.len != 1)
+    if (exp.consequence.?.statements.len != 1)
         return error.ConsequenceIs1Statement;
 
-    var consequence = exp.consequence.?.statements.items[0].expression_statement;
+    var consequence = exp.consequence.?.statements[0].expression_statement;
 
     try testIdentifier(consequence.expression.?, "x");
 
     if (exp.alternative == null)
         return error.AlternativeStatementsWasNotNull;
 
-    var alternative = exp.alternative.?.statements.items[0].expression_statement;
+    var alternative = exp.alternative.?.statements[0].expression_statement;
     try testIdentifier(alternative.expression.?, "y");
 }
 
@@ -133,10 +184,10 @@ test "If Expression" {
 
     try testInfixExpression(exp.condition.?, "x", "<", "y");
 
-    if (exp.consequence.?.statements.items.len != 1)
+    if (exp.consequence.?.statements.len != 1)
         return error.ConsequenceIs1Statement;
 
-    var consequence = exp.consequence.?.statements.items[0].expression_statement;
+    var consequence = exp.consequence.?.statements[0].expression_statement;
     _ = consequence;
 
     if (exp.alternative != null)

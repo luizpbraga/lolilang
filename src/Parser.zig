@@ -16,8 +16,8 @@ allocator: std.mem.Allocator,
 
 exp_trash: std.ArrayList(*ast.Expression),
 stmt_trash: std.ArrayList(ast.Statement),
-iden_trash: std.ArrayList(*ast.Identifier),
-blk_trash: std.ArrayList(*std.ArrayList(ast.Statement)),
+iden_trash: std.ArrayList([]ast.Identifier),
+blk_trash: std.ArrayList([]ast.Statement),
 
 infix_parse_fns: std.AutoHashMap(Token.TokenType, InfixParseFn),
 prefix_parse_fns: std.AutoHashMap(Token.TokenType, PrefixParseFn),
@@ -59,8 +59,8 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) Self {
 
     p.exp_trash = std.ArrayList(*ast.Expression).init(p.allocator);
     p.stmt_trash = std.ArrayList(ast.Statement).init(p.allocator);
-    p.blk_trash = std.ArrayList(*std.ArrayList(ast.Statement)).init(p.allocator);
-    p.iden_trash = std.ArrayList(*ast.Identifier).init(p.allocator);
+    p.blk_trash = std.ArrayList([]ast.Statement).init(p.allocator);
+    p.iden_trash = std.ArrayList([]ast.Identifier).init(p.allocator);
 
     p.nextToken();
     p.nextToken();
@@ -89,17 +89,26 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) Self {
 }
 /// TODO: free infix_parse_fns when it was implemented
 pub fn deinit(self: *Self) void {
-    self.prefix_parse_fns.deinit();
-    self.infix_parse_fns.deinit();
-
-    for (self.exp_trash.items) |f| self.allocator.destroy(f);
-    self.exp_trash.deinit();
+    for (self.exp_trash.items) |f|
+        self.allocator.destroy(f);
 
     for (self.blk_trash.items) |stmt| {
-        stmt.deinit();
-        self.allocator.destroy(stmt);
+        self.allocator.free(stmt);
     }
+    // stmt.deinit();
+    // self.allocator.destroy(stmt);
+    // }
+
+    for (self.iden_trash.items) |iden| {
+        self.allocator.free(iden);
+    }
+
+    self.prefix_parse_fns.deinit();
+    self.infix_parse_fns.deinit();
+    self.exp_trash.deinit();
     self.blk_trash.deinit();
+    self.stmt_trash.deinit();
+    self.iden_trash.deinit();
 }
 
 fn parseIdentifier(self: *const Self) anyerror!?ast.Expression {
@@ -351,8 +360,7 @@ fn parseIfExpression(self: *Self) anyerror!?ast.Expression {
 }
 
 fn parseBlockStatement(self: *Self) anyerror!ast.BlockStatement {
-    var stmts = try self.allocator.create(std.ArrayList(ast.Statement));
-    stmts.* = std.ArrayList(ast.Statement).init(self.allocator);
+    var stmts = std.ArrayList(ast.Statement).init(self.allocator);
     errdefer stmts.deinit();
 
     var block = ast.BlockStatement{
@@ -368,18 +376,44 @@ fn parseBlockStatement(self: *Self) anyerror!ast.BlockStatement {
         self.nextToken();
     }
 
-    block.statements = stmts.*;
-    try self.blk_trash.append(stmts);
+    var stmts_owner = try stmts.toOwnedSlice();
+
+    try self.blk_trash.append(stmts_owner);
+
+    block.statements = stmts_owner;
 
     return block;
 }
+// fn parseBlockStatement(self: *Self) anyerror!ast.BlockStatement {
+//     var stmts = try self.allocator.create(std.ArrayList(ast.Statement));
+//     stmts.* = std.ArrayList(ast.Statement).init(self.allocator);
+//     errdefer stmts.deinit();
+
+//     var block = ast.BlockStatement{
+//         .token = self.cur_token,
+//         .statements = undefined,
+//     };
+
+//     self.nextToken();
+
+//     while (!self.curTokenIs(.@"}") and !self.curTokenIs(.eof)) {
+//         var stmt = try self.parseStatement();
+//         try stmts.append(stmt);
+//         self.nextToken();
+//     }
+
+//     block.statements = stmts.*;
+//     try self.blk_trash.append(stmts);
+
+//     return block;
+// }
 
 fn parseFunctionLiteral(self: *Self) anyerror!?ast.Expression {
     var lit = ast.FunctionLiteral{ .token = self.cur_token };
 
     if (!self.expectPeek(.@"(")) return null;
 
-    lit.parameters = if (try self.parseFunctionParameters()) |params| params else return null;
+    lit.parameters = try self.parseFunctionParameters();
 
     if (!self.expectPeek(.@"{")) return null;
 
@@ -388,40 +422,47 @@ fn parseFunctionLiteral(self: *Self) anyerror!?ast.Expression {
     return .{ .function_literal = lit };
 }
 
-fn parseFunctionParameters(self: *Self) anyerror!?std.ArrayList(*ast.Identifier) {
-    var indentifiers = std.ArrayList(*ast.Identifier).init(self.allocator);
+fn parseFunctionParameters(self: *Self) anyerror!?[]ast.Identifier {
+    var indentifiers = std.ArrayList(ast.Identifier).init(self.allocator);
     errdefer indentifiers.deinit();
 
     if (self.peekTokenIs(.@")")) {
         self.nextToken();
-        return indentifiers;
+        return try indentifiers.toOwnedSlice();
     }
 
     self.nextToken();
 
-    var ident = try self.allocator.create(ast.Identifier);
-    ident.* = ast.Identifier{
+    // var ident = try self.allocator.create(ast.Identifier);
+    var ident = ast.Identifier{
         .token = self.cur_token,
         .value = self.cur_token.literal,
     };
 
     try indentifiers.append(ident);
-    try self.iden_trash.append(ident);
 
     while (self.peekTokenIs(.@",")) {
         self.nextToken();
         self.nextToken();
 
-        var ident2 = try self.allocator.create(ast.Identifier);
-        ident2.* = ast.Identifier{
+        // var ident2 = try self.allocator.create(ast.Identifier);
+        var ident2 = ast.Identifier{
             .token = self.cur_token,
             .value = self.cur_token.literal,
         };
+        std.log.debug("\n{s}\n", .{self.cur_token.literal});
         try indentifiers.append(ident2);
-        try self.iden_trash.append(ident2);
     }
 
-    if (!self.expectPeek(.@")")) return null;
+    if (!self.expectPeek(.@")")) {
+        // TODO: implement errors <errordefer é uma dlc>
+        indentifiers.deinit();
+        return null;
+    }
 
-    return indentifiers;
+    var ident_owner = try indentifiers.toOwnedSlice();
+
+    try self.iden_trash.append(ident_owner);
+
+    return ident_owner;
 }

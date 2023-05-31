@@ -158,7 +158,7 @@ pub const ExpressionStatement = struct {
 
 pub const BlockStatement = struct {
     token: Token,
-    statements: std.ArrayList(Statement),
+    statements: []Statement,
 
     pub fn tokenLiteral(self: *const BlockStatement) []const u8 {
         return self.token.literal;
@@ -188,7 +188,7 @@ pub const Boolean = struct {
 
 pub const FunctionLiteral = struct {
     token: Token,
-    parameters: ?std.ArrayList(*Identifier) = null,
+    parameters: ?[]Identifier = null,
     body: ?BlockStatement = null,
 
     pub fn tokenLiteral(self: *const Boolean) []const u8 {
