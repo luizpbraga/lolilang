@@ -134,7 +134,10 @@ test "Function Literal" {
 
 test "If Else Expression" {
     const allocator = std.testing.allocator;
-    var lexer = Lexer.init("if (x < y) {x} else {y}");
+    var lexer = Lexer.init(
+        \\\\nenem
+        \\if (x < y) {x} else {y}
+    );
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
@@ -357,6 +360,49 @@ test "Parse Prefix OP (!)" {
     }
 }
 
+test "Comment" {
+    const allocator = std.testing.allocator;
+    // const input =
+    //     \\\\ +-----------------------------+
+    //     \\\\ isso é um comentário
+    //     \\\\ isso tambem é um comentário
+    //     \\\\ +-----------------------------+
+    //     \\-5;
+    //     \\\\ AAAAAAAAAAAAI PAPY
+    // ;
+    //
+
+    const input = @embedFile("./main.lol");
+
+    const output = -5;
+
+    var lexer = Lexer.init(input);
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    if (program.statements.items.len != 1) {
+        std.log.err("len: {d}", .{program.statements.items.len});
+        return error.NotEnoughStatements;
+    }
+
+    var stmt = program.statements.items[0].expression_statement;
+
+    var exp = stmt.expression.prefix_expression;
+
+    if (.@"-" != exp.token.type) {
+        return error.UnexpecedOperator;
+    }
+
+    var integer = exp.right.integer_literal;
+
+    if (output != -integer.value) {
+        return error.UnexpectedValue;
+    }
+}
+
 test "parse Prefix OP (-)" {
     const allocator = std.testing.allocator;
     const input = "-5;";
@@ -368,11 +414,6 @@ test "parse Prefix OP (-)" {
 
     const program = try parser.parseProgram(allocator);
     defer program.statements.deinit();
-
-    // for (program.statements.items) |item| {
-    //     //     std.debug.print("{}\n\n", .{item.expression_statement.expression});
-    //     std.debug.print("\n\n{}\n\n", .{item.expression_statement.expression.prefix_expression.right});
-    // }
 
     if (program.statements.items.len != 1) {
         std.log.err("len: {d}", .{program.statements.items.len});

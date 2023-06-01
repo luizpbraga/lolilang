@@ -48,6 +48,7 @@ pub const TokenType = enum {
     @")",
     @"{",
     @"}",
+    @"\\",
 
     // keywords
     @"fn",
