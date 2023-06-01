@@ -4,43 +4,47 @@ const Lexer = @import("Lexer.zig");
 const ast = @import("ast.zig");
 
 // TODO: removel null and implement parsing error msg
-
 const Self = @This();
-const PrefixParseFn = *const fn (*Self) anyerror!?ast.Expression;
+const PrefixParseFn = *const fn (*Self) anyerror!ast.Expression;
 const InfixParseFn = *const fn (*Self, *ast.Expression) anyerror!ast.Expression;
-
-lexer: *Lexer,
-cur_token: Token,
-peek_token: Token,
-allocator: std.mem.Allocator,
-
-exp_trash: std.ArrayList(*ast.Expression),
-stmt_trash: std.ArrayList(ast.Statement),
-iden_trash: std.ArrayList([]ast.Identifier),
-blk_trash: std.ArrayList([]ast.Statement),
-
-infix_parse_fns: std.AutoHashMap(Token.TokenType, InfixParseFn),
-prefix_parse_fns: std.AutoHashMap(Token.TokenType, PrefixParseFn),
-
-fn registerPrefix(self: *Self, token_type: Token.TokenType, func: PrefixParseFn) void {
-    self.prefix_parse_fns.put(token_type, func) catch unreachable;
-}
-
-fn registerInfix(self: *Self, token_type: Token.TokenType, func: InfixParseFn) void {
-    self.infix_parse_fns.put(token_type, func) catch unreachable;
-}
-
 // TODO: better error
 const ParseError = error{
     UnexpectToken,
 };
 
-fn nextToken(self: *Self) void {
-    self.cur_token = self.peek_token;
-    self.peek_token = self.lexer.nextToken();
-}
+pub const Precedence = enum {
+    lower,
+    equals,
+    lessgreater,
+    sum,
+    product,
+    prefix,
+    call,
 
-pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) Self {
+    pub fn peek(token_type: Token.TokenType) Precedence {
+        return switch (token_type) {
+            .@"==", .@"!=" => .equals,
+            .@">", .@"<" => .lessgreater,
+            .@"+", .@"-" => .sum,
+            .@"/", .@"*" => .product,
+            .@"(" => .call,
+            else => .lower,
+        };
+    }
+};
+
+lexer: *Lexer,
+cur_token: Token,
+peek_token: Token,
+allocator: std.mem.Allocator,
+exp_trash: std.ArrayList(*ast.Expression),
+stmt_trash: std.ArrayList(ast.Statement),
+iden_trash: std.ArrayList([]ast.Identifier),
+blk_trash: std.ArrayList([]ast.Statement),
+infix_parse_fns: std.AutoHashMap(Token.TokenType, InfixParseFn),
+prefix_parse_fns: std.AutoHashMap(Token.TokenType, PrefixParseFn),
+
+pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) !Self {
     var prefix_parse_fns = std.AutoHashMap(Token.TokenType, PrefixParseFn).init(allocator);
     var infix_parse_fns = std.AutoHashMap(Token.TokenType, InfixParseFn).init(allocator);
 
@@ -65,25 +69,26 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) Self {
     p.nextToken();
     p.nextToken();
 
-    p.registerPrefix(.identifier, parseIdentifier);
-    p.registerPrefix(.int, parseIntegerLiteral);
-    p.registerPrefix(.true, parseBoolean);
-    p.registerPrefix(.false, parseBoolean);
-    p.registerPrefix(.@"!", parsePrefixExpression);
-    p.registerPrefix(.@"-", parsePrefixExpression);
-    p.registerPrefix(.@"(", parseGroupExpression);
-    p.registerPrefix(.@"if", parseIfExpression);
-    p.registerPrefix(.@"else", parseIfExpression);
-    p.registerPrefix(.@"fn", parseFunctionLiteral);
+    try p.registerPrefix(.identifier, parseIdentifier);
+    try p.registerPrefix(.int, parseIntegerLiteral);
+    try p.registerPrefix(.true, parseBoolean);
+    try p.registerPrefix(.false, parseBoolean);
+    try p.registerPrefix(.@"!", parsePrefixExpression);
+    try p.registerPrefix(.@"-", parsePrefixExpression);
+    try p.registerPrefix(.@"(", parseGroupExpression);
+    try p.registerPrefix(.@"if", parseIfExpression);
+    try p.registerPrefix(.@"else", parseIfExpression);
+    try p.registerPrefix(.@"fn", parseFunctionLiteral);
 
-    p.registerInfix(.@"+", parseInfixExpression);
-    p.registerInfix(.@"-", parseInfixExpression);
-    p.registerInfix(.@"==", parseInfixExpression);
-    p.registerInfix(.@"!=", parseInfixExpression);
-    p.registerInfix(.@"*", parseInfixExpression);
-    p.registerInfix(.@"/", parseInfixExpression);
-    p.registerInfix(.@">", parseInfixExpression);
-    p.registerInfix(.@"<", parseInfixExpression);
+    try p.registerInfix(.@"+", parseInfixExpression);
+    try p.registerInfix(.@"-", parseInfixExpression);
+    try p.registerInfix(.@"==", parseInfixExpression);
+    try p.registerInfix(.@"!=", parseInfixExpression);
+    try p.registerInfix(.@"*", parseInfixExpression);
+    try p.registerInfix(.@"/", parseInfixExpression);
+    try p.registerInfix(.@">", parseInfixExpression);
+    try p.registerInfix(.@"<", parseInfixExpression);
+    try p.registerInfix(.@"(", parseCallExpression);
 
     return p;
 }
@@ -111,11 +116,17 @@ pub fn deinit(self: *Self) void {
     self.iden_trash.deinit();
 }
 
-fn parseIdentifier(self: *const Self) anyerror!?ast.Expression {
-    return .{ .identifier = ast.Identifier{
-        .token = self.cur_token,
-        .value = self.cur_token.literal,
-    } };
+fn registerPrefix(self: *Self, token_type: Token.TokenType, func: PrefixParseFn) !void {
+    try self.prefix_parse_fns.put(token_type, func);
+}
+
+fn registerInfix(self: *Self, token_type: Token.TokenType, func: InfixParseFn) !void {
+    try self.infix_parse_fns.put(token_type, func);
+}
+
+fn nextToken(self: *Self) void {
+    self.cur_token = self.peek_token;
+    self.peek_token = self.lexer.nextToken();
 }
 
 fn curTokenIs(self: *const Self, token_type: Token.TokenType) bool {
@@ -135,6 +146,22 @@ fn expectPeek(self: *Self, token_type: Token.TokenType) bool {
     }
 }
 
+fn peekPrecedence(self: *const Self) Precedence {
+    return Precedence.peek(self.peek_token.type);
+}
+
+fn currentPrecedence(self: *const Self) Precedence {
+    return Precedence.peek(self.cur_token.type);
+}
+
+// parsers fn -----------------------------------------------------------
+fn parseIdentifier(self: *const Self) anyerror!ast.Expression {
+    return .{ .identifier = ast.Identifier{
+        .token = self.cur_token,
+        .value = self.cur_token.literal,
+    } };
+}
+
 fn parseReturnStatement(self: *Self) ParseError!ast.ReturnStatement {
     var stmt = ast.ReturnStatement{
         .token = self.cur_token,
@@ -142,6 +169,7 @@ fn parseReturnStatement(self: *Self) ParseError!ast.ReturnStatement {
 
     self.nextToken();
 
+    // TODO: parse Expression Value
     while (!self.curTokenIs(.@";")) {
         self.nextToken();
     }
@@ -187,34 +215,6 @@ fn parseStatement(self: *Self) !ast.Statement {
     return stmt;
 }
 
-pub const Precedence = enum {
-    lower,
-    equals,
-    lessgreater,
-    sum,
-    product,
-    prefix,
-    call,
-
-    pub fn peek(token_type: Token.TokenType) Precedence {
-        return switch (token_type) {
-            .@"==", .@"!=" => .equals,
-            .@">", .@"<" => .lessgreater,
-            .@"+", .@"-" => .sum,
-            .@"/", .@"*" => .product,
-            else => .lower,
-        };
-    }
-};
-
-fn peekPrecedence(self: *const Self) Precedence {
-    return Precedence.peek(self.peek_token.type);
-}
-
-fn currentPrecedence(self: *const Self) Precedence {
-    return Precedence.peek(self.cur_token.type);
-}
-
 fn parseExpressionStatement(self: *Self) anyerror!ast.ExpressionStatement {
     var stmt = ast.ExpressionStatement{
         .token = self.cur_token,
@@ -228,16 +228,17 @@ fn parseExpressionStatement(self: *Self) anyerror!ast.ExpressionStatement {
     return stmt;
 }
 
-fn parseExpression(self: *Self, precedence: Precedence) !?*ast.Expression {
+fn parseExpression(self: *Self, precedence: Precedence) !*ast.Expression {
     const prefix_fn = self.prefix_parse_fns.get(self.cur_token.type) orelse {
         std.log.warn("** the prefix_fn is: null **\n", .{});
-        return null;
+        return error.UnknowPrefixFn;
     };
 
     var letf_exp = try self.allocator.create(ast.Expression);
     try self.exp_trash.append(letf_exp);
 
-    letf_exp.* = if (try prefix_fn(self)) |expression| expression else return null;
+    // letf_exp.* = if (try prefix_fn(self)) |expression| expression else return error.UnknowPrefixFnExpression;
+    letf_exp.* = try prefix_fn(self);
 
     while (!self.peekTokenIs(.@";") and @enumToInt(precedence) < @enumToInt(self.peekPrecedence())) {
         const infix_fn = self.infix_parse_fns.get(self.peek_token.type) orelse return letf_exp;
@@ -263,7 +264,7 @@ pub fn parseProgram(self: *Self, allocator: std.mem.Allocator) !ast.Program {
     return program;
 }
 
-fn parseIntegerLiteral(self: *Self) anyerror!?ast.Expression {
+fn parseIntegerLiteral(self: *Self) anyerror!ast.Expression {
     return .{
         .integer_literal = ast.IntegerLiteral{
             .token = self.cur_token,
@@ -275,37 +276,37 @@ fn parseIntegerLiteral(self: *Self) anyerror!?ast.Expression {
     };
 }
 
-fn parseBoolean(self: *Self) anyerror!?ast.Expression {
+fn parseBoolean(self: *Self) anyerror!ast.Expression {
     return .{ .boolean = .{ .token = self.cur_token, .value = self.curTokenIs(.true) } };
 }
 
 //  BUG
-fn parseGroupExpression(self: *Self) anyerror!?ast.Expression {
+fn parseGroupExpression(self: *Self) anyerror!ast.Expression {
     self.nextToken();
 
     var exp = try self.parseExpression(Precedence.lower);
 
     if (!self.expectPeek(.@")")) return error.MissingParentese;
 
-    return exp.?.*;
+    return exp.*;
 }
 
-fn parsePrefixExpression(self: *Self) anyerror!?ast.Expression {
+fn parsePrefixExpression(self: *Self) anyerror!ast.Expression {
     var expression = ast.PrefixExpression{
         .operator = self.cur_token.literal,
         .token = self.cur_token,
-        .right = null,
+        .right = undefined,
     };
 
     self.nextToken();
 
-    var exp = try self.parseExpression(Precedence.prefix);
+    expression.right = try self.parseExpression(Precedence.prefix);
 
-    if (exp) |e| {
-        expression.right = e;
-    } else {
-        std.log.warn("Null: no prefix parse function for {}\n", .{self.cur_token.type});
-    }
+    // if (exp) |e| {
+    //     expression.right = e;
+    // } else {
+    //     std.log.warn("Null: no prefix parse function for {}\n", .{self.cur_token.type});
+    // }
 
     return .{ .prefix_expression = expression };
 }
@@ -319,40 +320,44 @@ fn parseInfixExpression(self: *Self, left: *ast.Expression) anyerror!ast.Express
         .token = self.cur_token,
         .operator = self.cur_token.literal,
         .left = new_left,
+        .right = undefined,
     };
 
     var precedence = self.currentPrecedence();
 
     self.nextToken();
 
-    var exp = try self.parseExpression(precedence);
+    // var exp = try self.parseExpression(precedence);
+    // if (exp) |e| {
+    //     expression.right = e;
+    // }
 
-    if (exp) |e| {
-        expression.right = e;
-    }
+    expression.right = try self.parseExpression(precedence);
 
     return .{ .infix_expression = expression };
 }
 
-fn parseIfExpression(self: *Self) anyerror!?ast.Expression {
+fn parseIfExpression(self: *Self) anyerror!ast.Expression {
     var expression = ast.IfExpression{
         .token = self.cur_token,
+        .condition = undefined,
+        .consequence = undefined,
     };
 
-    if (!self.expectPeek(.@"(")) return null;
+    if (!self.expectPeek(.@"(")) return error.MissingParentese;
 
     self.nextToken();
 
-    expression.condition = if (try self.parseExpression(Precedence.lower)) |exp| exp else return null;
+    expression.condition = try self.parseExpression(Precedence.lower);
 
-    if (!self.expectPeek(.@")")) return null;
-    if (!self.expectPeek(.@"{")) return null;
+    if (!self.expectPeek(.@")")) return error.MissingParentese;
+    if (!self.expectPeek(.@"{")) return error.MissingBrance;
 
     expression.consequence = try self.parseBlockStatement();
 
     if (self.peekTokenIs(.@"else")) {
         self.nextToken();
-        if (!self.expectPeek(.@"{")) return null;
+        if (!self.expectPeek(.@"{")) return error.MissingBrance;
         expression.alternative = try self.parseBlockStatement();
     }
 
@@ -408,21 +413,25 @@ fn parseBlockStatement(self: *Self) anyerror!ast.BlockStatement {
 //     return block;
 // }
 
-fn parseFunctionLiteral(self: *Self) anyerror!?ast.Expression {
-    var lit = ast.FunctionLiteral{ .token = self.cur_token };
+fn parseFunctionLiteral(self: *Self) anyerror!ast.Expression {
+    var lit = ast.FunctionLiteral{
+        .token = self.cur_token,
+        .parameters = undefined,
+        .body = undefined,
+    };
 
-    if (!self.expectPeek(.@"(")) return null;
+    if (!self.expectPeek(.@"(")) return error.MissingParentese;
 
     lit.parameters = try self.parseFunctionParameters();
 
-    if (!self.expectPeek(.@"{")) return null;
+    if (!self.expectPeek(.@"{")) return error.MissingBrance;
 
     lit.body = try self.parseBlockStatement();
 
     return .{ .function_literal = lit };
 }
 
-fn parseFunctionParameters(self: *Self) anyerror!?[]ast.Identifier {
+fn parseFunctionParameters(self: *Self) anyerror![]ast.Identifier {
     var indentifiers = std.ArrayList(ast.Identifier).init(self.allocator);
     errdefer indentifiers.deinit();
 
@@ -450,19 +459,62 @@ fn parseFunctionParameters(self: *Self) anyerror!?[]ast.Identifier {
             .token = self.cur_token,
             .value = self.cur_token.literal,
         };
-        std.log.debug("\n{s}\n", .{self.cur_token.literal});
+
         try indentifiers.append(ident2);
     }
 
-    if (!self.expectPeek(.@")")) {
-        // TODO: implement errors <errordefer é uma dlc>
-        indentifiers.deinit();
-        return null;
-    }
+    if (!self.expectPeek(.@")"))
+        return error.MissingParentese;
 
     var ident_owner = try indentifiers.toOwnedSlice();
 
     try self.iden_trash.append(ident_owner);
 
     return ident_owner;
+}
+
+fn parseCallExpression(self: *Self, func: *ast.Expression) anyerror!ast.Expression {
+    return .{ .call_expression = .{
+        .token = self.cur_token,
+        .function = func,
+        .arguments = try self.parseCallArguments(),
+    } };
+}
+
+fn parseCallArguments(self: *Self) anyerror![]ast.Expression {
+    var args = std.ArrayList(ast.Expression).init(self.allocator);
+    errdefer args.deinit();
+
+    if (self.peekTokenIs(.@")")) {
+        self.nextToken();
+        return try args.toOwnedSlice();
+    }
+
+    self.nextToken();
+
+    var exp = try self.parseExpression(Precedence.lower);
+
+    // if (exp) |e| {
+    //     try args.append(e.*);
+    //     try self.exp_trash.append(e);
+    // }
+    try args.append(exp.*);
+    try self.exp_trash.append(exp);
+
+    while (self.peekTokenIs(.@",")) {
+        self.nextToken();
+        self.nextToken();
+
+        var exp2 = try self.parseExpression(Precedence.lower);
+        try args.append(exp2.*);
+        try self.exp_trash.append(exp2);
+        // if (exp2) |e| {
+        //     try args.append(e.*);
+        //     try self.exp_trash.append(e);
+        // }
+    }
+
+    if (!self.peekTokenIs(.@")")) return error.MissingRightParenteses;
+
+    return try args.toOwnedSlice();
 }

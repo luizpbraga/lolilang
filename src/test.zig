@@ -6,21 +6,6 @@ const TokenType = @import("Token.zig").TokenType;
 
 // TODO: implement helper function e.g. testInfixExpression, testIdentifier, testBooleanLiteral...
 //
-pub fn main() !void {
-    // const allocator = std.heap.page_allocator;
-    // var lexer = Lexer.init("if (x < y) {x} else {y}");
-    // var parser = Parser.new(allocator, &lexer);
-    // defer parser.deinit();
-
-    // const program = try parser.parseProgram(allocator);
-    // defer program.statements.deinit();
-
-    // if (program.statements.items.len != 1) {
-    //     std.log.err("len: {d}", .{program.statements.items.len});
-    //     return error.NotEnoughStatements;
-    // }
-}
-
 fn testIdentifier(exp: *ast.Expression, value: []const u8) !void {
     const ident = exp.identifier;
 
@@ -58,12 +43,27 @@ fn testLiteralExpression(exp: *ast.Expression, expected: anytype) !void {
 fn testInfixExpression(exp: *ast.Expression, left: anytype, op: []const u8, right: anytype) !void {
     var opExp = exp.infix_expression;
 
-    try testLiteralExpression(opExp.left.?, left);
+    try testLiteralExpression(opExp.left, left);
 
     if (!std.mem.eql(u8, op, opExp.operator))
         return error.UnexpectedOP;
 
-    try testLiteralExpression(opExp.right.?, right);
+    try testLiteralExpression(opExp.right, right);
+}
+
+test "Function Call" {
+    const allocator = std.testing.allocator;
+    var lexer = Lexer.init("add()");
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    if (program.statements.items.len != 1) {
+        std.log.err("len: {d}", .{program.statements.items.len});
+        return error.NotEnoughStatements;
+    }
 }
 
 test "Function Literal" {
@@ -81,7 +81,7 @@ test "Function Literal" {
 
     for (tests) |x| {
         var lexer = Lexer.init(x.input);
-        var parser = Parser.new(allocator, &lexer);
+        var parser = try Parser.new(allocator, &lexer);
         defer parser.deinit();
 
         const program = try parser.parseProgram(allocator);
@@ -94,29 +94,29 @@ test "Function Literal" {
 
         var stmt = program.statements.items[0].expression_statement;
 
-        var func = stmt.expression.?.function_literal;
+        var func = stmt.expression.function_literal;
 
-        if (func.parameters.?.len != x.len) {
+        if (func.parameters.len != x.len) {
             std.log.err("\n{s}\n", .{x.input});
             return error.WrongParmeterLengh;
         }
 
-        if (!std.mem.eql(u8, func.parameters.?[0].value, "x"))
+        if (!std.mem.eql(u8, func.parameters[0].value, "x"))
             return error.UnexpectedValue;
 
-        if (func.body.?.statements.len != 1)
+        if (func.body.statements.len != 1)
             return error.WrongFunctionBody;
 
-        var body_stmt = func.body.?.statements[0].expression_statement;
+        var body_stmt = func.body.statements[0].expression_statement;
 
-        try testInfixExpression(body_stmt.expression.?, "x", "+", "y");
+        try testInfixExpression(body_stmt.expression, "x", "+", "y");
     }
 }
 
 // test "var x = (((( 10 ))))" {
 //     const allocator = std.testing.allocator;
 //     var lexer = Lexer.init("var x = 10;");
-//     var parser = Parser.new(allocator, &lexer);
+//     var parser =try Parser.new(allocator, &lexer);
 //     defer parser.deinit();
 
 //     const program = try parser.parseProgram(allocator);
@@ -135,7 +135,7 @@ test "Function Literal" {
 test "If Else Expression" {
     const allocator = std.testing.allocator;
     var lexer = Lexer.init("if (x < y) {x} else {y}");
-    var parser = Parser.new(allocator, &lexer);
+    var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram(allocator);
@@ -147,28 +147,28 @@ test "If Else Expression" {
     }
 
     var stmt = program.statements.items[0].expression_statement;
-    var exp = stmt.expression.?.if_expression;
+    var exp = stmt.expression.if_expression;
 
-    try testInfixExpression(exp.condition.?, "x", "<", "y");
+    try testInfixExpression(exp.condition, "x", "<", "y");
 
-    if (exp.consequence.?.statements.len != 1)
+    if (exp.consequence.statements.len != 1)
         return error.ConsequenceIs1Statement;
 
-    var consequence = exp.consequence.?.statements[0].expression_statement;
+    var consequence = exp.consequence.statements[0].expression_statement;
 
-    try testIdentifier(consequence.expression.?, "x");
+    try testIdentifier(consequence.expression, "x");
 
     if (exp.alternative == null)
         return error.AlternativeStatementsWasNotNull;
 
     var alternative = exp.alternative.?.statements[0].expression_statement;
-    try testIdentifier(alternative.expression.?, "y");
+    try testIdentifier(alternative.expression, "y");
 }
 
 test "If Expression" {
     const allocator = std.testing.allocator;
     var lexer = Lexer.init("if (x < y) {x}");
-    var parser = Parser.new(allocator, &lexer);
+    var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram(allocator);
@@ -180,14 +180,14 @@ test "If Expression" {
     }
 
     var stmt = program.statements.items[0].expression_statement;
-    var exp = stmt.expression.?.if_expression;
+    var exp = stmt.expression.if_expression;
 
-    try testInfixExpression(exp.condition.?, "x", "<", "y");
+    try testInfixExpression(exp.condition, "x", "<", "y");
 
-    if (exp.consequence.?.statements.len != 1)
+    if (exp.consequence.statements.len != 1)
         return error.ConsequenceIs1Statement;
 
-    var consequence = exp.consequence.?.statements[0].expression_statement;
+    var consequence = exp.consequence.statements[0].expression_statement;
     _ = consequence;
 
     if (exp.alternative != null)
@@ -197,7 +197,7 @@ test "If Expression" {
 test "Group Exp" {
     const allocator = std.testing.allocator;
     var lexer = Lexer.init("((-(5 + 5) * 5) == 10) != !true");
-    var parser = Parser.new(allocator, &lexer);
+    var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram(allocator);
@@ -209,14 +209,14 @@ test "Group Exp" {
     }
 
     // var stmt = program.statements.items[0].expression_statement;
-    // var exp = stmt.expression.?;
+    // var exp = stmt.expression;
     // std.debug.print("{}", .{exp});
 }
 
 test "eval Boolean" {
     const allocator = std.testing.allocator;
     var lexer = Lexer.init("false");
-    var parser = Parser.new(allocator, &lexer);
+    var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram(allocator);
@@ -228,7 +228,7 @@ test "eval Boolean" {
     }
 
     var stmt = program.statements.items[0].expression_statement;
-    var exp = stmt.expression.?;
+    var exp = stmt.expression;
 
     try std.testing.expect(false == exp.boolean.value);
 }
@@ -248,7 +248,7 @@ test "Boolean" {
 
     for (tests) |x| {
         var lexer = Lexer.init(x.input);
-        var parser = Parser.new(allocator, &lexer);
+        var parser = try Parser.new(allocator, &lexer);
         defer parser.deinit();
 
         const program = try parser.parseProgram(allocator);
@@ -261,15 +261,15 @@ test "Boolean" {
 
         var stmt = program.statements.items[0].expression_statement;
 
-        var exp = stmt.expression.?.infix_expression;
+        var exp = stmt.expression.infix_expression;
 
         const operator = exp.operator;
 
         if (!std.mem.eql(u8, operator, x.op))
             return error.UnexpectedOP;
 
-        const left = exp.left.?.boolean;
-        const right = exp.right.?.boolean;
+        const left = exp.left.boolean;
+        const right = exp.right.boolean;
 
         if (left.value != x.l or right.value != x.r)
             return error.UnexpectedValue;
@@ -297,7 +297,7 @@ test "Parse Infix OP " {
 
     for (tests) |x| {
         var lexer = Lexer.init(x.input);
-        var parser = Parser.new(allocator, &lexer);
+        var parser = try Parser.new(allocator, &lexer);
         defer parser.deinit();
 
         const program = try parser.parseProgram(allocator);
@@ -310,15 +310,15 @@ test "Parse Infix OP " {
 
         var stmt = program.statements.items[0].expression_statement;
 
-        var exp = stmt.expression.?.infix_expression;
+        var exp = stmt.expression.infix_expression;
 
         const operator = exp.operator;
 
         if (!std.mem.eql(u8, operator, x.op))
             return error.UnexpectedOP;
 
-        const left = exp.left.?.integer_literal;
-        const right = exp.right.?.integer_literal;
+        const left = exp.left.integer_literal;
+        const right = exp.right.integer_literal;
 
         if (left.value != x.l or right.value != x.r)
             return error.UnexpectedValue;
@@ -331,7 +331,7 @@ test "Parse Prefix OP (!)" {
     const output = 5;
 
     var lexer = Lexer.init(input);
-    var parser = Parser.new(allocator, &lexer);
+    var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram(allocator);
@@ -344,13 +344,13 @@ test "Parse Prefix OP (!)" {
 
     var stmt = program.statements.items[0].expression_statement;
 
-    var exp = stmt.expression.?.prefix_expression;
+    var exp = stmt.expression.prefix_expression;
 
     if (.@"!" != exp.token.type) {
         return error.UnexpecedOperator;
     }
 
-    var integer = exp.right.?.integer_literal;
+    var integer = exp.right.integer_literal;
 
     if (output != integer.value) {
         return error.UnexpectedValue;
@@ -363,15 +363,15 @@ test "parse Prefix OP (-)" {
     const output = -5;
 
     var lexer = Lexer.init(input);
-    var parser = Parser.new(allocator, &lexer);
+    var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram(allocator);
     defer program.statements.deinit();
 
     // for (program.statements.items) |item| {
-    //     //     std.debug.print("{}\n\n", .{item.expression_statement.expression.?});
-    //     std.debug.print("\n\n{}\n\n", .{item.expression_statement.expression.?.prefix_expression.right.?});
+    //     //     std.debug.print("{}\n\n", .{item.expression_statement.expression});
+    //     std.debug.print("\n\n{}\n\n", .{item.expression_statement.expression.prefix_expression.right});
     // }
 
     if (program.statements.items.len != 1) {
@@ -381,13 +381,13 @@ test "parse Prefix OP (-)" {
 
     var stmt = program.statements.items[0].expression_statement;
 
-    var exp = stmt.expression.?.prefix_expression;
+    var exp = stmt.expression.prefix_expression;
 
     if (.@"-" != exp.token.type) {
         return error.UnexpecedOperator;
     }
 
-    var integer = exp.right.?.integer_literal;
+    var integer = exp.right.integer_literal;
 
     if (output != -integer.value) {
         return error.UnexpectedValue;
@@ -400,7 +400,7 @@ test "Eval Integer Literal Expression" {
 
     var lexer = Lexer.init(input);
 
-    var parser = Parser.new(allocator, &lexer);
+    var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram(allocator);
@@ -417,7 +417,7 @@ test "Eval Integer Literal Expression" {
         return error.ExprectAnExpression;
     }
 
-    const literal = stmt.expression_statement.expression.?.integer_literal;
+    const literal = stmt.expression_statement.expression.integer_literal;
 
     if (5 != literal.value) {
         return error.UnexpectedValue;
@@ -434,7 +434,7 @@ test "eval Expression" {
 
     var lexer = Lexer.init(input);
 
-    var parser = Parser.new(allocator, &lexer);
+    var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram(allocator);
@@ -451,7 +451,7 @@ test "eval Expression" {
         return error.ExprectAnExpression;
     }
 
-    const ident = stmt.expression_statement.expression.?.identifier;
+    const ident = stmt.expression_statement.expression.identifier;
     const value = ident.value;
 
     if (!std.mem.eql(u8, "foobar", value)) {
@@ -510,7 +510,7 @@ test "Parse RETURN statements: Size" {
     ;
 
     var lexer = Lexer.init(input);
-    var parser = Parser.new(allocator, &lexer);
+    var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
     var program = try parser.parseProgram(allocator);
     defer program.statements.deinit();
@@ -526,7 +526,7 @@ test "Parse VAR statements: Size" {
     ;
 
     var lexer = Lexer.init(input);
-    var p = Parser.new(allocator, &lexer);
+    var p = try Parser.new(allocator, &lexer);
     defer p.deinit();
     var program = try p.parseProgram(allocator);
     defer program.statements.deinit();

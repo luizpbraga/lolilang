@@ -45,6 +45,7 @@ pub const Expression = union(enum) {
     prefix_expression: PrefixExpression,
     infix_expression: InfixExpression,
     if_expression: IfExpression,
+    call_expression: CallExpression,
 
     fn expressionNode(self: *const Expression) void {
         _ = self;
@@ -60,8 +61,8 @@ pub const Expression = union(enum) {
 
 pub const IfExpression = struct {
     token: Token,
-    condition: ?*Expression = null,
-    consequence: ?BlockStatement = null,
+    condition: *Expression,
+    consequence: BlockStatement,
     alternative: ?BlockStatement = null,
 
     pub fn tokenLiteral(self: *const IfExpression) []const u8 {
@@ -72,7 +73,7 @@ pub const IfExpression = struct {
 pub const PrefixExpression = struct {
     token: Token,
     operator: []const u8,
-    right: ?*Expression = null,
+    right: *Expression,
 
     pub fn expressionNode() void {}
 
@@ -83,9 +84,9 @@ pub const PrefixExpression = struct {
 
 pub const InfixExpression = struct {
     token: Token,
-    left: ?*Expression = null,
+    left: *Expression,
     operator: []const u8,
-    right: ?*Expression = null,
+    right: *Expression,
 
     pub fn tokenLiteral(self: *const InfixExpression) []const u8 {
         return self.token.literal;
@@ -145,7 +146,7 @@ pub const ReturnStatement = struct {
 
 pub const ExpressionStatement = struct {
     token: Token, // fist token only
-    expression: ?*Expression = null,
+    expression: *Expression,
 
     pub fn statementNode(self: *const ExpressionStatement) void {
         _ = self;
@@ -188,8 +189,18 @@ pub const Boolean = struct {
 
 pub const FunctionLiteral = struct {
     token: Token,
-    parameters: ?[]Identifier = null,
-    body: ?BlockStatement = null,
+    parameters: []Identifier,
+    body: BlockStatement,
+
+    pub fn tokenLiteral(self: *const Boolean) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const CallExpression = struct {
+    token: Token, // (
+    function: *Expression,
+    arguments: []Expression,
 
     pub fn tokenLiteral(self: *const Boolean) []const u8 {
         return self.token.literal;

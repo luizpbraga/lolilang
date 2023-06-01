@@ -24,5 +24,5 @@ pub fn main() !void {
     std.debug.print("{s}", .{file_name});
     const input = try std.fs.cwd().readFileAlloc(allocator, file_name, 1024);
     try Loli.run(allocator, input);
-    std.debug.print("\nloli gos brr\n", .{});
+    std.debug.print("\n\t** loli gos brrr **\n", .{});
 }
