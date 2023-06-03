@@ -33,14 +33,31 @@ pub const Precedence = enum {
     }
 };
 
+const GarbageCollector = struct {
+    allocator: std.mem.Allocator,
+
+    expression: std.ArrayList(*ast.Expression),
+    identifiers: std.ArrayList([]ast.Identifier),
+    statements: std.ArrayList([]ast.Statement),
+    expressions: std.ArrayList([]ast.Expression),
+
+    fn init(allocator: std.mem.Allocator) @This() {
+        // TODO: use AutoHashMap(usize, pointer)
+        return .{
+            .allocator = allocator,
+            .expression = std.ArrayList(*ast.Expression).init(allocator),
+            .identifiers = std.ArrayList([]ast.Identifier).init(allocator),
+            .statements = std.ArrayList([]ast.Statement).init(allocator),
+            .expressions = std.ArrayList([]ast.Expression).init(allocator),
+        };
+    }
+};
+
 lexer: *Lexer,
 cur_token: Token,
 peek_token: Token,
 allocator: std.mem.Allocator,
-exp_trash: std.ArrayList(*ast.Expression),
-stmt_trash: std.ArrayList(ast.Statement),
-iden_trash: std.ArrayList([]ast.Identifier),
-blk_trash: std.ArrayList([]ast.Statement),
+gc: GarbageCollector,
 infix_parse_fns: std.AutoHashMap(Token.TokenType, InfixParseFn),
 prefix_parse_fns: std.AutoHashMap(Token.TokenType, PrefixParseFn),
 
@@ -55,16 +72,8 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) !Self {
         .prefix_parse_fns = prefix_parse_fns,
         .infix_parse_fns = infix_parse_fns,
         .allocator = allocator,
-        .exp_trash = undefined,
-        .stmt_trash = undefined,
-        .blk_trash = undefined,
-        .iden_trash = undefined,
+        .gc = GarbageCollector.init(allocator),
     };
-
-    p.exp_trash = std.ArrayList(*ast.Expression).init(p.allocator);
-    p.stmt_trash = std.ArrayList(ast.Statement).init(p.allocator);
-    p.blk_trash = std.ArrayList([]ast.Statement).init(p.allocator);
-    p.iden_trash = std.ArrayList([]ast.Identifier).init(p.allocator);
 
     p.nextToken();
     p.nextToken();
@@ -94,26 +103,28 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) !Self {
 }
 /// TODO: free infix_parse_fns when it was implemented
 pub fn deinit(self: *Self) void {
-    for (self.exp_trash.items) |f|
+    for (self.gc.expression.items) |f|
         self.allocator.destroy(f);
 
-    for (self.blk_trash.items) |stmt| {
+    for (self.gc.statements.items) |stmt| {
         self.allocator.free(stmt);
     }
     // stmt.deinit();
     // self.allocator.destroy(stmt);
     // }
 
-    for (self.iden_trash.items) |iden| {
+    for (self.gc.identifiers.items) |iden|
         self.allocator.free(iden);
-    }
+
+    for (self.gc.expressions.items) |exp|
+        self.allocator.free(exp);
 
     self.prefix_parse_fns.deinit();
     self.infix_parse_fns.deinit();
-    self.exp_trash.deinit();
-    self.blk_trash.deinit();
-    self.stmt_trash.deinit();
-    self.iden_trash.deinit();
+    self.gc.expression.deinit();
+    self.gc.statements.deinit();
+    self.gc.identifiers.deinit();
+    self.gc.expressions.deinit();
 }
 
 fn registerPrefix(self: *Self, token_type: Token.TokenType, func: PrefixParseFn) !void {
@@ -230,29 +241,36 @@ fn parseExpressionStatement(self: *Self) anyerror!ast.ExpressionStatement {
 
 fn parseExpression(self: *Self, precedence: Precedence) !*ast.Expression {
     const prefix_fn = self.prefix_parse_fns.get(self.cur_token.type) orelse {
-        std.log.warn("** the prefix_fn is: null **\n", .{});
         return error.UnknowPrefixFn;
     };
 
-    var letf_exp = try self.allocator.create(ast.Expression);
-    try self.exp_trash.append(letf_exp);
+    var left_exp = try self.allocator.create(ast.Expression);
+    errdefer self.allocator.destroy(left_exp);
 
-    // letf_exp.* = if (try prefix_fn(self)) |expression| expression else return error.UnknowPrefixFnExpression;
-    letf_exp.* = try prefix_fn(self);
+    left_exp.* = try prefix_fn(self);
+    try self.gc.expression.append(left_exp);
 
     while (!self.peekTokenIs(.@";") and @enumToInt(precedence) < @enumToInt(self.peekPrecedence())) {
-        const infix_fn = self.infix_parse_fns.get(self.peek_token.type) orelse return letf_exp;
+        const infix_fn = self.infix_parse_fns.get(self.peek_token.type) orelse return left_exp;
         self.nextToken();
-        letf_exp.* = try infix_fn(self, letf_exp);
+
+        var new_left_exp = try self.allocator.create(ast.Expression);
+        errdefer self.allocator.destroy(new_left_exp);
+
+        new_left_exp.* = try infix_fn(self, left_exp);
+        try self.gc.expression.append(new_left_exp);
+
+        left_exp.* = new_left_exp.*;
     }
 
-    return letf_exp;
+    return left_exp;
 }
 
 pub fn parseProgram(self: *Self, allocator: std.mem.Allocator) !ast.Program {
-    var program = ast.Program{
-        .statements = std.ArrayList(ast.Statement).init(allocator),
-    };
+    var stmts = std.ArrayList(ast.Statement).init(allocator);
+    errdefer stmts.deinit();
+
+    var program = ast.Program{ .statements = stmts };
 
     var stmt: ast.Statement = undefined;
     while (self.cur_token.type != .eof) {
@@ -302,18 +320,14 @@ fn parsePrefixExpression(self: *Self) anyerror!ast.Expression {
 
     expression.right = try self.parseExpression(Precedence.prefix);
 
-    // if (exp) |e| {
-    //     expression.right = e;
-    // } else {
-    //     std.log.warn("Null: no prefix parse function for {}\n", .{self.cur_token.type});
-    // }
-
     return .{ .prefix_expression = expression };
 }
 
 fn parseInfixExpression(self: *Self, left: *ast.Expression) anyerror!ast.Expression {
     var new_left = try self.allocator.create(ast.Expression);
-    try self.exp_trash.append(new_left);
+    errdefer self.allocator.destroy(new_left);
+
+    try self.gc.expression.append(new_left);
     new_left.* = left.*;
 
     var expression = ast.InfixExpression{
@@ -326,11 +340,6 @@ fn parseInfixExpression(self: *Self, left: *ast.Expression) anyerror!ast.Express
     var precedence = self.currentPrecedence();
 
     self.nextToken();
-
-    // var exp = try self.parseExpression(precedence);
-    // if (exp) |e| {
-    //     expression.right = e;
-    // }
 
     expression.right = try self.parseExpression(precedence);
 
@@ -383,7 +392,7 @@ fn parseBlockStatement(self: *Self) anyerror!ast.BlockStatement {
 
     var stmts_owner = try stmts.toOwnedSlice();
 
-    try self.blk_trash.append(stmts_owner);
+    try self.gc.statements.append(stmts_owner);
 
     block.statements = stmts_owner;
 
@@ -408,7 +417,7 @@ fn parseBlockStatement(self: *Self) anyerror!ast.BlockStatement {
 //     }
 
 //     block.statements = stmts.*;
-//     try self.blk_trash.append(stmts);
+//     try self.gc.statements.append(stmts);
 
 //     return block;
 // }
@@ -468,12 +477,13 @@ fn parseFunctionParameters(self: *Self) anyerror![]ast.Identifier {
 
     var ident_owner = try indentifiers.toOwnedSlice();
 
-    try self.iden_trash.append(ident_owner);
+    try self.gc.identifiers.append(ident_owner);
 
     return ident_owner;
 }
 
 fn parseCallExpression(self: *Self, func: *ast.Expression) anyerror!ast.Expression {
+    defer self.nextToken();
     return .{ .call_expression = .{
         .token = self.cur_token,
         .function = func,
@@ -491,30 +501,26 @@ fn parseCallArguments(self: *Self) anyerror![]ast.Expression {
     }
 
     self.nextToken();
-
     var exp = try self.parseExpression(Precedence.lower);
-
-    // if (exp) |e| {
-    //     try args.append(e.*);
-    //     try self.exp_trash.append(e);
-    // }
-    try args.append(exp.*);
-    try self.exp_trash.append(exp);
+    // try self.gc.expression.append(exp);
+    var exp_ = exp.*;
+    try args.append(exp_);
+    // aqui ele coloca o terveiro
 
     while (self.peekTokenIs(.@",")) {
         self.nextToken();
         self.nextToken();
 
         var exp2 = try self.parseExpression(Precedence.lower);
-        try args.append(exp2.*);
-        try self.exp_trash.append(exp2);
-        // if (exp2) |e| {
-        //     try args.append(e.*);
-        //     try self.exp_trash.append(e);
-        // }
+        var exp2_ = exp2.*;
+        try args.append(exp2_);
+        // try self.gc.expression.append(exp2);
     }
 
     if (!self.peekTokenIs(.@")")) return error.MissingRightParenteses;
 
-    return try args.toOwnedSlice();
+    var args_owned = try args.toOwnedSlice();
+    try self.gc.expressions.append(args_owned);
+
+    return args_owned;
 }
