@@ -20,6 +20,7 @@ pub const Statement = union(enum) {
     var_statement: VarStatement,
     return_statement: ReturnStatement,
     expression_statement: ExpressionStatement,
+    block_statement: BlockStatement,
     program_statement: Program,
 
     fn statementNode(self: *const Statement) void {

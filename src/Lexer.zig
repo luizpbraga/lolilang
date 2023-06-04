@@ -6,6 +6,7 @@ const Self = @This();
 input: []const u8,
 position: usize = 0,
 read_position: usize = 0,
+starting_line_position: usize = 0,
 ch: u8 = 0,
 
 pub fn init(input: []const u8) Self {
@@ -31,7 +32,10 @@ fn peekChar(self: *const Self) u8 {
 }
 
 fn skipWhiteSpace(self: *Self) void {
-    while (self.ch == ' ' or self.ch == '\n' or self.ch == '\t' or self.ch == '\r') self.readChar();
+    while (self.ch == ' ' or self.ch == '\n' or self.ch == '\t' or self.ch == '\r') {
+        if (self.ch == '\n') self.starting_line_position = self.read_position;
+        self.readChar();
+    }
 }
 
 fn skipComments(self: *Self) void {

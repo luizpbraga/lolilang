@@ -1,11 +1,13 @@
 const std = @import("std");
 
-const LolliType = enum { integer, boolean, null };
+const LolliType = enum { integer, boolean, null, @"return" };
 
 pub const Object = union(enum) {
     integer: Integer,
     boolean: Boolean,
     null: Null,
+    @"return": Return,
+    err: Error,
 
     pub fn objType(self: *const Object) LolliType {
         return switch (self.*) {
@@ -36,4 +38,14 @@ pub const Boolean = struct {
 pub const Null = struct {
     value: @TypeOf(null) = null,
     obj_type: LolliType = .null,
+};
+
+pub const Return = struct {
+    value: *const Object = &.{ .null = .{} },
+    obj_type: LolliType = .@"return",
+};
+
+pub const Error = struct {
+    message: []const u8,
+    obj_type: LolliType = .err,
 };

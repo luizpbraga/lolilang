@@ -665,4 +665,6 @@ test "Token test" {
         tok = lexer.nextToken();
         i += 1;
     }
+
+    // std.debug.print("\n{s}", .{input[lexer.starting_line_position..]});
 }
