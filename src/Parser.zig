@@ -173,22 +173,23 @@ fn parseIdentifier(self: *const Self) anyerror!ast.Expression {
     } };
 }
 
-fn parseReturnStatement(self: *Self) ParseError!ast.ReturnStatement {
+fn parseReturnStatement(self: *Self) anyerror!ast.ReturnStatement {
     var stmt = ast.ReturnStatement{
         .token = self.cur_token,
     };
 
     self.nextToken();
 
-    // TODO: parse Expression Value
-    while (!self.curTokenIs(.@";")) {
+    stmt.value = (try self.parseExpression(Precedence.lower)).*;
+
+    if (self.peekTokenIs(.@";")) {
         self.nextToken();
     }
 
     return stmt;
 }
 
-fn parseVarStatement(self: *Self) ParseError!ast.VarStatement {
+fn parseVarStatement(self: *Self) anyerror!ast.VarStatement {
     var stmt = ast.VarStatement{
         .token = self.cur_token,
         .name = undefined,
@@ -209,8 +210,12 @@ fn parseVarStatement(self: *Self) ParseError!ast.VarStatement {
         return error.UnexpectToken;
     }
 
-    // TODO: evaluate the expression before the ';'
-    while (!self.curTokenIs(.@";")) {
+    self.nextToken();
+
+    // TODO: pointer?
+    stmt.value = (try self.parseExpression(Precedence.lower)).*;
+
+    if (self.peekTokenIs(.@";")) {
         self.nextToken();
     }
 

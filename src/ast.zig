@@ -2,7 +2,7 @@ const std = @import("std");
 const Token = @import("Token.zig");
 
 // interface
-pub const Node = union {
+pub const Node = union(enum) {
     expression: Expression,
     statement: Statement,
 
@@ -20,6 +20,7 @@ pub const Statement = union(enum) {
     var_statement: VarStatement,
     return_statement: ReturnStatement,
     expression_statement: ExpressionStatement,
+    program_statement: Program,
 
     fn statementNode(self: *const Statement) void {
         switch (self.*) {
@@ -41,7 +42,6 @@ pub const Expression = union(enum) {
     integer_literal: IntegerLiteral,
     function_literal: FunctionLiteral,
     boolean: Boolean,
-
     prefix_expression: PrefixExpression,
     infix_expression: InfixExpression,
     if_expression: IfExpression,
