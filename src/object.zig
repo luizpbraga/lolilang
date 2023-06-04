@@ -1,6 +1,7 @@
 const std = @import("std");
+const ast = @import("ast.zig");
 
-const LolliType = enum { integer, boolean, null, @"return" };
+const LolliType = enum { integer, boolean, null, @"return", err, function };
 
 pub const Object = union(enum) {
     integer: Integer,
@@ -8,6 +9,7 @@ pub const Object = union(enum) {
     null: Null,
     @"return": Return,
     err: Error,
+    function: Function,
 
     pub fn objType(self: *const Object) LolliType {
         return switch (self.*) {
@@ -45,7 +47,50 @@ pub const Return = struct {
     obj_type: LolliType = .@"return",
 };
 
+/// TODO
 pub const Error = struct {
     message: []const u8,
     obj_type: LolliType = .err,
+};
+
+pub const Function = struct {
+    obj_type: LolliType = .function,
+    parameters: []ast.Identifier,
+    body: *ast.BlockStatement,
+    env: *Environment,
+};
+
+pub const Environment = struct {
+    store: std.StringHashMap(Object),
+    outer: ?*Environment = null,
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) @This() {
+        return .{
+            .allocator = allocator,
+            .store = std.StringHashMap(Object).init(allocator),
+            .outer = null,
+        };
+    }
+
+    pub fn newCloseEnv(outer: *Environment) Environment {
+        _ = outer;
+    }
+
+    pub fn newEnv() Environment {
+        // TODO: 145
+    }
+
+    pub fn deinit(self: *Environment) void {
+        self.store.deinit();
+    }
+
+    pub fn get(self: *Environment, name: []const u8) ?Object {
+        return self.store.get(name);
+    }
+
+    pub fn set(self: *Environment, name: []const u8, obj: Object) !Object {
+        try self.store.put(name, obj);
+        return obj;
+    }
 };
