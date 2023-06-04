@@ -33,7 +33,7 @@ fn testIntegerLiteral(exp: *ast.Expression, value: i64) !void {
 }
 
 fn testLiteralExpression(exp: *ast.Expression, expected: anytype) !void {
-    if (@TypeOf(expected) == i64) {
+    if (@TypeOf(expected) == i64 or @TypeOf(expected) == comptime_int) {
         try testIntegerLiteral(exp, expected);
     } else {
         try testIdentifier(exp, expected);
@@ -53,7 +53,7 @@ fn testInfixExpression(exp: *ast.Expression, left: anytype, op: []const u8, righ
 
 test "Function Call" {
     const allocator = std.testing.allocator;
-    var lexer = Lexer.init("add(x, y);");
+    var lexer = Lexer.init("add(x, 1 + 2);");
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
@@ -64,6 +64,15 @@ test "Function Call" {
         std.log.err("len: {d}", .{program.statements.items.len});
         return error.NotEnoughStatements;
     }
+    var stmt = program.statements.items[0].expression_statement;
+
+    var exp = stmt.expression.call_expression;
+
+    if (exp.arguments.len != 2)
+        return error.WrongNumberOfArguments;
+
+    try testLiteralExpression(&exp.arguments[0], "x");
+    try testInfixExpression(&exp.arguments[1], 1, "+", 2);
 }
 
 // test "Function Literal" {
