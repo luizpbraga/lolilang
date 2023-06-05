@@ -24,25 +24,16 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
                 .if_expression => |*if_exp| try evalIfExpression(allocator, if_exp, env),
 
                 .identifier => |iden| env.get(iden.value).?,
-                .function_literal => |func| blk: {
-                    var fl = object.Object{
-                        .function = .{
-                            .parameters = func.parameters,
-                            .body = func.body,
-                            .env = env,
-                        },
-                    };
-
-                    break :blk fl;
+                .function_literal => |func| return .{
+                    .function = .{
+                        .parameters = func.parameters,
+                        .body = func.body,
+                        .env = env,
+                    },
                 },
                 .call_expression => |call| blk: {
-                    // REMOVE THIS WHEN call.function WAS FEXED
-
                     var func = try eval(allocator, .{ .expression = call.function.* }, env);
                     var args = try evalExpression(allocator, call.arguments, env);
-
-                    // if (args.len == 1) return args[0];
-
                     break :blk applyFunction(allocator, func, args);
                 },
                 // else => createNull(),
@@ -70,18 +61,19 @@ fn applyFunction(allocator: std.mem.Allocator, func: object.Object, args: []obje
     // TODO 147
     var function = func.function;
     var extended_env = try extendFunctionEnv(&function, args);
+    defer extended_env.deinit();
     var evaluated = try eval(allocator, .{ .statement = .{ .block_statement = function.body } }, &extended_env);
     return unwrapReturnValue(evaluated);
 }
 
 fn extendFunctionEnv(func: *object.Function, args: []object.Object) anyerror!object.Environment {
     // TODO: sipa tem que alocar env
-    var env = object.Environment.newEncloseEnv(func.env);
+    var enclose_env = object.Environment.newEncloseEnv(func.env);
 
     for (func.parameters, args) |param, arg|
-        _ = try env.set(param.value, arg);
+        _ = try enclose_env.set(param.value, arg);
 
-    return env;
+    return enclose_env;
 }
 
 fn unwrapReturnValue(obj: object.Object) object.Object {
@@ -218,10 +210,10 @@ test "function call " {
     try std.testing.expect(obj.integer.value == -5);
 }
 
-test "function Obj" {
+test "function Obj 0" {
     const allocator = std.testing.allocator;
 
-    const input = "var g = fn(x, y){ return -10 + x + y; }; g(1,1); ";
+    const input = "fn(x, y){ return -10 + x + y; }(1,2); ";
 
     var lexer = Lexer.init(input);
     var parser = try Parser.new(allocator, &lexer);
@@ -235,7 +227,27 @@ test "function Obj" {
 
     var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
 
-    try std.testing.expect(obj.integer.value == -10 + 1 + 1);
+    try std.testing.expect(obj.integer.value == -10 + 1 + 2);
+}
+
+test "function Obj 1" {
+    const allocator = std.testing.allocator;
+
+    const input = "var g = fn(x, y){ return -10 + x + y; }; g(1,2); ";
+
+    var lexer = Lexer.init(input);
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+
+    try std.testing.expect(obj.integer.value == -10 + 1 + 2);
 }
 
 test "int" {

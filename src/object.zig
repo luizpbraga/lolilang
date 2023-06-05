@@ -64,16 +64,15 @@ pub const Function = struct {
 };
 
 pub const Environment = struct {
+    allocator: std.mem.Allocator,
     store: std.StringHashMap(Object),
     outer: ?*Environment = null,
-    allocator: std.mem.Allocator,
     allocated_obj: std.ArrayList([]Object),
 
     pub fn init(allocator: std.mem.Allocator) @This() {
         return .{
             .allocator = allocator,
             .store = std.StringHashMap(Object).init(allocator),
-            .outer = null,
             .allocated_obj = std.ArrayList([]Object).init(allocator),
         };
     }
@@ -85,16 +84,11 @@ pub const Environment = struct {
     }
 
     pub fn deinit(self: *Environment) void {
-        self.store.deinit();
-        for (self.allocated_obj.items) |item| self.allocator.free(item);
-        self.allocated_obj.deinit();
-
-        while (self.outer) |outer| {
-            outer.deinit();
-            for (outer.allocated_obj.items) |item| self.allocator.free(item);
-            outer.allocated_obj.deinit();
-            self.outer = outer.outer;
+        for (self.allocated_obj.items) |item| {
+            self.allocator.free(item);
         }
+        self.allocated_obj.deinit();
+        self.store.deinit();
     }
 
     pub fn get(self: *Environment, name: []const u8) ?Object {
