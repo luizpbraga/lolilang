@@ -1,6 +1,9 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 
+// allocator: std.mem.Allocator,
+// obj_trash: std.ArrayList([]Object),
+
 const LolliType = enum { integer, boolean, null, @"return", err, function };
 
 pub const Object = union(enum) {
@@ -56,7 +59,7 @@ pub const Error = struct {
 pub const Function = struct {
     obj_type: LolliType = .function,
     parameters: []ast.Identifier,
-    body: *ast.BlockStatement,
+    body: ast.BlockStatement,
     env: *Environment,
 };
 
@@ -64,25 +67,34 @@ pub const Environment = struct {
     store: std.StringHashMap(Object),
     outer: ?*Environment = null,
     allocator: std.mem.Allocator,
+    allocated_obj: std.ArrayList([]Object),
 
     pub fn init(allocator: std.mem.Allocator) @This() {
         return .{
             .allocator = allocator,
             .store = std.StringHashMap(Object).init(allocator),
             .outer = null,
+            .allocated_obj = std.ArrayList([]Object).init(allocator),
         };
     }
 
-    pub fn newCloseEnv(outer: *Environment) Environment {
-        _ = outer;
-    }
-
-    pub fn newEnv() Environment {
-        // TODO: 145
+    pub fn newEncloseEnv(outer: *Environment) Environment {
+        var env = Environment.init(outer.allocator);
+        env.outer = outer;
+        return env;
     }
 
     pub fn deinit(self: *Environment) void {
         self.store.deinit();
+        for (self.allocated_obj.items) |item| self.allocator.free(item);
+        self.allocated_obj.deinit();
+
+        while (self.outer) |outer| {
+            outer.deinit();
+            for (outer.allocated_obj.items) |item| self.allocator.free(item);
+            outer.allocated_obj.deinit();
+            self.outer = outer.outer;
+        }
     }
 
     pub fn get(self: *Environment, name: []const u8) ?Object {

@@ -6,77 +6,106 @@ const Lexer = @import("Lexer.zig");
 const Parser = @import("Parser.zig");
 const TokenType = @import("Token.zig").TokenType;
 
-pub fn eval(node: ast.Node, env: *object.Environment) anyerror!object.Object {
+pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environment) anyerror!object.Object {
     switch (node) {
         .expression => |exp| {
             return switch (exp) {
                 .boolean => |b| .{ .boolean = .{ .value = b.value } },
                 .integer_literal => |i| .{ .integer = .{ .value = i.value } },
                 .prefix_expression => |pre| blk: {
-                    const right = try eval(.{ .expression = pre.right.* }, env);
+                    const right = try eval(allocator, .{ .expression = pre.right.* }, env);
                     break :blk evalPrefixExpression(pre.operator, right);
                 },
                 .infix_expression => |pre| blk: {
-                    const left = try eval(.{ .expression = pre.left.* }, env);
-                    const right = try eval(.{ .expression = pre.right.* }, env);
+                    const left = try eval(allocator, .{ .expression = pre.left.* }, env);
+                    const right = try eval(allocator, .{ .expression = pre.right.* }, env);
                     break :blk evalInfixExpression(pre.operator, left, right);
                 },
-                .if_expression => |*if_exp| try evalIfExpression(if_exp, env),
+                .if_expression => |*if_exp| try evalIfExpression(allocator, if_exp, env),
 
                 .identifier => |iden| env.get(iden.value).?,
-                .function_literal => |func| .{
-                    .function = .{
-                        .parameters = func.parameters,
-                        .body = &func.body,
-                        .env = env,
-                    },
+                .function_literal => |func| blk: {
+                    var fl = object.Object{
+                        .function = .{
+                            .parameters = func.parameters,
+                            .body = func.body,
+                            .env = env,
+                        },
+                    };
+
+                    break :blk fl;
                 },
                 .call_expression => |call| blk: {
-                    var func = eval(.{ .function_literal = .{ .function = call.function } }, env);
+                    // REMOVE THIS WHEN call.function WAS FEXED
 
-                    var args = evalExpression(call.arguments, env);
+                    var func = try eval(allocator, .{ .expression = call.function.* }, env);
+                    var args = try evalExpression(allocator, call.arguments, env);
 
-                    if (args.len == 1) return args[0];
+                    // if (args.len == 1) return args[0];
 
-                    break :blk applyFunction(func, args);
+                    break :blk applyFunction(allocator, func, args);
                 },
                 // else => createNull(),
             };
         },
         .statement => |stmt| {
             return switch (stmt) {
-                .program_statement => |program| try evalProgram(program.statements.items, env),
-                .block_statement => |block| try evalBlockStatement(block.statements, env),
-                .expression_statement => |exp_stmt| eval(.{ .expression = exp_stmt.expression.* }, env),
+                .program_statement => |program| try evalProgram(allocator, program.statements.items, env),
+                .block_statement => |block| try evalBlockStatement(allocator, block.statements, env),
+                .expression_statement => |exp_stmt| eval(allocator, .{ .expression = exp_stmt.expression.* }, env),
                 .var_statement => |var_stmt| blk: {
-                    var val = try eval(.{ .expression = var_stmt.value.? }, env);
+                    var val = try eval(allocator, .{ .expression = var_stmt.value.? }, env);
                     break :blk try env.set(var_stmt.name.value, val);
                 },
                 .return_statement => |ret_stmt| blk: {
                     const exp = if (ret_stmt.value) |exp| exp else return createNull();
-                    break :blk .{ .@"return" = .{ .value = &(try eval(.{ .expression = exp }, env)) } };
+                    break :blk .{ .@"return" = .{ .value = &(try eval(allocator, .{ .expression = exp }, env)) } };
                 },
             };
         },
     }
 }
 
-fn applyFunction(func: object.Object, args: []object.Object) object.Object {
-    _ = args;
-    _ = func;
+fn applyFunction(allocator: std.mem.Allocator, func: object.Object, args: []object.Object) !object.Object {
     // TODO 147
+    var function = func.function;
+    var extended_env = try extendFunctionEnv(&function, args);
+    var evaluated = try eval(allocator, .{ .statement = .{ .block_statement = function.body } }, &extended_env);
+    return unwrapReturnValue(evaluated);
 }
 
-fn evalExpression(exps: []ast.Expression, env: *object.Environment) []object.Object {
+fn extendFunctionEnv(func: *object.Function, args: []object.Object) anyerror!object.Environment {
+    // TODO: sipa tem que alocar env
+    var env = object.Environment.newEncloseEnv(func.env);
+
+    for (func.parameters, args) |param, arg|
+        _ = try env.set(param.value, arg);
+
+    return env;
+}
+
+fn unwrapReturnValue(obj: object.Object) object.Object {
+    return if (obj == .@"return") obj.@"return".value.* else obj;
+}
+
+fn evalExpression(allocator: std.mem.Allocator, exps: []ast.Expression, env: *object.Environment) ![]object.Object {
     // TODO 144
-    _ = env;
-    _ = exps;
+    var result = std.ArrayList(object.Object).init(allocator);
+    errdefer result.deinit();
+    for (exps) |e| {
+        var evaluated = try eval(allocator, .{ .expression = e }, env);
+        try result.append(evaluated);
+    }
+    var result_owned = try result.toOwnedSlice();
+    try env.allocated_obj.append(result_owned);
+
+    return result_owned;
 }
 
-fn evalProgram(stmts: []ast.Statement, env: *object.Environment) anyerror!object.Object {
+fn evalProgram(allocator: std.mem.Allocator, stmts: []ast.Statement, env: *object.Environment) anyerror!object.Object {
     var result: object.Object = undefined;
     for (stmts) |statement| {
-        result = try eval(.{ .statement = statement }, env);
+        result = try eval(allocator, .{ .statement = statement }, env);
         switch (result) {
             .@"return" => |ret| return ret.value.*,
             else => {},
@@ -85,10 +114,10 @@ fn evalProgram(stmts: []ast.Statement, env: *object.Environment) anyerror!object
     return result;
 }
 
-fn evalBlockStatement(stmts: []ast.Statement, env: *object.Environment) anyerror!object.Object {
+fn evalBlockStatement(allocator: std.mem.Allocator, stmts: []ast.Statement, env: *object.Environment) anyerror!object.Object {
     var result: object.Object = undefined;
     for (stmts) |statement| {
-        result = try eval(.{ .statement = statement }, env);
+        result = try eval(allocator, .{ .statement = statement }, env);
         switch (result) {
             .@"return" => return result,
             else => {},
@@ -97,10 +126,10 @@ fn evalBlockStatement(stmts: []ast.Statement, env: *object.Environment) anyerror
     return result;
 }
 
-fn evalStatement(stmts: []ast.Statement, env: *object.Environment) anyerror!object.Object {
+fn evalStatement(allocator: std.mem.Allocator, stmts: []ast.Statement, env: *object.Environment) anyerror!object.Object {
     var result: object.Object = undefined;
     for (stmts) |statement| {
-        result = try eval(.{ .statement = statement }, env);
+        result = try eval(allocator, .{ .statement = statement }, env);
         switch (result) {
             .@"return" => |ret| return ret.value.*,
             else => {},
@@ -113,17 +142,17 @@ fn createNull() object.Object {
     return .{ .null = object.Null{} };
 }
 
-fn evalIfExpression(ie: *const ast.IfExpression, env: *object.Environment) anyerror!object.Object {
-    const condition = try eval(.{ .expression = ie.condition.* }, env);
+fn evalIfExpression(allocator: std.mem.Allocator, ie: *const ast.IfExpression, env: *object.Environment) anyerror!object.Object {
+    const condition = try eval(allocator, .{ .expression = ie.condition.* }, env);
 
     if (condition != .boolean) return createNull();
 
     if (condition.boolean.value) {
         // { block statements if}
-        return try eval(.{ .statement = .{ .block_statement = ie.consequence } }, env);
+        return try eval(allocator, .{ .statement = .{ .block_statement = ie.consequence } }, env);
     } else if (ie.alternative) |alternative| {
         // { block statement else }
-        return try eval(.{ .statement = .{ .block_statement = alternative } }, env);
+        return try eval(allocator, .{ .statement = .{ .block_statement = alternative } }, env);
     }
 
     return createNull();
@@ -169,6 +198,46 @@ fn evalPrefixExpression(op: []const u8, right: object.Object) object.Object {
     return createNull();
 }
 
+test "function call " {
+    const allocator = std.testing.allocator;
+    var lexer = Lexer.init(
+        \\var f = fn(){ return -5 };
+        \\f();
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+
+    try std.testing.expect(obj.integer.value == -5);
+}
+
+test "function Obj" {
+    const allocator = std.testing.allocator;
+
+    const input = "var g = fn(x, y){ return -10 + x + y; }; g(1,1); ";
+
+    var lexer = Lexer.init(input);
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+
+    try std.testing.expect(obj.integer.value == -10 + 1 + 1);
+}
+
 test "int" {
     const allocator = std.testing.allocator;
     var lexer = Lexer.init("-69 - 1");
@@ -189,7 +258,7 @@ test "int" {
 
     var node = ast.Node{ .expression = exp.* };
 
-    var obj = try eval(node, &env);
+    var obj = try eval(allocator, node, &env);
 
     try std.testing.expect(obj.integer.value == -69 - 1);
 }
@@ -213,7 +282,7 @@ test "bool" {
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
-    var obj = try eval(node, &env);
+    var obj = try eval(allocator, node, &env);
 
     try std.testing.expect(obj.boolean.value == (!!true == true));
 }
@@ -245,7 +314,7 @@ test "infix int" {
 
         var env = object.Environment.init(allocator);
         defer env.deinit();
-        var obj = try eval(node, &env);
+        var obj = try eval(allocator, node, &env);
 
         try std.testing.expect(obj.integer.value == x.value);
     }
@@ -279,7 +348,7 @@ test "infix bool" {
 
         var env = object.Environment.init(allocator);
         defer env.deinit();
-        var obj = try eval(node, &env);
+        var obj = try eval(allocator, node, &env);
         try std.testing.expect(obj.boolean.value == x.value);
     }
 }
@@ -314,7 +383,7 @@ test "if-else expression" {
 
         var env = object.Environment.init(allocator);
         defer env.deinit();
-        var obj = try eval(node, &env);
+        var obj = try eval(allocator, node, &env);
 
         switch (obj) {
             .integer => |int| try std.testing.expect(int.value == x.value),
@@ -327,7 +396,7 @@ test "if-else expression" {
 test "return" {
     const allocator = std.testing.allocator;
     var lexer = Lexer.init(
-        \\if (10 > 1) { if (10 > 1) { return 10; } return 1; }
+        \\if (10 > 1) { if (10 > 1) { return -10; } return 1; }
     );
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
@@ -343,18 +412,18 @@ test "return" {
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
-    var obj = try eval(node, &env);
+    var obj = try eval(allocator, node, &env);
 
     var int = obj.@"return".value.integer;
 
-    try std.testing.expect(int.value == 10);
+    try std.testing.expect(int.value == -10);
 }
 
 test "env" {
     const allocator = std.testing.allocator;
     var lexer = Lexer.init(
-        \\var x = 10; 
-        \\var y = 2 * x + if (true) {10} else {-1}; 
+        \\var x = 10;
+        \\var y = 2 * x + if (true) {10} else {-1};
         \\return y;
     );
     var parser = try Parser.new(allocator, &lexer);
@@ -366,29 +435,7 @@ test "env" {
     var env = object.Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(.{ .statement = .{ .program_statement = program } }, &env);
-
-    try std.testing.expect(obj.integer.value == 30);
-}
-test "function " {
-    const allocator = std.testing.allocator;
-    var lexer = Lexer.init(
-        \\var foo = fn(x) { 
-        \\  y = 2 * x + if (true) {10} else {-1}; 
-        \\  return y;
-        \\};
-        \\foo(10);
-    );
-    var parser = try Parser.new(allocator, &lexer);
-    defer parser.deinit();
-
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
-
-    var env = object.Environment.init(allocator);
-    defer env.deinit();
-
-    var obj = try eval(.{ .statement = .{ .program_statement = program } }, &env);
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
 
     try std.testing.expect(obj.integer.value == 30);
 }

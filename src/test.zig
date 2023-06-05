@@ -59,6 +59,35 @@ fn testInfixExpression(exp: *ast.Expression, left: anytype, op: []const u8, righ
     try testLiteralExpression(opExp.right, right);
 }
 
+// test "Function Call 2" {
+//     const allocator = std.testing.allocator;
+//     var lexer = Lexer.init("fn(x, y){ 1 + 2 }(1,2);");
+//     var parser = try Parser.new(allocator, &lexer);
+//     defer parser.deinit();
+
+//     const program = try parser.parseProgram(allocator);
+//     defer program.statements.deinit();
+
+//     if (program.statements.items.len != 1) {
+//         std.log.err("len: {d}", .{program.statements.items.len});
+//         return error.NotEnoughStatements;
+//     }
+//     var stmt = program.statements.items[0].expression_statement;
+
+//     var exp = stmt.expression.call_expression;
+
+//     if (exp.arguments.len != 2)
+//         return error.WrongNumberOfArguments;
+
+//     try testLiteralExpression(&exp.arguments[0], 1);
+//     try testLiteralExpression(&exp.arguments[1], 2);
+
+//     // TODO: reimplement call expressions
+//     // this should not be allowed:
+//     // std.debug.print("{any}\n", .{exp.function.call_expression.function.call_expression.function.call_expression.function.call_expression.function.call_expression});
+//     // try testInfixExpression(&exp.arguments[1], 1, "+", 2);
+// }
+
 test "Function Call" {
     const allocator = std.testing.allocator;
     var lexer = Lexer.init("add(x, 1 + 2);");
@@ -81,6 +110,8 @@ test "Function Call" {
 
     try testLiteralExpression(&exp.arguments[0], "x");
     try testInfixExpression(&exp.arguments[1], 1, "+", 2);
+
+    try testIdentifier(exp.function, "add");
 }
 
 test "Function Literal" {

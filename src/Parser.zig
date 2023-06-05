@@ -255,7 +255,9 @@ fn parseExpression(self: *Self, precedence: Precedence) !*ast.Expression {
     left_exp.* = try prefix_fn(self);
     try self.gc.expression.append(left_exp);
 
-    while (!self.peekTokenIs(.@";") and @enumToInt(precedence) < @enumToInt(self.peekPrecedence())) {
+    while (!self.peekTokenIs(.@";") and
+        @enumToInt(precedence) < @enumToInt(self.peekPrecedence()))
+    {
         const infix_fn = self.infix_parse_fns.get(self.peek_token.type) orelse return left_exp;
         self.nextToken();
 
@@ -270,7 +272,34 @@ fn parseExpression(self: *Self, precedence: Precedence) !*ast.Expression {
 
     return left_exp;
 }
+// fn parseExpression(self: *Self, precedence: Precedence) !*ast.Expression {
+//     const prefix_fn = self.prefix_parse_fns.get(self.cur_token.type) orelse {
+//         return error.UnknowPrefixFn;
+//     };
 
+//     var left_exp = try self.allocator.create(ast.Expression);
+//     errdefer self.allocator.destroy(left_exp);
+
+//     left_exp.* = try prefix_fn(self);
+//     try self.gc.expression.append(left_exp);
+
+//     while (!self.peekTokenIs(.@";") and
+//         @enumToInt(precedence) < @enumToInt(self.peekPrecedence()))
+//     {
+//         const infix_fn = self.infix_parse_fns.get(self.peek_token.type) orelse return left_exp;
+//         self.nextToken();
+
+//         // var new_left_exp = try self.allocator.create(ast.Expression);
+//         // errdefer self.allocator.destroy(new_left_exp);
+
+//         var new_left_exp = try infix_fn(self, left_exp);
+//         // try self.gc.expression.append(new_left_exp);
+
+//         left_exp.* = new_left_exp;
+//     }
+
+//     return left_exp;
+// }
 pub fn parseProgram(self: *Self, allocator: std.mem.Allocator) !ast.Program {
     var stmts = std.ArrayList(ast.Statement).init(allocator);
     errdefer stmts.deinit();
@@ -488,12 +517,17 @@ fn parseFunctionParameters(self: *Self) anyerror![]ast.Identifier {
 }
 
 fn parseCallExpression(self: *Self, func: *ast.Expression) anyerror!ast.Expression {
-    defer self.nextToken();
-    return .{ .call_expression = .{
+    var func_ = try self.allocator.create(ast.Expression);
+    func_.* = func.*;
+    try self.gc.expression.append(func_);
+
+    var call = .{ .call_expression = .{
         .token = self.cur_token,
-        .function = func,
+        .function = func_,
         .arguments = try self.parseCallArguments(),
     } };
+
+    return call;
 }
 
 fn parseCallArguments(self: *Self) anyerror![]ast.Expression {
@@ -507,10 +541,8 @@ fn parseCallArguments(self: *Self) anyerror![]ast.Expression {
 
     self.nextToken();
     var exp = try self.parseExpression(Precedence.lower);
-    // try self.gc.expression.append(exp);
     var exp_ = exp.*;
     try args.append(exp_);
-    // aqui ele coloca o terveiro
 
     while (self.peekTokenIs(.@",")) {
         self.nextToken();
@@ -519,10 +551,9 @@ fn parseCallArguments(self: *Self) anyerror![]ast.Expression {
         var exp2 = try self.parseExpression(Precedence.lower);
         var exp2_ = exp2.*;
         try args.append(exp2_);
-        // try self.gc.expression.append(exp2);
     }
 
-    if (!self.peekTokenIs(.@")")) return error.MissingRightParenteses;
+    if (!self.expectPeek(.@")")) return error.MissingRightParenteses;
 
     var args_owned = try args.toOwnedSlice();
     try self.gc.expressions.append(args_owned);

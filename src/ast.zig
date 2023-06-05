@@ -39,10 +39,11 @@ pub const Statement = union(enum) {
 
 /// implements Node,
 pub const Expression = union(enum) {
-    identifier: Identifier,
     integer_literal: IntegerLiteral,
-    function_literal: FunctionLiteral,
     boolean: Boolean,
+    identifier: Identifier,
+    function_literal: FunctionLiteral,
+
     prefix_expression: PrefixExpression,
     infix_expression: InfixExpression,
     if_expression: IfExpression,
@@ -200,7 +201,7 @@ pub const FunctionLiteral = struct {
 
 pub const CallExpression = struct {
     token: Token, // (
-    function: *Expression,
+    function: *Expression, // Identifier or FunctionLiteral
     arguments: []Expression,
 
     pub fn tokenLiteral(self: *const Boolean) []const u8 {
