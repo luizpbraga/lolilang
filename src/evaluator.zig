@@ -13,6 +13,10 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
                 .boolean => |b| .{ .boolean = .{ .value = b.value } },
                 .integer_literal => |i| .{ .integer = .{ .value = i.value } },
                 .string_literal => |i| .{ .string = .{ .value = i.value } },
+                .array_literal => |array| bkl: {
+                    var elements = try evalExpression(allocator, array.elements, env);
+                    break :bkl .{ .array = .{ .elements = elements } };
+                },
                 .prefix_expression => |pre| blk: {
                     const right = try eval(allocator, .{ .expression = pre.right.* }, env);
                     break :blk evalPrefixExpression(pre.operator, right);
@@ -37,7 +41,12 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
                     var args = try evalExpression(allocator, call.arguments, env);
                     break :blk applyFunction(allocator, func, args);
                 },
-                // else => createNull(),
+
+                .index_expression => |idx| blk: {
+                    const left = try eval(allocator, .{ .expression = idx.left.* }, env);
+                    var index = try eval(allocator, .{ .expression = idx.index.* }, env);
+                    break :blk evalIndexExpression(left, index);
+                },
             };
         },
         .statement => |stmt| {
@@ -200,6 +209,27 @@ fn evalPrefixExpression(op: []const u8, right: object.Object) object.Object {
     return createNull();
 }
 
+fn evalIndexExpression(left: object.Object, index: object.Object) !object.Object {
+    return if (left.objType() == .array and index.objType() == .integer)
+        evalArrayIndexExpression(left, index)
+    else
+        error.IndexOPNotSupported;
+}
+
+fn evalArrayIndexExpression(array: object.Object, index: object.Object) !object.Object {
+    const arr_obj = array.array;
+
+    const idx = @intCast(usize, index.integer.value);
+
+    const max = arr_obj.elements.len - 1;
+
+    if (idx < 0 or idx > max) {
+        return createNull();
+    }
+
+    return arr_obj.elements[idx];
+}
+
 test "code example" {
     const allocator = std.testing.allocator;
     var lexer = Lexer.init(
@@ -222,6 +252,70 @@ test "code example" {
     var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
 
     try std.testing.expect(obj.integer.value == 9);
+}
+
+test "Array Literal" {
+    const allocator = std.testing.allocator;
+    var lexer = Lexer.init("{1, 2, 3}");
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+
+    var array = obj.array;
+    try std.testing.expect(array.elements.len == 3);
+
+    for (array.elements, [_]i64{ 1, 2, 3 }) |a, b| {
+        try std.testing.expect(a.integer.value == b);
+    }
+}
+
+test "Array Index" {
+    const allocator = std.testing.allocator;
+    var lexer = Lexer.init("{1, 2, 3}[0]");
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+
+    var integer = obj.integer;
+
+    try std.testing.expect(integer.value == 1);
+}
+
+test "Array Index 2" {
+    const allocator = std.testing.allocator;
+    var lexer = Lexer.init(
+        \\var array = {1, 2, 3};
+        \\var idx = 0;
+        \\array[idx] == 1;
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+
+    var boole = obj.boolean;
+
+    try std.testing.expect(boole.value == true);
 }
 
 test "function call " {

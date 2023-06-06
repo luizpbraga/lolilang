@@ -4,13 +4,14 @@ const ast = @import("ast.zig");
 // allocator: std.mem.Allocator,
 // obj_trash: std.ArrayList([]Object),
 
-const LolliType = enum { integer, string, boolean, null, @"return", err, function };
+const LolliType = enum { integer, string, array, boolean, null, @"return", err, function };
 
 pub const Object = union(enum) {
     integer: Integer,
     boolean: Boolean,
     string: String,
     null: Null,
+    array: Array,
     @"return": Return,
     err: Error,
     function: Function,
@@ -44,6 +45,11 @@ pub const String = struct {
 pub const Boolean = struct {
     value: bool,
     obj_type: LolliType = .boolean,
+};
+
+pub const Array = struct {
+    obj_type: LolliType = .array,
+    elements: []Object,
 };
 
 pub const Null = struct {

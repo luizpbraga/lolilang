@@ -3,6 +3,7 @@ const Lexer = @import("Lexer.zig");
 const Parser = @import("Parser.zig");
 const ast = @import("ast.zig");
 const TokenType = @import("Token.zig").TokenType;
+const allocator = std.testing.allocator;
 
 fn testIdentifier(exp: *ast.Expression, value: anytype) !void {
     if (@TypeOf(value) == bool) {
@@ -58,7 +59,6 @@ fn testInfixExpression(exp: *ast.Expression, left: anytype, op: []const u8, righ
 }
 
 test "Function Call 2" {
-    const allocator = std.testing.allocator;
     var lexer = Lexer.init("fn(x, y){ 1 + 2 }(1,2);");
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
@@ -84,7 +84,6 @@ test "Function Call 2" {
 }
 
 test "parse String" {
-    const allocator = std.testing.allocator;
     var lexer = Lexer.init(
         \\"bruh"
     );
@@ -105,8 +104,55 @@ test "parse String" {
     try std.testing.expect(std.mem.eql(u8, "bruh", exp.value));
 }
 
+test "array literal" {
+    var lexer = Lexer.init(
+        \\{ 1, true, "Ola", fn(){ return 0; }() };
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    if (program.statements.items.len != 1) {
+        std.log.err("len: {d}", .{program.statements.items.len});
+        return error.NotEnoughStatements;
+    }
+
+    var stmt = program.statements.items[0].expression_statement;
+    var exp = stmt.expression.array_literal;
+
+    try std.testing.expect(exp.elements.len == 4);
+    try std.testing.expect(exp.elements[0] == .integer_literal);
+    try std.testing.expect(exp.elements[1] == .boolean);
+    try std.testing.expect(exp.elements[2] == .string_literal);
+    try std.testing.expect(exp.elements[3] == .call_expression);
+}
+
+test "Index" {
+    var lexer = Lexer.init(
+        \\myArray[1];
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    if (program.statements.items.len != 1) {
+        std.log.err("len: {d}", .{program.statements.items.len});
+        return error.NotEnoughStatements;
+    }
+
+    var stmt = program.statements.items[0].expression_statement;
+    var exp = stmt.expression.index_expression;
+
+    // TODO: fix
+    try testIdentifier(exp.left, "myArray");
+    try testIntegerLiteral(exp.index, 1);
+}
+
 test "Function Call" {
-    const allocator = std.testing.allocator;
     var lexer = Lexer.init("add(x, 1 + 2);");
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
@@ -132,8 +178,6 @@ test "Function Call" {
 }
 
 test "Function Literal" {
-    const allocator = std.testing.allocator;
-
     const tests = [_]struct {
         input: []const u8,
         len: usize,
@@ -179,7 +223,6 @@ test "Function Literal" {
 }
 
 //// test "var x = (((( 10 ))))" {
-////     const allocator = std.testing.allocator;
 ////     var lexer = Lexer.init("var x = 10;");
 ////     var parser =try Parser.new(allocator, &lexer);
 ////     defer parser.deinit();
@@ -198,7 +241,6 @@ test "Function Literal" {
 //// }
 
 test "If Else Expression" {
-    const allocator = std.testing.allocator;
     var lexer = Lexer.init(
         \\\\nenem
         \\if x < y {x} else {y}
@@ -234,7 +276,6 @@ test "If Else Expression" {
 }
 
 test "If Expression" {
-    const allocator = std.testing.allocator;
     var lexer = Lexer.init("if (x < y) {x}");
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
@@ -263,7 +304,6 @@ test "If Expression" {
 }
 
 test "Group Exp" {
-    const allocator = std.testing.allocator;
     var lexer = Lexer.init("((-(5 + 5) * 5) == 10) != !true");
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
@@ -282,7 +322,6 @@ test "Group Exp" {
 }
 
 test "eval Boolean" {
-    const allocator = std.testing.allocator;
     var lexer = Lexer.init("false");
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
@@ -302,7 +341,6 @@ test "eval Boolean" {
 }
 
 test "Boolean" {
-    const allocator = std.testing.allocator;
     const tests = [_]struct {
         l: bool,
         r: bool,
@@ -345,8 +383,6 @@ test "Boolean" {
 }
 
 test "Parse Infix OP " {
-    const allocator = std.testing.allocator;
-
     const tests = [_]struct {
         l: usize,
         r: usize,
@@ -394,7 +430,6 @@ test "Parse Infix OP " {
 }
 
 test "Parse Prefix OP (!)" {
-    const allocator = std.testing.allocator;
     const input = "!5;";
     const output = 5;
 
@@ -426,7 +461,6 @@ test "Parse Prefix OP (!)" {
 }
 
 test "Comment" {
-    const allocator = std.testing.allocator;
     // const input =
     //     \\\\ +-----------------------------+
     //     \\\\ isso é um comentário
@@ -469,7 +503,6 @@ test "Comment" {
 }
 
 test "parse Prefix OP (-)" {
-    const allocator = std.testing.allocator;
     const input = "-5;";
     const output = -5;
 
@@ -501,7 +534,6 @@ test "parse Prefix OP (-)" {
 }
 
 test "Eval Integer Literal Expression" {
-    const allocator = std.testing.allocator;
     const input = "5;";
 
     var lexer = Lexer.init(input);
@@ -535,7 +567,6 @@ test "Eval Integer Literal Expression" {
 }
 
 test "eval Expression" {
-    const allocator = std.testing.allocator;
     const input = "foobar;";
 
     var lexer = Lexer.init(input);
@@ -570,7 +601,6 @@ test "eval Expression" {
 }
 
 test "eval Program" {
-    const allocator = std.testing.allocator;
     var stmts = std.ArrayList(ast.Statement).init(allocator);
     defer stmts.deinit();
 
@@ -608,7 +638,6 @@ test "eval Program" {
 }
 
 test "Parse RETURN statements: Size" {
-    // const allocator = std.testing.allocator;
     // const input =
     //     \\return x;
     //     \\return 10;
@@ -621,7 +650,6 @@ test "Parse RETURN statements: Size" {
     // var program = try parser.parseProgram(allocator);
     // defer program.statements.deinit();
     // try std.testing.expect(program.statements.items.len == 3);
-    const allocator = std.testing.allocator;
 
     const expected_value = struct { i64, bool, []const u8 }{ 5, true, "y" };
 
@@ -649,8 +677,6 @@ test "Parse RETURN statements: Size" {
 }
 
 test "Parse VAR statements" {
-    const allocator = std.testing.allocator;
-
     const expected_value = struct { i64, bool, []const u8 }{ 5, true, "y" };
 
     const tests = [_]struct {
