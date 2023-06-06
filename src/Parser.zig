@@ -88,6 +88,7 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) !Self {
     try p.registerPrefix(.@"if", parseIfExpression);
     try p.registerPrefix(.@"else", parseIfExpression);
     try p.registerPrefix(.@"fn", parseFunctionLiteral);
+    try p.registerPrefix(.string, parseStringLiteral);
 
     try p.registerInfix(.@"+", parseInfixExpression);
     try p.registerInfix(.@"-", parseInfixExpression);
@@ -387,13 +388,13 @@ fn parseIfExpression(self: *Self) anyerror!ast.Expression {
         .consequence = undefined,
     };
 
-    if (!self.expectPeek(.@"(")) return error.MissingParentese;
+    // if (!self.expectPeek(.@"(")) return error.MissingParentese;
 
     self.nextToken();
 
     expression.condition = try self.parseExpression(Precedence.lower);
 
-    if (!self.expectPeek(.@")")) return error.MissingParentese;
+    // if (!self.expectPeek(.@")")) return error.MissingParentese;
     if (!self.expectPeek(.@"{")) return error.MissingBrance;
 
     expression.consequence = try self.parseBlockStatement();
@@ -559,4 +560,13 @@ fn parseCallArguments(self: *Self) anyerror![]ast.Expression {
     try self.gc.expressions.append(args_owned);
 
     return args_owned;
+}
+
+pub fn parseStringLiteral(self: *Self) anyerror!ast.Expression {
+    return .{
+        .string_literal = .{
+            .token = self.cur_token,
+            .value = self.cur_token.literal,
+        },
+    };
 }

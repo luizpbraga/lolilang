@@ -24,6 +24,7 @@ pub const TokenType = enum {
     // identifiers + literals
     identifier, // add, foobar, x, y, ...
     int, // 123678
+    string, // "fuck u"
 
     // operators
     @"=",

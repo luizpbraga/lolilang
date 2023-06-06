@@ -12,6 +12,7 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
             return switch (exp) {
                 .boolean => |b| .{ .boolean = .{ .value = b.value } },
                 .integer_literal => |i| .{ .integer = .{ .value = i.value } },
+                .string_literal => |i| .{ .string = .{ .value = i.value } },
                 .prefix_expression => |pre| blk: {
                     const right = try eval(allocator, .{ .expression = pre.right.* }, env);
                     break :blk evalPrefixExpression(pre.operator, right);
@@ -174,6 +175,15 @@ fn evalInfixExpression(op: []const u8, left: object.Object, right: object.Object
         };
     }
 
+    if (right.objType() == .string and left.objType() == .string) {
+        var buff: [100]u8 = undefined;
+        var new_string = std.fmt.bufPrint(&buff, "{s}{s}", .{ left.string.value, right.string.value }) catch "";
+        return switch (op[0]) {
+            '+' => .{ .string = .{ .value = new_string } },
+            else => createNull(),
+        };
+    }
+
     return createNull();
 }
 
@@ -188,6 +198,30 @@ fn evalPrefixExpression(op: []const u8, right: object.Object) object.Object {
     }
 
     return createNull();
+}
+
+test "code example" {
+    const allocator = std.testing.allocator;
+    var lexer = Lexer.init(
+        \\var f = fn(x, y, z){
+        \\    var p = if x > 0 {3} else {0};
+        \\    var t = fn(g){ return if true {g} else {0}; }(p);
+        \\    return x + y + z + t;
+        \\};
+        \\f(1,2,3);
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+
+    try std.testing.expect(obj.integer.value == 9);
 }
 
 test "function call " {
@@ -248,6 +282,33 @@ test "function Obj 1" {
     var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
 
     try std.testing.expect(obj.integer.value == -10 + 1 + 2);
+}
+
+test "string" {
+    const allocator = std.testing.allocator;
+    var lexer = Lexer.init(
+        \\"-69 - 1" + "ola"
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var stmt = program.statements.items[0];
+
+    // const literal = stmt.expression_statement.expression.integer_literal;
+    // _ = literal;
+    const exp = stmt.expression_statement.expression;
+
+    var node = ast.Node{ .expression = exp.* };
+
+    var obj = try eval(allocator, node, &env);
+
+    try std.testing.expect(std.mem.eql(u8, obj.string.value, "-69 - 1ola"));
 }
 
 test "int" {

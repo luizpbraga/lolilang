@@ -59,6 +59,15 @@ fn readIdentifier(self: *Self) []const u8 {
     return self.input[position..self.position];
 }
 
+fn readString(self: *Self) []const u8 {
+    const position = self.position + 1;
+    while (true) {
+        self.readChar();
+        if (self.ch == '"' or self.ch == 0) break;
+    }
+    return self.input[position..self.position];
+}
+
 fn newToken(token_type: TokenType) Token {
     return .{
         .type = token_type,
@@ -97,6 +106,10 @@ pub fn nextToken(self: *Self) Token {
         ')' => newToken(.@")"),
         '{' => newToken(.@"{"),
         '}' => newToken(.@"}"),
+        '"' => Token{
+            .type = .string,
+            .literal = self.readString(),
+        },
         0 => newToken(.eof),
         // identifiers
         'a'...'z', 'A'...'Z', '_' => {

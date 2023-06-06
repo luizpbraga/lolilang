@@ -4,8 +4,6 @@ const Parser = @import("Parser.zig");
 const ast = @import("ast.zig");
 const TokenType = @import("Token.zig").TokenType;
 
-// TODO: implement helper function e.g. testInfixExpression, testIdentifier, testBooleanLiteral...
-//
 fn testIdentifier(exp: *ast.Expression, value: anytype) !void {
     if (@TypeOf(value) == bool) {
         const ident = exp.boolean;
@@ -59,34 +57,53 @@ fn testInfixExpression(exp: *ast.Expression, left: anytype, op: []const u8, righ
     try testLiteralExpression(opExp.right, right);
 }
 
-// test "Function Call 2" {
-//     const allocator = std.testing.allocator;
-//     var lexer = Lexer.init("fn(x, y){ 1 + 2 }(1,2);");
-//     var parser = try Parser.new(allocator, &lexer);
-//     defer parser.deinit();
+test "Function Call 2" {
+    const allocator = std.testing.allocator;
+    var lexer = Lexer.init("fn(x, y){ 1 + 2 }(1,2);");
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
 
-//     const program = try parser.parseProgram(allocator);
-//     defer program.statements.deinit();
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
 
-//     if (program.statements.items.len != 1) {
-//         std.log.err("len: {d}", .{program.statements.items.len});
-//         return error.NotEnoughStatements;
-//     }
-//     var stmt = program.statements.items[0].expression_statement;
+    if (program.statements.items.len != 1) {
+        std.log.err("len: {d}", .{program.statements.items.len});
+        return error.NotEnoughStatements;
+    }
+    var stmt = program.statements.items[0].expression_statement;
 
-//     var exp = stmt.expression.call_expression;
+    var exp = stmt.expression.call_expression;
 
-//     if (exp.arguments.len != 2)
-//         return error.WrongNumberOfArguments;
+    if (exp.arguments.len != 2)
+        return error.WrongNumberOfArguments;
 
-//     try testLiteralExpression(&exp.arguments[0], 1);
-//     try testLiteralExpression(&exp.arguments[1], 2);
+    try testLiteralExpression(&exp.arguments[0], 1);
+    try testLiteralExpression(&exp.arguments[1], 2);
 
-//     // TODO: reimplement call expressions
-//     // this should not be allowed:
-//     // std.debug.print("{any}\n", .{exp.function.call_expression.function.call_expression.function.call_expression.function.call_expression.function.call_expression});
-//     // try testInfixExpression(&exp.arguments[1], 1, "+", 2);
-// }
+    // try testInfixExpression(&exp.arguments[1], 1, "+", 2);
+}
+
+test "parse String" {
+    const allocator = std.testing.allocator;
+    var lexer = Lexer.init(
+        \\"bruh"
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    if (program.statements.items.len != 1) {
+        std.log.err("len: {d}", .{program.statements.items.len});
+        return error.NotEnoughStatements;
+    }
+
+    var stmt = program.statements.items[0].expression_statement;
+    var exp = stmt.expression.string_literal;
+
+    try std.testing.expect(std.mem.eql(u8, "bruh", exp.value));
+}
 
 test "Function Call" {
     const allocator = std.testing.allocator;
@@ -184,7 +201,7 @@ test "If Else Expression" {
     const allocator = std.testing.allocator;
     var lexer = Lexer.init(
         \\\\nenem
-        \\if (x < y) {x} else {y}
+        \\if x < y {x} else {y}
     );
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
@@ -664,28 +681,10 @@ test "Token test" {
     const input =
         \\var x = 100 + if (!true) 5 else -10;
         \\-5;
+        \\"ola mundo";
     ;
 
-    const tokens = [_]TokenType{
-        .@"var",
-        .identifier,
-        .@"=",
-        .int,
-        .@"+",
-        .@"if",
-        .@"(",
-        .@"!",
-        .true,
-        .@")",
-        .int,
-        .@"else",
-        .@"-",
-        .int,
-        .@";",
-        .@"-",
-        .int,
-        .@";",
-    };
+    const tokens = [_]TokenType{ .@"var", .identifier, .@"=", .int, .@"+", .@"if", .@"(", .@"!", .true, .@")", .int, .@"else", .@"-", .int, .@";", .@"-", .int, .@";", .string, .@";" };
 
     var lexer = Lexer.init(input);
     var tok = lexer.nextToken();
