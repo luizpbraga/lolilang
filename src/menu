@@ -1,0 +1,30 @@
+
+
+None
+    expression
+        boolean_literal
+        integer_literal
+        string_literal
+        array_literal
+        identifier
+        function_literal
+        prefix_expression
+        infix_expression
+        if_expression
+        call_expression
+        index_expression
+
+    statement
+        var_statement
+        return_statement
+        assignment_statement
+        expression_statement
+        block_statement
+        program_statement
+
+
+var x = {1,2,3}
+
+x[0] == 1 : expression
+
+x[0] = 1 : statement

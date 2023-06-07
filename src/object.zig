@@ -1,9 +1,6 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 
-// allocator: std.mem.Allocator,
-// obj_trash: std.ArrayList([]Object),
-
 const LolliType = enum { integer, string, array, boolean, null, @"return", err, function };
 
 pub const Object = union(enum) {

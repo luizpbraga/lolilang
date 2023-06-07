@@ -240,10 +240,24 @@ test "Function Literal" {
 ////     std.debug.print("\n{s} {s}\n", .{ stmt.tokenLiteral(), stmt.name.value });
 //// }
 
+test "assignment statement" {
+    var lexer = Lexer.init(
+        \\var x = 10;
+        \\x = if (x == x) { 2 * x } else { null };
+        \\x;
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    // std.debug.print("{}", .{program.statements.items[2].expression_statement});
+}
+
 test "If Else Expression" {
     var lexer = Lexer.init(
-        \\\\nenem
-        \\if x < y {x} else {y}
+        \\return if x < y {x} else {y};
     );
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
@@ -256,8 +270,8 @@ test "If Else Expression" {
         return error.NotEnoughStatements;
     }
 
-    var stmt = program.statements.items[0].expression_statement;
-    var exp = stmt.expression.if_expression;
+    var ret = program.statements.items[0].return_statement.value.?;
+    var exp = ret.if_expression;
 
     try testInfixExpression(exp.condition, "x", "<", "y");
 
@@ -276,7 +290,7 @@ test "If Else Expression" {
 }
 
 test "If Expression" {
-    var lexer = Lexer.init("if (x < y) {x}");
+    var lexer = Lexer.init("return if (x < y) { x };");
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
@@ -288,8 +302,9 @@ test "If Expression" {
         return error.NotEnoughStatements;
     }
 
-    var stmt = program.statements.items[0].expression_statement;
-    var exp = stmt.expression.if_expression;
+    var stmt = program.statements.items[0].return_statement.value.?;
+
+    var exp = stmt.if_expression;
 
     try testInfixExpression(exp.condition, "x", "<", "y");
 
@@ -316,9 +331,9 @@ test "Group Exp" {
         return error.NotEnoughStatements;
     }
 
-    // var stmt = program.statements.items[0].expression_statement;
-    // var exp = stmt.expression;
-    // std.debug.print("{}", .{exp});
+    var stmt = program.statements.items[0].expression_statement;
+    var exp = stmt.expression;
+    _ = exp;
 }
 
 test "eval Boolean" {
@@ -460,18 +475,8 @@ test "Parse Prefix OP (!)" {
     }
 }
 
-test "Comment" {
-    // const input =
-    //     \\\\ +-----------------------------+
-    //     \\\\ isso é um comentário
-    //     \\\\ isso tambem é um comentário
-    //     \\\\ +-----------------------------+
-    //     \\-5;
-    //     \\\\ AAAAAAAAAAAAI PAPY
-    // ;
-    //
-
-    const input = @embedFile("./main.lol");
+test "Comment (bruh)" {
+    const input = @embedFile("./comment.loli");
 
     const output = -5;
 
@@ -567,7 +572,7 @@ test "Eval Integer Literal Expression" {
 }
 
 test "eval Expression" {
-    const input = "foobar;";
+    const input = "return foobar;";
 
     var lexer = Lexer.init(input);
 
@@ -584,11 +589,10 @@ test "eval Expression" {
 
     const stmt = program.statements.items[0];
 
-    if (stmt != .expression_statement) {
-        return error.ExprectAnExpression;
-    }
+    var ret = stmt.return_statement;
 
-    const ident = stmt.expression_statement.expression.identifier;
+    const ident = ret.value.?.identifier;
+
     const value = ident.value;
 
     if (!std.mem.eql(u8, "foobar", value)) {
@@ -638,19 +642,6 @@ test "eval Program" {
 }
 
 test "Parse RETURN statements: Size" {
-    // const input =
-    //     \\return x;
-    //     \\return 10;
-    //     \\return 9999;
-    // ;
-
-    // var lexer = Lexer.init(input);
-    // var parser = try Parser.new(allocator, &lexer);
-    // defer parser.deinit();
-    // var program = try parser.parseProgram(allocator);
-    // defer program.statements.deinit();
-    // try std.testing.expect(program.statements.items.len == 3);
-
     const expected_value = struct { i64, bool, []const u8 }{ 5, true, "y" };
 
     const tests = [_]struct {
@@ -663,10 +654,13 @@ test "Parse RETURN statements: Size" {
 
     inline for (tests, expected_value) |x, k| {
         var lexer = Lexer.init(x.input);
+
         var p = try Parser.new(allocator, &lexer);
         defer p.deinit();
+
         var program = try p.parseProgram(allocator);
         defer program.statements.deinit();
+
         try std.testing.expect(program.statements.items.len == 1);
         var stmt = program.statements.items[0];
 

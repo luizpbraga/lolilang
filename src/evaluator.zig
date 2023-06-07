@@ -58,6 +58,10 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
                     var val = try eval(allocator, .{ .expression = var_stmt.value.? }, env);
                     break :blk try env.set(var_stmt.name.value, val);
                 },
+                .assignment_statement => |ass_stmt| blk: {
+                    var val = try eval(allocator, .{ .expression = ass_stmt.value.? }, env);
+                    break :blk try env.set(ass_stmt.ident.value, val);
+                },
                 .return_statement => |ret_stmt| blk: {
                     const exp = if (ret_stmt.value) |exp| exp else return createNull();
                     break :blk .{ .@"return" = .{ .value = &(try eval(allocator, .{ .expression = exp }, env)) } };
@@ -169,8 +173,8 @@ fn evalInfixExpression(op: []const u8, left: object.Object, right: object.Object
             '/' => .{ .integer = .{ .value = @divFloor(left.integer.value, right.integer.value) } },
             '>' => .{ .boolean = .{ .value = left.integer.value > right.integer.value } },
             '<' => .{ .boolean = .{ .value = left.integer.value < right.integer.value } },
-            '=' => if (op[1] == '=') .{ .boolean = .{ .value = left.integer.value == right.integer.value } } else createNull(),
-            '!' => if (op[1] == '=') .{ .boolean = .{ .value = left.integer.value != right.integer.value } } else createNull(),
+            '=' => if (op.len != 1 and op[1] == '=') .{ .boolean = .{ .value = left.integer.value == right.integer.value } } else createNull(),
+            '!' => if (op.len != 1 and op[1] == '=') .{ .boolean = .{ .value = left.integer.value != right.integer.value } } else createNull(),
             // '/' => left.integer.value / right.integer.value,
             else => createNull(),
         };
@@ -230,15 +234,62 @@ fn evalArrayIndexExpression(array: object.Object, index: object.Object) !object.
     return arr_obj.elements[idx];
 }
 
+test "redefine (=)" {
+    const allocator = std.testing.allocator;
+    var lexer = Lexer.init(
+        \\var foo = 20
+        \\foo = if (true) { 
+        \\      var y = 0
+        \\      y = 1
+        \\      foo + y 
+        \\} else { 0 }
+        \\return foo
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+
+    try std.testing.expect(obj.integer.value == 21);
+}
+
+// test "redefine 2" {
+//     const allocator = std.testing.allocator;
+//     var lexer = Lexer.init(
+//         \\var foo = {1,2,3}
+//         \\foo[0] = 0
+//         \\return foo
+//     );
+//     var parser = try Parser.new(allocator, &lexer);
+//     defer parser.deinit();
+
+//     const program = try parser.parseProgram(allocator);
+//     defer program.statements.deinit();
+
+//     var env = object.Environment.init(allocator);
+//     defer env.deinit();
+
+//     var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+//     _ = obj;
+// }
+
 test "code example" {
     const allocator = std.testing.allocator;
     var lexer = Lexer.init(
         \\var f = fn(x, y, z){
-        \\    var p = if x > 0 {3} else {0};
-        \\    var t = fn(g){ return if true {g} else {0}; }(p);
-        \\    return x + y + z + t;
-        \\};
-        \\f(1,2,3);
+        \\    var p = if x > 0 {3} else {0}
+        \\    var t = fn(g){ return if true {g} else {0} }(p)
+        \\    return x + y + z + t
+        \\}
+        \\var x = f(1,2,3)
+        \\var y = {x, 0, x, 0}
+        \\y[0]
     );
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
@@ -591,7 +642,7 @@ test "env" {
     var lexer = Lexer.init(
         \\var x = 10;
         \\var y = 2 * x + if (true) {10} else {-1};
-        \\return y;
+        \\y;
     );
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();

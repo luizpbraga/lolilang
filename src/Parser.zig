@@ -3,10 +3,11 @@ const Token = @import("Token.zig");
 const Lexer = @import("Lexer.zig");
 const ast = @import("ast.zig");
 
-// TODO: removel null and implement parsing error msg
+// TODO: remove null and implement parsing error msg
 const Self = @This();
 const PrefixParseFn = *const fn (*Self) anyerror!ast.Expression;
 const InfixParseFn = *const fn (*Self, *ast.Expression) anyerror!ast.Expression;
+
 // TODO: better error
 const ParseError = error{
     UnexpectToken,
@@ -24,7 +25,7 @@ pub const Precedence = enum {
 
     pub fn peek(token_type: Token.TokenType) Precedence {
         return switch (token_type) {
-            .@"==", .@"!=" => .equals,
+            .@"==", .@"!=", .@"=" => .equals,
             .@">", .@"<" => .lessgreater,
             .@"+", .@"-" => .sum,
             .@"/", .@"*" => .product,
@@ -57,6 +58,7 @@ const GarbageCollector = struct {
 
 lexer: *Lexer,
 cur_token: Token,
+last_token: Token,
 peek_token: Token,
 allocator: std.mem.Allocator,
 gc: GarbageCollector,
@@ -70,6 +72,7 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) !Self {
     var p = Self{
         .lexer = lexer,
         .cur_token = undefined,
+        .last_token = Token{ .type = .eof, .literal = "" },
         .peek_token = undefined,
         .prefix_parse_fns = prefix_parse_fns,
         .infix_parse_fns = infix_parse_fns,
@@ -106,7 +109,7 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) !Self {
 
     return p;
 }
-/// TODO: free infix_parse_fns when it was implemented
+
 pub fn deinit(self: *Self) void {
     for (self.gc.expression.items) |f|
         self.allocator.destroy(f);
@@ -114,9 +117,6 @@ pub fn deinit(self: *Self) void {
     for (self.gc.statements.items) |stmt| {
         self.allocator.free(stmt);
     }
-    // stmt.deinit();
-    // self.allocator.destroy(stmt);
-    // }
 
     for (self.gc.identifiers.items) |iden|
         self.allocator.free(iden);
@@ -141,6 +141,7 @@ fn registerInfix(self: *Self, token_type: Token.TokenType, func: InfixParseFn) !
 }
 
 fn nextToken(self: *Self) void {
+    self.last_token = self.cur_token;
     self.cur_token = self.peek_token;
     self.peek_token = self.lexer.nextToken();
 }
@@ -194,6 +195,32 @@ fn parseReturnStatement(self: *Self) anyerror!ast.ReturnStatement {
     return stmt;
 }
 
+fn parseAssignmentStatement(self: *Self) anyerror!ast.AssignmentStatement {
+    var ident = ast.Identifier{
+        .token = self.cur_token,
+        .value = self.last_token.literal,
+    };
+
+    // if (!self.expectPeek(.@"=")) return error.UnexpectToken;
+
+    var stmt = ast.AssignmentStatement{
+        .token = self.cur_token,
+        .ident = ident,
+        .value = undefined,
+    };
+
+    self.nextToken();
+
+    stmt.value = (try self.parseExpression(Precedence.lower)).*;
+
+    // if (!self.expectPeek(.@";")) return error.MissingSemiColonm;
+    if (self.peekTokenIs(.@";")) {
+        self.nextToken();
+    }
+
+    return stmt;
+}
+
 fn parseVarStatement(self: *Self) anyerror!ast.VarStatement {
     var stmt = ast.VarStatement{
         .token = self.cur_token,
@@ -231,6 +258,13 @@ fn parseStatement(self: *Self) !ast.Statement {
     const stmt: ast.Statement = switch (self.cur_token.type) {
         .@"var" => .{ .var_statement = try self.parseVarStatement() },
         .@"return" => .{ .return_statement = try self.parseReturnStatement() },
+
+        // i need a better alternative
+        .identifier => if (self.expectPeek(.@"="))
+            .{ .assignment_statement = try self.parseAssignmentStatement() }
+        else
+            .{ .expression_statement = try self.parseExpressionStatement() },
+
         else => .{ .expression_statement = try self.parseExpressionStatement() },
     };
     return stmt;
@@ -251,6 +285,7 @@ fn parseExpressionStatement(self: *Self) anyerror!ast.ExpressionStatement {
 
 fn parseExpression(self: *Self, precedence: Precedence) !*ast.Expression {
     const prefix_fn = self.prefix_parse_fns.get(self.cur_token.type) orelse {
+        std.log.warn("at token: {s}\n", .{self.cur_token.literal});
         return error.UnknowPrefixFn;
     };
 
@@ -277,34 +312,7 @@ fn parseExpression(self: *Self, precedence: Precedence) !*ast.Expression {
 
     return left_exp;
 }
-// fn parseExpression(self: *Self, precedence: Precedence) !*ast.Expression {
-//     const prefix_fn = self.prefix_parse_fns.get(self.cur_token.type) orelse {
-//         return error.UnknowPrefixFn;
-//     };
 
-//     var left_exp = try self.allocator.create(ast.Expression);
-//     errdefer self.allocator.destroy(left_exp);
-
-//     left_exp.* = try prefix_fn(self);
-//     try self.gc.expression.append(left_exp);
-
-//     while (!self.peekTokenIs(.@";") and
-//         @enumToInt(precedence) < @enumToInt(self.peekPrecedence()))
-//     {
-//         const infix_fn = self.infix_parse_fns.get(self.peek_token.type) orelse return left_exp;
-//         self.nextToken();
-
-//         // var new_left_exp = try self.allocator.create(ast.Expression);
-//         // errdefer self.allocator.destroy(new_left_exp);
-
-//         var new_left_exp = try infix_fn(self, left_exp);
-//         // try self.gc.expression.append(new_left_exp);
-
-//         left_exp.* = new_left_exp;
-//     }
-
-//     return left_exp;
-// }
 pub fn parseProgram(self: *Self, allocator: std.mem.Allocator) !ast.Program {
     var stmts = std.ArrayList(ast.Statement).init(allocator);
     errdefer stmts.deinit();
@@ -437,29 +445,6 @@ fn parseBlockStatement(self: *Self) anyerror!ast.BlockStatement {
 
     return block;
 }
-// fn parseBlockStatement(self: *Self) anyerror!ast.BlockStatement {
-//     var stmts = try self.allocator.create(std.ArrayList(ast.Statement));
-//     stmts.* = std.ArrayList(ast.Statement).init(self.allocator);
-//     errdefer stmts.deinit();
-
-//     var block = ast.BlockStatement{
-//         .token = self.cur_token,
-//         .statements = undefined,
-//     };
-
-//     self.nextToken();
-
-//     while (!self.curTokenIs(.@"}") and !self.curTokenIs(.eof)) {
-//         var stmt = try self.parseStatement();
-//         try stmts.append(stmt);
-//         self.nextToken();
-//     }
-
-//     block.statements = stmts.*;
-//     try self.gc.statements.append(stmts);
-
-//     return block;
-// }
 
 fn parseFunctionLiteral(self: *Self) anyerror!ast.Expression {
     var lit = ast.FunctionLiteral{
@@ -544,7 +529,7 @@ fn parseCallArguments(self: *Self) anyerror![]ast.Expression {
 
     if (self.peekTokenIs(.@")")) {
         self.nextToken();
-        // TODO: possivel segfault
+        // TODO: possible segfault
         return try args.toOwnedSlice();
     }
 
