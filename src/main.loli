@@ -1,69 +1,72 @@
-// fn, return, match, continue, break, var, const, or, and, as, stop, try, catch
-// map, int, real, struct, enum, array, struct_name, enum_name
+///// std.loli
+//
+//pub struct Fmt {
+//    pub fn print() { 
+//        // ... 
+//    }
+//}
 
-var x = 10
-const y = 100
 
-const foo = fn() { return 10 }
-fn foo(y) {
-    return 2y
+from std.Fmt impot { print }
+
+enum Color {
+    red
+    blue
+    black
+}
+
+fn add(x, y) ? {
+    return if x >= y {x + y} else error.someError
 }
 
 const {
-    t = 10
-    p = "ola"
-    c = false
+    ZERO = 0
+    PI = 3.14
+    EULER = 2.27
 }
 
-const P = struct | enum {
-    name
+const map = {
+    "ola" : 1,
+    "hi"  : 2,
+}
+
+struct People {
+    const ID = 0
+    
+    name 
     age
-    lenght
+    color
 
-    fn foo() {}
-    fn bar() {}
-
-    fn nameIs(self){
+    fn getName(self) {
         return self.name
     }
 }
 
 
-const p = P{ name : "Luiz", 27, lenght: 169 }
+fn main() ? {
+    // code
 
-var f = foo() catch error { return error }
+    var list = {}
+    
+    var p = P{ name = "Luiz", color = Color.black, age = P.ID }
+    
+    switch p.color {
+        .black => {
+           std.print(´The color is Black´)
+        }
 
-if v == 10 and x != 12 { ... } else if !true { ... } else { stop } 
+        else => print("Not Black")
+    }
 
-for val in list {}
-for 0..10 {}
-for 0.. {}
-for i in 0..10 {}
-for i in 0..10, j in 10..20 {}
-for k = 10, k < 20, k++ {}
-for k = 10, k < 20 {}
-for k < 20 {}
-for k = 10 {}
-for {}
+    for i in 0..10 {
+        p.age += i
+        
+        print(p.age)
 
-var t = match x {
-    1..10 => 0,
-    'a'..'z' => 1,
-    20 or 30 => 2,
-    else => null
+        const val = try add( p.age, i )
+        list.append( val )
+    }
+
+    assert(list.len == 10) 
+    
 }
-
-y = {1, 2, 3, 4}
-y = {i for i in y}
-
-x = { {1, 2, 3}, {4, 5, 6}, {7, 8, 9} }
-for i in x, for k in i {}
-
-s = (0, 0, 1, 2)
-
-m = {
-    key1 : val1,
-    key2 : val2,
-}
-
-for k, v in m {}

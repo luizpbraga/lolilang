@@ -1,0 +1,11 @@
+var x = 10;
+var y = if x == 10 { 1 } else { 2 };
+var z = {x,y,3}[0];
+
+var f = fn(x){
+    x;
+    return "ola" + "mundo";
+};
+
+var z = f(1);
+"olaaaaaaaa";
