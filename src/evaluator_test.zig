@@ -30,11 +30,30 @@ test "redefine (=)" {
 
     try std.testing.expect(obj.integer.value == 21);
 }
+test "redefine returns?" {
+    var lexer = Lexer.init(
+        \\var foo = 20
+        \\foo = 21
+        \\return foo
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+
+    try std.testing.expect(obj.integer.value == 21);
+}
 
 test "redefine 2: arrays" {
     var lexer = Lexer.init(
         \\var foo = {1,2,3}
-        \\foo[0+1] = 69
+        \\foo[ if (true) { 1+0 } else {0} ] = 69
         \\return foo[1]
     );
 
@@ -49,6 +68,49 @@ test "redefine 2: arrays" {
 
     var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
     try std.testing.expect(obj.integer.value == 69);
+
+    // for (obj.array.elements, [3]i64{ 1, 69, 3 }) |int, val| {
+    //     try std.testing.expect(int.integer.value == val);
+    // }
+}
+test "redefine 3: arrays += " {
+    var lexer = Lexer.init(
+        \\var foo = {0,1,2}
+        \\foo[ 1 ] += 69
+        \\return foo[1]
+    );
+
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    try std.testing.expect(obj.integer.value == 70);
+}
+
+test "redefine 4: arrays += " {
+    var lexer = Lexer.init(
+        \\var foo = {0, "ola" ,2}
+        \\foo[ 1 ] += 69
+        \\return foo[1]
+    );
+
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    try std.testing.expect(std.mem.eql(u8, obj.string.value, "ola69"));
 
     // for (obj.array.elements, [3]i64{ 1, 69, 3 }) |int, val| {
     //     try std.testing.expect(int.integer.value == val);

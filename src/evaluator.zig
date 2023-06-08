@@ -106,58 +106,78 @@ fn evalAssignment(allocator: std.mem.Allocator, assig: ast.AssignmentExpression,
         .identifier => |ident| {
             var evaluated = try eval(allocator, .{ .expression = assig.value.* }, env);
 
-            return switch (assig.token.type) {
-                .@"+=", .@"-=", .@"*=", .@"/=" => blk1: {
+            switch (assig.token.type) {
+                .@"+=", .@"-=", .@"*=", .@"/=" => {
                     if (env.get(ident.value)) |current| {
                         var result = evalInfixExpression(assig.operator, current, evaluated);
                         _ = try env.set(ident.value, result);
-                        break :blk1 result;
+                        return createNull();
                     }
 
                     return error.VariableNotDeclared;
                 },
-                .@"=" => blk2: {
+                .@"=" => {
                     if (env.get(ident.value)) |_| {
                         _ = try env.set(ident.value, evaluated);
-                        break :blk2 evaluated;
+                        return createNull();
                     }
 
                     return error.VariableNotDeclared;
                 },
 
-                else => error.UnknowOperator,
-            };
+                else => return error.UnknowOperator,
+            }
         },
 
         .index_expression => |exp| {
-            // const array_obj = try eval(allocator, .{ .expression = exp.left.* }, env);
-            // const elements = array_obj.array.elements;
-            // _ = elements;
-            // std.debug.print("\n\n", .{});
-            // std.debug.print("name: {s}\n", .{var_name});
-            // std.debug.print("index: {}\n", .{index});
-            // std.debug.print("elements: {any}\n", .{elements});
-            // std.debug.print("evaluated: {any}\n", .{evaluated});
             const index_obj = try eval(allocator, .{ .expression = exp.index.* }, env);
             const index = index_obj.integer.value;
-            var evaluated = try eval(allocator, .{ .expression = assig.value.* }, env);
-            var var_name = exp.left.identifier.value;
+            const evaluated = try eval(allocator, .{ .expression = assig.value.* }, env);
+            const var_name = exp.left.identifier.value;
             if (env.get(var_name)) |*current| {
                 const uindex = @intCast(usize, index);
-                switch (assig.token.type) {
-                    .@"=" => current.array.elements[uindex] = evaluated,
-                    // .@"+=" => current.array.elements[uindex] += evaluated,
-                    // .@"-=" => current.array.elements[uindex] -= evaluated,
-                    // .@"*=" => current.array.elements[uindex] *= evaluated,
-                    // .@"/=" => current.array.elements[uindex] /= evaluated,
-                    else => return error.UnknowOperator,
-                    // std.debug.print("current ate index {d}: {any}", .{ uindex, current.array.elements[uindex] });
-                    // _ = try env.set(ident.value, evaluated);
+                switch (current.array.elements[uindex]) {
+                    .integer => {
+                        switch (assig.token.type) {
+                            .@"=" => current.array.elements[uindex] = evaluated,
+                            .@"+=" => current.array.elements[uindex].integer.value += evaluated.integer.value,
+                            .@"-=" => current.array.elements[uindex].integer.value -= evaluated.integer.value,
+                            .@"*=" => current.array.elements[uindex].integer.value *= evaluated.integer.value,
+                            .@"/=" => current.array.elements[uindex].integer.value =
+                                @divFloor(current.array.elements[uindex].integer.value, evaluated.integer.value),
+                            else => return error.UnknowOperator,
+                        }
+                    },
+                    .string => {
+                        switch (assig.token.type) {
+                            .@"=" => current.array.elements[uindex] = evaluated,
+                            .@"+=" => {
+                                // TOODO: MOVE THIS TO EVALINFIXEXPRESSION
+                                var buff: [100]u8 = undefined;
+                                if (current.array.elements[uindex] == .string) {
+                                    if (evaluated == .integer) {
+                                        current.array.elements[uindex].string.value = try std.fmt.bufPrint(&buff, "{s}{}", .{
+                                            current.array.elements[uindex].string.value,
+                                            evaluated.integer.value,
+                                        });
+                                    }
+                                    if (evaluated == .string) {
+                                        current.array.elements[uindex].string.value = try std.fmt.bufPrint(&buff, "{s}{s}", .{
+                                            current.array.elements[uindex].string.value,
+                                            evaluated.string.value,
+                                        });
+                                    }
+                                }
+                            },
+                            else => return error.UnknowOperator,
+                        }
+                    },
+                    else => return error.NotSuportedOperation,
                 }
             }
             return createNull();
         },
-        else => @panic("bbbbbbbbbbbbbbbbbbb"),
+        else => return error.AssignmentExpressionNotDefined,
     }
 }
 
