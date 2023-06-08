@@ -1,30 +1,63 @@
+## integer 
+var x = 10
 
+## strings, arrays and maps
+var x = "ola mundo"
+expect x.len == 9
+x[0] = "O"
+expect "Ola" == x[:3]
 
-None
-    expression
-        boolean_literal
-        integer_literal
-        string_literal
-        array_literal
-        identifier
-        function_literal
-        prefix_expression
-        infix_expression
-        if_expression
-        call_expression
-        index_expression
+var v = {1, 2, 3, 4, 5}
+v[0] = v[1]
+expect v.len == 5
+expect v[:3] == {1,2,3}
 
-    statement
-        var_statement
-        return_statement
-        assignment_statement
-        expression_statement
-        block_statement
-        program_statement
+var m = {
+    "ola" : "mundo",
+    "hello" : "world",
+}
 
+### block declaration
 
-var x = {1,2,3}
+const {
+    PI = 0
+    UM = 1
+    DOIS = 2
+}
 
-x[0] == 1 : expression
+enum Color {
+    red         //(int, 0, "0)
+    blue
+    black
 
-x[0] = 1 : statement
+    fn isIqual(self, color) {
+        return self == color
+    }
+}
+
+var y = enum{ A, B, C, }
+
+class People {
+    const PI = 3.14
+
+    first_name
+    last_name
+    age = 10
+
+    fn foo(self, day = "ola") {
+        ...
+    }
+}
+
+const P = class{ a, b, c, fn foo (), }
+
+fn foo() {}
+var f = fn() {}
+
+var p = People{ "Luiz", age = 26 }
+var c = Color.black(#ffff)
+
+var rgb = switch c {
+    .black(x) => x,
+    else => panic("shit"),
+}

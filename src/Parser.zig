@@ -15,6 +15,7 @@ const ParseError = error{
 
 pub const Precedence = enum {
     lower,
+    assigne,
     equals,
     lessgreater,
     sum,
@@ -25,12 +26,13 @@ pub const Precedence = enum {
 
     pub fn peek(token_type: Token.TokenType) Precedence {
         return switch (token_type) {
-            .@"==", .@"!=", .@"=" => .equals,
+            .@"==", .@"!=" => .equals,
             .@">", .@"<" => .lessgreater,
             .@"+", .@"-" => .sum,
             .@"/", .@"*" => .product,
             .@"(" => .call,
             .@"[" => .index,
+            .@"=", .@"+=", .@"-=", .@"*=", .@"/=" => .assigne,
             else => .lower,
         };
     }
@@ -97,6 +99,7 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) !Self {
     try p.registerPrefix(.@"{", parseArrayLiteral);
 
     try p.registerInfix(.@"[", parseIndexExpression);
+
     try p.registerInfix(.@"+", parseInfixExpression);
     try p.registerInfix(.@"-", parseInfixExpression);
     try p.registerInfix(.@"==", parseInfixExpression);
@@ -106,6 +109,12 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) !Self {
     try p.registerInfix(.@">", parseInfixExpression);
     try p.registerInfix(.@"<", parseInfixExpression);
     try p.registerInfix(.@"(", parseCallExpression);
+
+    try p.registerInfix(.@"=", parseAssignmentExpression);
+    try p.registerInfix(.@"+=", parseAssignmentExpression);
+    try p.registerInfix(.@"-=", parseAssignmentExpression);
+    try p.registerInfix(.@"*=", parseAssignmentExpression);
+    try p.registerInfix(.@"/=", parseAssignmentExpression);
 
     return p;
 }
@@ -195,30 +204,33 @@ fn parseReturnStatement(self: *Self) anyerror!ast.ReturnStatement {
     return stmt;
 }
 
-fn parseAssignmentStatement(self: *Self) anyerror!ast.AssignmentStatement {
-    var ident = ast.Identifier{
+fn parseAssignmentExpression(self: *Self, name: *ast.Expression) anyerror!ast.Expression {
+    var stmt = ast.AssignmentExpression{
         .token = self.cur_token,
-        .value = self.last_token.literal,
-    };
-
-    // if (!self.expectPeek(.@"=")) return error.UnexpectToken;
-
-    var stmt = ast.AssignmentStatement{
-        .token = self.cur_token,
-        .ident = ident,
+        .name = switch (name.*) {
+            .identifier => |val| val,
+            else => return error.UnknowExpression,
+        },
+        .operator = undefined,
         .value = undefined,
     };
 
+    const op = self.cur_token;
+
     self.nextToken();
 
-    stmt.value = (try self.parseExpression(Precedence.lower)).*;
+    stmt.operator = switch (op.type) {
+        .@"=" => "=",
+        .@"+=" => "+=",
+        .@"-=" => "-=",
+        .@"/=" => "/=",
+        .@"*=" => "*=",
+        else => return error.UnexpectToken,
+    };
 
-    // if (!self.expectPeek(.@";")) return error.MissingSemiColonm;
-    if (self.peekTokenIs(.@";")) {
-        self.nextToken();
-    }
+    stmt.value = try self.parseExpression(.lower);
 
-    return stmt;
+    return .{ .assignment_expression = stmt };
 }
 
 fn parseVarStatement(self: *Self) anyerror!ast.VarStatement {
@@ -255,19 +267,11 @@ fn parseVarStatement(self: *Self) anyerror!ast.VarStatement {
 }
 
 fn parseStatement(self: *Self) !ast.Statement {
-    const stmt: ast.Statement = switch (self.cur_token.type) {
+    return switch (self.cur_token.type) {
         .@"var" => .{ .var_statement = try self.parseVarStatement() },
         .@"return" => .{ .return_statement = try self.parseReturnStatement() },
-
-        // i need a better alternative
-        .identifier => if (self.expectPeek(.@"="))
-            .{ .assignment_statement = try self.parseAssignmentStatement() }
-        else
-            .{ .expression_statement = try self.parseExpressionStatement() },
-
         else => .{ .expression_statement = try self.parseExpressionStatement() },
     };
-    return stmt;
 }
 
 fn parseExpressionStatement(self: *Self) anyerror!ast.ExpressionStatement {

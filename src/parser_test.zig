@@ -240,7 +240,7 @@ test "Function Literal" {
 ////     std.debug.print("\n{s} {s}\n", .{ stmt.tokenLiteral(), stmt.name.value });
 //// }
 
-test "assignment statement" {
+test "assignment statement (=)" {
     var lexer = Lexer.init(
         \\var x = 10;
         \\x = if (x == x) { 2 * x } else { null };
@@ -255,6 +255,20 @@ test "assignment statement" {
     // std.debug.print("{}", .{program.statements.items[2].expression_statement});
 }
 
+test "assignment statement (+=)" {
+    var lexer = Lexer.init(
+        \\var x = 10;
+        \\x += if (x == x) { 2 * x } else { null };
+        \\x;
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    // std.debug.print("{}", .{program.statements.items[2].expression_statement});
+}
 test "If Else Expression" {
     var lexer = Lexer.init(
         \\return if x < y {x} else {y};
@@ -702,9 +716,10 @@ test "Token test" {
         \\var x = 100 + if (!true) 5 else -10;
         \\-5;
         \\"ola mundo";
+        \\+=
     ;
 
-    const tokens = [_]TokenType{ .@"var", .identifier, .@"=", .int, .@"+", .@"if", .@"(", .@"!", .true, .@")", .int, .@"else", .@"-", .int, .@";", .@"-", .int, .@";", .string, .@";" };
+    const tokens = [_]TokenType{ .@"var", .identifier, .@"=", .int, .@"+", .@"if", .@"(", .@"!", .true, .@")", .int, .@"else", .@"-", .int, .@";", .@"-", .int, .@";", .string, .@";", .@"+=" };
 
     var lexer = Lexer.init(input);
     var tok = lexer.nextToken();

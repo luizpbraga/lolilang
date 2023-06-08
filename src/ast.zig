@@ -19,7 +19,6 @@ pub const Statement = union(enum) {
     // implements Node,
     var_statement: VarStatement,
     return_statement: ReturnStatement,
-    assignment_statement: AssignmentStatement,
     expression_statement: ExpressionStatement,
     block_statement: BlockStatement,
     program_statement: Program,
@@ -46,6 +45,7 @@ pub const Expression = union(enum) {
     array_literal: ArrayLiteral,
     identifier: Identifier,
     function_literal: FunctionLiteral,
+    assignment_expression: AssignmentExpression,
 
     prefix_expression: PrefixExpression,
     infix_expression: InfixExpression,
@@ -161,17 +161,18 @@ pub const ReturnStatement = struct {
 };
 
 // identifier = expression
-// x = y
-pub const AssignmentStatement = struct {
+//  = , +=, -=, *=, /=,
+pub const AssignmentExpression = struct {
     token: Token,
-    ident: Identifier,
-    value: ?Expression = null,
+    name: Identifier,
+    operator: []const u8,
+    value: *Expression,
 
-    pub fn statementNode(self: *const AssignmentStatement) void {
+    pub fn statementNode(self: *const AssignmentExpression) void {
         _ = self;
     }
 
-    pub fn tokenLiteral(self: *const AssignmentStatement) []const u8 {
+    pub fn tokenLiteral(self: *const AssignmentExpression) []const u8 {
         return self.token.literal;
     }
 };

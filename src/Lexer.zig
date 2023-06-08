@@ -96,10 +96,34 @@ pub fn nextToken(self: *Self) Token {
         },
         '>' => newToken(.@">"),
         '<' => newToken(.@"<"),
-        '/' => newToken(.@"/"),
-        '*' => newToken(.@"*"),
-        '+' => newToken(.@"+"),
-        '-' => newToken(.@"-"),
+        '+' => switch (self.peekChar()) {
+            '=' => x: {
+                self.readChar();
+                break :x newToken(.@"+=");
+            },
+            else => newToken(.@"+"),
+        },
+        '-' => switch (self.peekChar()) {
+            '=' => x: {
+                self.readChar();
+                break :x newToken(.@"-=");
+            },
+            else => newToken(.@"-"),
+        },
+        '*' => switch (self.peekChar()) {
+            '=' => x: {
+                self.readChar();
+                break :x newToken(.@"*=");
+            },
+            else => newToken(.@"*"),
+        },
+        '/' => switch (self.peekChar()) {
+            '=' => x: {
+                self.readChar();
+                break :x newToken(.@"/=");
+            },
+            else => newToken(.@"/"),
+        },
         ';' => newToken(.@";"),
         ',' => newToken(.@","),
         '(' => newToken(.@"("),
