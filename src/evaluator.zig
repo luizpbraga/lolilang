@@ -129,9 +129,33 @@ fn evalAssignment(allocator: std.mem.Allocator, assig: ast.AssignmentExpression,
             };
         },
 
-        .index_expression => |index_exp| {
-            std.debug.print("index_exp {}", .{index_exp});
-            @panic("aaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        .index_expression => |exp| {
+            // const array_obj = try eval(allocator, .{ .expression = exp.left.* }, env);
+            // const elements = array_obj.array.elements;
+            // _ = elements;
+            // std.debug.print("\n\n", .{});
+            // std.debug.print("name: {s}\n", .{var_name});
+            // std.debug.print("index: {}\n", .{index});
+            // std.debug.print("elements: {any}\n", .{elements});
+            // std.debug.print("evaluated: {any}\n", .{evaluated});
+            const index_obj = try eval(allocator, .{ .expression = exp.index.* }, env);
+            const index = index_obj.integer.value;
+            var evaluated = try eval(allocator, .{ .expression = assig.value.* }, env);
+            var var_name = exp.left.identifier.value;
+            if (env.get(var_name)) |*current| {
+                const uindex = @intCast(usize, index);
+                switch (assig.token.type) {
+                    .@"=" => current.array.elements[uindex] = evaluated,
+                    // .@"+=" => current.array.elements[uindex] += evaluated,
+                    // .@"-=" => current.array.elements[uindex] -= evaluated,
+                    // .@"*=" => current.array.elements[uindex] *= evaluated,
+                    // .@"/=" => current.array.elements[uindex] /= evaluated,
+                    else => return error.UnknowOperator,
+                    // std.debug.print("current ate index {d}: {any}", .{ uindex, current.array.elements[uindex] });
+                    // _ = try env.set(ident.value, evaluated);
+                }
+            }
+            return createNull();
         },
         else => @panic("bbbbbbbbbbbbbbbbbbb"),
     }
