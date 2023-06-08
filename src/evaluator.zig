@@ -102,29 +102,39 @@ fn unwrapReturnValue(obj: object.Object) object.Object {
 }
 
 fn evalAssignment(allocator: std.mem.Allocator, assig: ast.AssignmentExpression, env: *object.Environment) !object.Object {
-    var evaluated = try eval(allocator, .{ .expression = assig.value.* }, env);
+    switch (assig.name.*) {
+        .identifier => |ident| {
+            var evaluated = try eval(allocator, .{ .expression = assig.value.* }, env);
 
-    return switch (assig.token.type) {
-        .@"+=", .@"-=", .@"*=", .@"/=" => blk1: {
-            if (env.get(assig.name.value)) |current| {
-                var result = evalInfixExpression(assig.operator, current, evaluated);
-                _ = try env.set(assig.name.value, result);
-                break :blk1 result;
-            }
+            return switch (assig.token.type) {
+                .@"+=", .@"-=", .@"*=", .@"/=" => blk1: {
+                    if (env.get(ident.value)) |current| {
+                        var result = evalInfixExpression(assig.operator, current, evaluated);
+                        _ = try env.set(ident.value, result);
+                        break :blk1 result;
+                    }
 
-            return error.VariableNotDeclared;
+                    return error.VariableNotDeclared;
+                },
+                .@"=" => blk2: {
+                    if (env.get(ident.value)) |_| {
+                        _ = try env.set(ident.value, evaluated);
+                        break :blk2 evaluated;
+                    }
+
+                    return error.VariableNotDeclared;
+                },
+
+                else => error.UnknowOperator,
+            };
         },
-        .@"=" => blk2: {
-            if (env.get(assig.name.value)) |_| {
-                _ = try env.set(assig.name.value, evaluated);
-                break :blk2 evaluated;
-            }
 
-            return error.VariableNotDeclared;
+        .index_expression => |index_exp| {
+            std.debug.print("index_exp {}", .{index_exp});
+            @panic("aaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         },
-
-        else => error.UnknowOperator,
-    };
+        else => @panic("bbbbbbbbbbbbbbbbbbb"),
+    }
 }
 
 fn evalExpression(allocator: std.mem.Allocator, exps: []ast.Expression, env: *object.Environment) ![]object.Object {

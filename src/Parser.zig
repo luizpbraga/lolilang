@@ -205,12 +205,15 @@ fn parseReturnStatement(self: *Self) anyerror!ast.ReturnStatement {
 }
 
 fn parseAssignmentExpression(self: *Self, name: *ast.Expression) anyerror!ast.Expression {
+    var left_exp = try self.allocator.create(ast.Expression);
+    errdefer self.allocator.destroy(left_exp);
+
+    left_exp.* = name.*;
+    try self.gc.expression.append(left_exp);
+
     var stmt = ast.AssignmentExpression{
         .token = self.cur_token,
-        .name = switch (name.*) {
-            .identifier => |val| val,
-            else => return error.UnknowExpression,
-        },
+        .name = left_exp,
         .operator = undefined,
         .value = undefined,
     };

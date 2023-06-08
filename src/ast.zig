@@ -100,7 +100,7 @@ pub const InfixExpression = struct {
 };
 
 pub const IndexExpression = struct {
-    token: Token,
+    token: Token, // [
     left: *Expression,
     index: *Expression,
 
@@ -164,7 +164,7 @@ pub const ReturnStatement = struct {
 //  = , +=, -=, *=, /=,
 pub const AssignmentExpression = struct {
     token: Token,
-    name: Identifier,
+    name: *Expression,
     operator: []const u8,
     value: *Expression,
 
