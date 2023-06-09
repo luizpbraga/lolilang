@@ -77,12 +77,14 @@ pub const Environment = struct {
     store: std.StringHashMap(Object),
     outer: ?*Environment = null,
     allocated_obj: std.ArrayList([]Object),
+    allocated_str: std.ArrayList([]u8),
 
     pub fn init(allocator: std.mem.Allocator) @This() {
         return .{
             .allocator = allocator,
             .store = std.StringHashMap(Object).init(allocator),
             .allocated_obj = std.ArrayList([]Object).init(allocator),
+            .allocated_str = std.ArrayList([]u8).init(allocator),
         };
     }
 
@@ -93,9 +95,14 @@ pub const Environment = struct {
     }
 
     pub fn deinit(self: *Environment) void {
+        for (self.allocated_str.items) |item| {
+            self.allocator.free(item);
+        }
+
         for (self.allocated_obj.items) |item| {
             self.allocator.free(item);
         }
+        self.allocated_str.deinit();
         self.allocated_obj.deinit();
         self.store.deinit();
     }

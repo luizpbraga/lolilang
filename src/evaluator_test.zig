@@ -73,68 +73,64 @@ test "redefine 2: arrays" {
     //     try std.testing.expect(int.integer.value == val);
     // }
 }
+
 test "redefine 3: arrays += " {
-    var lexer = Lexer.init(
-        \\var foo = {0,1,2}
-        \\foo[ 1 ] += 69
-        \\return foo[1]
-    );
+    const inputs = [_][]const u8{
+        \\var foo = {0,1,2}; foo[0] += 10; return foo[0]
+        ,
+        \\var foo = {0,20,2}; foo[1] -= 10; return foo[1]
+        ,
+        \\var foo = {0,"1", 1}; foo[2] *= 10; return foo[2]
+        ,
+        \\var foo = {0,"1", 2, 100}; foo[3] /= 10; return foo[3]
+        ,
+    };
 
-    var parser = try Parser.new(allocator, &lexer);
-    defer parser.deinit();
+    for (inputs) |input| {
+        var lexer = Lexer.init(input);
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+        var parser = try Parser.new(allocator, &lexer);
+        defer parser.deinit();
 
-    var env = object.Environment.init(allocator);
-    defer env.deinit();
+        const program = try parser.parseProgram(allocator);
+        defer program.statements.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
-    try std.testing.expect(obj.integer.value == 70);
+        var env = object.Environment.init(allocator);
+        defer env.deinit();
+
+        var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+        try std.testing.expect(obj.integer.value == 10);
+    }
 }
 
-test "redefine 4: arrays += " {
-    var lexer = Lexer.init(
-        \\var foo = {0, "ola" ,2}
-        \\foo[ 1 ] += 69
-        \\return foo[1]
-    );
+test "string concat" {
+    const inputs = [_][]const u8{
+        \\ return "1" + "69"
+        ,
+        \\var foo = {0,1,2}; foo[ 1 ] += "69"; return foo[1]
+        ,
+        \\var foo = {0,"1",2}; foo[ 1 ] += 69; return foo[1]
+        ,
+        \\var foo = {0,"1",2}; foo[ 1 ] += "69"; return foo[1]
+        ,
+    };
 
-    var parser = try Parser.new(allocator, &lexer);
-    defer parser.deinit();
+    for (inputs) |input| {
+        var lexer = Lexer.init(input);
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+        var parser = try Parser.new(allocator, &lexer);
+        defer parser.deinit();
 
-    var env = object.Environment.init(allocator);
-    defer env.deinit();
+        const program = try parser.parseProgram(allocator);
+        defer program.statements.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
-    try std.testing.expect(std.mem.eql(u8, obj.string.value, "ola69"));
+        var env = object.Environment.init(allocator);
+        defer env.deinit();
 
-    // for (obj.array.elements, [3]i64{ 1, 69, 3 }) |int, val| {
-    //     try std.testing.expect(int.integer.value == val);
-    // }
+        var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+        try std.testing.expect(std.mem.eql(u8, obj.string.value, "169"));
+    }
 }
-
-// test "redefine 3" {
-//     var lexer = Lexer.init(
-//         \\var foo = {1,2,3}
-//         \\foo[0] = 0
-//         \\return foo
-//     );
-//     var parser = try Parser.new(allocator, &lexer);
-//     defer parser.deinit();
-
-//     const program = try parser.parseProgram(allocator);
-//     defer program.statements.deinit();
-
-//     var env = object.Environment.init(allocator);
-//     defer env.deinit();
-
-//     var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
-//     _ = obj;
-// }
 
 test "code example" {
     var lexer = Lexer.init(

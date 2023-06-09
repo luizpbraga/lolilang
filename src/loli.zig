@@ -1,6 +1,8 @@
 const std = @import("std");
 const Lexer = @import("Lexer.zig");
 const Parser = @import("Parser.zig");
+const object = @import("object.zig");
+const eval = @import("evaluator.zig").eval;
 
 const Loli = struct {
     fn run(allocator: std.mem.Allocator, input: []const u8) !void {
@@ -11,8 +13,10 @@ const Loli = struct {
         const program = try parser.parseProgram(allocator);
         defer program.statements.deinit();
 
-        for (program.statements.items) |x|
-            std.debug.print("{}\n\n", .{x});
+        var env = object.Environment.init(allocator);
+        defer env.deinit();
+
+        _ = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
     }
 };
 
@@ -23,7 +27,7 @@ pub fn main() !void {
     _ = args.next();
 
     var file_name = if (args.next()) |file| file else return error.MissingFILENAME;
-    std.debug.print("{s}", .{file_name});
+    std.debug.print("{s}\n", .{file_name});
 
     const input: []const u8 = try std.fs.cwd().readFileAlloc(allocator, file_name, 1024);
     defer allocator.free(input);
