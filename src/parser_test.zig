@@ -239,8 +239,22 @@ test "Function Literal" {
 ////     std.debug.print("\n{s}\n", .{stmt.tokenLiteral()});
 ////     std.debug.print("\n{s} {s}\n", .{ stmt.tokenLiteral(), stmt.name.value });
 //// }
+test "assignment list (=)" {
+    var lexer = Lexer.init(
+        \\var x = {1,2,3};
+        \\x [0 + 1] = 0
+        \\x[0];
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
 
-test "assignment statement (=)" {
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    // std.debug.print("{}", .{program.statements.items[2].expression_statement});
+}
+
+test "assignment expression (=)" {
     var lexer = Lexer.init(
         \\var x = 10;
         \\x = if (x == x) { 2 * x } else { null };

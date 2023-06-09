@@ -5,6 +5,9 @@ const object = @import("object.zig");
 const Lexer = @import("Lexer.zig");
 const Parser = @import("Parser.zig");
 const TokenType = @import("Token.zig").TokenType;
+const eql = std.mem.eql;
+
+const NULL = object.Object{ .null = object.Null{} };
 
 pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environment) anyerror!object.Object {
     switch (node) {
@@ -22,9 +25,9 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
                     break :blk evalPrefixExpression(pre.operator, right);
                 },
                 .infix_expression => |pre| blk: {
-                    const left = try eval(allocator, .{ .expression = pre.left.* }, env);
-                    const right = try eval(allocator, .{ .expression = pre.right.* }, env);
-                    break :blk evalInfixExpression(pre.operator, left, right);
+                    var left = try eval(allocator, .{ .expression = pre.left.* }, env);
+                    var right = try eval(allocator, .{ .expression = pre.right.* }, env);
+                    break :blk try evalInfixExpression(allocator, pre.operator, &left, &right, env);
                 },
                 .if_expression => |*if_exp| try evalIfExpression(allocator, if_exp, env),
 
@@ -68,7 +71,7 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
                 },
 
                 .return_statement => |ret_stmt| blk: {
-                    const exp = if (ret_stmt.value) |exp| exp else return createNull();
+                    const exp = if (ret_stmt.value) |exp| exp else return NULL;
                     break :blk .{
                         .@"return" = .{ .value = &(try eval(allocator, .{ .expression = exp }, env)) },
                     };
@@ -101,30 +104,63 @@ fn unwrapReturnValue(obj: object.Object) object.Object {
     return if (obj == .@"return") obj.@"return".value.* else obj;
 }
 
+// sometimes a do not know to to write beautiful code ...
 fn evalAssignment(allocator: std.mem.Allocator, assig: ast.AssignmentExpression, env: *object.Environment) !object.Object {
-    var evaluated = try eval(allocator, .{ .expression = assig.value.* }, env);
+    switch (assig.name.*) {
+        .identifier => |ident| {
+            var evaluated = try eval(allocator, .{ .expression = assig.value.* }, env);
 
-    return switch (assig.token.type) {
-        .@"+=", .@"-=", .@"*=", .@"/=" => blk1: {
-            if (env.get(assig.name.value)) |current| {
-                var result = evalInfixExpression(assig.operator, current, evaluated);
-                _ = try env.set(assig.name.value, result);
-                break :blk1 result;
+            switch (assig.token.type) {
+                .@"+=", .@"-=", .@"*=", .@"/=" => {
+                    if (env.get(ident.value)) |*current| {
+                        var result = try evalInfixExpression(allocator, assig.operator, @constCast(current), &evaluated, env);
+                        _ = try env.set(ident.value, result);
+                        return NULL;
+                    }
+                    return error.VariableNotDeclared;
+                },
+
+                .@"=" => {
+                    if (env.get(ident.value)) |_| {
+                        _ = try env.set(ident.value, evaluated);
+                        return NULL;
+                    }
+                    return error.VariableNotDeclared;
+                },
+
+                else => return error.UnknowOperator,
             }
-
-            return error.VariableNotDeclared;
         },
-        .@"=" => blk2: {
-            if (env.get(assig.name.value)) |_| {
-                _ = try env.set(assig.name.value, evaluated);
-                break :blk2 evaluated;
+
+        .index_expression => |exp| {
+            const index_obj = try eval(allocator, .{ .expression = exp.index.* }, env);
+            const index = index_obj.integer.value;
+            const evaluated = try eval(allocator, .{ .expression = assig.value.* }, env);
+            const var_name = exp.left.identifier.value;
+            if (env.get(var_name)) |*current| {
+                const uindex = @intCast(usize, index);
+                switch (current.array.elements[uindex]) {
+                    .integer => {
+                        var element = &current.array.elements[uindex];
+                        switch (assig.token.type) {
+                            .@"=", .@"+=", .@"-=", .@"*=", .@"/=" => _ = try evalInfixExpression(allocator, assig.token.literal, element, @constCast(&evaluated), env),
+                            else => return error.UnknowOperator,
+                        }
+                    },
+                    .string => {
+                        var element = &current.array.elements[uindex];
+                        switch (assig.token.type) {
+                            .@"=", .@"+=" => _ = try evalInfixExpression(allocator, assig.token.literal, element, @constCast(&evaluated), env),
+                            else => return error.UnknowOperator,
+                        }
+                    },
+                    else => return error.NotSuportedOperation,
+                }
             }
-
-            return error.VariableNotDeclared;
+            return NULL;
         },
-
-        else => error.UnknowOperator,
-    };
+        else => return error.AssignmentExpressionNotDefined,
+    }
 }
 
 fn evalExpression(allocator: std.mem.Allocator, exps: []ast.Expression, env: *object.Environment) ![]object.Object {
@@ -177,14 +213,10 @@ fn evalStatement(allocator: std.mem.Allocator, stmts: []ast.Statement, env: *obj
     return result;
 }
 
-fn createNull() object.Object {
-    return .{ .null = object.Null{} };
-}
-
 fn evalIfExpression(allocator: std.mem.Allocator, ie: *const ast.IfExpression, env: *object.Environment) anyerror!object.Object {
     const condition = try eval(allocator, .{ .expression = ie.condition.* }, env);
 
-    if (condition != .boolean) return createNull();
+    if (condition != .boolean) return NULL;
 
     if (condition.boolean.value) {
         // { block statements if}
@@ -194,43 +226,98 @@ fn evalIfExpression(allocator: std.mem.Allocator, ie: *const ast.IfExpression, e
         return try eval(allocator, .{ .statement = .{ .block_statement = alternative } }, env);
     }
 
-    return createNull();
+    return NULL;
 }
 
-fn evalInfixExpression(op: []const u8, left: object.Object, right: object.Object) object.Object {
+fn evalInfixExpression(allocator: std.mem.Allocator, op: []const u8, left: *object.Object, right: *object.Object, env: *object.Environment) !object.Object {
+    // int init operation
     if (right.objType() == .integer and left.objType() == .integer) {
-        return switch (op[0]) {
-            '+' => .{ .integer = .{ .value = left.integer.value + right.integer.value } },
-            '-' => .{ .integer = .{ .value = left.integer.value - right.integer.value } },
-            '*' => .{ .integer = .{ .value = left.integer.value * right.integer.value } },
-            '/' => .{ .integer = .{ .value = @divFloor(left.integer.value, right.integer.value) } },
-            '>' => .{ .boolean = .{ .value = left.integer.value > right.integer.value } },
-            '<' => .{ .boolean = .{ .value = left.integer.value < right.integer.value } },
-            '=' => if (op.len != 1 and op[1] == '=') .{ .boolean = .{ .value = left.integer.value == right.integer.value } } else createNull(),
-            '!' => if (op.len != 1 and op[1] == '=') .{ .boolean = .{ .value = left.integer.value != right.integer.value } } else createNull(),
-            // '/' => left.integer.value / right.integer.value,
-            else => createNull(),
-        };
+        return if (eql(u8, op, "+"))
+            .{ .integer = .{ .value = left.integer.value + right.integer.value } }
+        else if (eql(u8, op, "-"))
+            .{ .integer = .{ .value = left.integer.value - right.integer.value } }
+        else if (eql(u8, op, "*"))
+            .{ .integer = .{ .value = left.integer.value * right.integer.value } }
+        else if (eql(u8, op, "/"))
+            .{ .integer = .{ .value = @divFloor(left.integer.value, right.integer.value) } }
+        else if (eql(u8, op, ">"))
+            .{ .boolean = .{ .value = left.integer.value > right.integer.value } }
+        else if (eql(u8, op, "<"))
+            .{ .boolean = .{ .value = left.integer.value < right.integer.value } }
+        else if (eql(u8, op, "=="))
+            .{ .boolean = .{ .value = left.integer.value == right.integer.value } }
+        else if (eql(u8, op, "!="))
+            .{ .boolean = .{ .value = left.integer.value != right.integer.value } }
+        else if (eql(u8, op, "=")) b: {
+            left.integer.value = right.integer.value;
+            break :b NULL;
+        } else if (eql(u8, op, "+=")) b: {
+            left.integer.value += right.integer.value;
+            break :b NULL;
+        } else if (eql(u8, op, "-=")) b: {
+            left.integer.value -= right.integer.value;
+            break :b NULL;
+        } else if (eql(u8, op, "*=")) b: {
+            left.integer.value *= right.integer.value;
+            break :b NULL;
+        } else if (eql(u8, op, "/=")) b: {
+            left.integer.value = @divFloor(left.integer.value, right.integer.value);
+            break :b NULL;
+        } else NULL;
     }
 
+    // bool bool operation
     if (right.objType() == .boolean and left.objType() == .boolean) {
-        return switch (op[0]) {
-            '=' => if (op[1] == '=') .{ .boolean = .{ .value = left.boolean.value == right.boolean.value } } else createNull(),
-            '!' => if (op[1] == '=') .{ .boolean = .{ .value = left.boolean.value != right.boolean.value } } else createNull(),
-            else => createNull(),
-        };
+        return if (eql(u8, op, "=="))
+            .{ .boolean = .{ .value = left.boolean.value == right.boolean.value } }
+        else if (eql(u8, op, "!="))
+            .{ .boolean = .{ .value = left.boolean.value != right.boolean.value } }
+        else
+            NULL;
     }
 
+    // string string op
     if (right.objType() == .string and left.objType() == .string) {
-        var buff: [100]u8 = undefined;
-        var new_string = std.fmt.bufPrint(&buff, "{s}{s}", .{ left.string.value, right.string.value }) catch "";
-        return switch (op[0]) {
-            '+' => .{ .string = .{ .value = new_string } },
-            else => createNull(),
-        };
+        return if (eql(u8, op, "+")) b: {
+            var new_string = try std.fmt.allocPrint(allocator, "{s}{s}", .{ left.string.value, right.string.value });
+            try env.allocated_str.append(new_string);
+            break :b .{ .string = .{ .value = new_string } };
+        } else if (eql(u8, op, "+=")) b: {
+            var new_string = try std.fmt.allocPrint(allocator, "{s}{s}", .{ left.string.value, right.string.value });
+            try env.allocated_str.append(new_string);
+            left.string.value = new_string;
+            break :b NULL;
+        } else NULL;
     }
 
-    return createNull();
+    if (right.objType() == .integer and left.objType() == .string) {
+        return if (eql(u8, op, "+")) b: {
+            var new_string = try std.fmt.allocPrint(allocator, "{s}{any}", .{ left.string.value, right.integer.value });
+            try env.allocated_str.append(new_string);
+            break :b .{ .string = .{ .value = new_string } };
+        } else if (eql(u8, op, "+=")) b: {
+            var new_string = try std.fmt.allocPrint(allocator, "{s}{any}", .{ left.string.value, right.integer.value });
+            try env.allocated_str.append(new_string);
+            left.string.value = new_string;
+            break :b NULL;
+        } else NULL;
+    }
+
+    if (right.objType() == .string and left.objType() == .integer) {
+        return if (eql(u8, op, "+")) b: {
+            var new_string = try std.fmt.allocPrint(allocator, "{any}{s}", .{ left.integer.value, right.string.value });
+            try env.allocated_str.append(new_string);
+            break :b .{ .string = .{ .value = new_string } };
+        } else if (eql(u8, op, "+=")) b: {
+            var new_string = try std.fmt.allocPrint(allocator, "{any}{s}", .{ left.integer.value, right.string.value });
+            try env.allocated_str.append(new_string);
+            // left.string.value = new_string;
+            left.* = .{ .string = .{ .value = new_string } };
+            break :b NULL;
+        } else NULL;
+    }
+
+    return NULL;
 }
 
 fn evalPrefixExpression(op: []const u8, right: object.Object) object.Object {
@@ -243,7 +330,7 @@ fn evalPrefixExpression(op: []const u8, right: object.Object) object.Object {
         return .{ .integer = .{ .value = -right.integer.value } };
     }
 
-    return createNull();
+    return NULL;
 }
 
 fn evalIndexExpression(left: object.Object, index: object.Object) !object.Object {
@@ -261,7 +348,7 @@ fn evalArrayIndexExpression(array: object.Object, index: object.Object) !object.
     const max = arr_obj.elements.len - 1;
 
     if (idx < 0 or idx > max) {
-        return createNull();
+        return NULL;
     }
 
     return arr_obj.elements[idx];
