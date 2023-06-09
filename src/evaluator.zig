@@ -9,6 +9,53 @@ const eql = std.mem.eql;
 
 const NULL = object.Object{ .null = object.Null{} };
 
+fn pprint(arg: *object.Object) void {
+    switch (arg.*) {
+        .null => |n| std.debug.print("{any}", .{n.value}),
+        .integer => |n| std.debug.print("{}", .{n.value}),
+        .string => |n| std.debug.print("{s}", .{n.value}),
+        .boolean => |n| std.debug.print("{}", .{n.value}),
+        else => std.debug.print("not yet printable\n", .{}),
+    }
+}
+
+fn printBuiltin(args: []const object.Object) object.Object {
+    for (args) |arg| {
+        switch (arg) {
+            .null => |n| std.debug.print("{any}\n", .{n.value}),
+            .integer => |n| std.debug.print("{}\n", .{n.value}),
+            .string => |n| std.debug.print("{s}\n", .{n.value}),
+            .boolean => |n| std.debug.print("{}\n", .{n.value}),
+            .array => |n| {
+                std.debug.print("{{ ", .{});
+
+                for (n.elements, 0..) |*el, i| {
+                    pprint(el);
+                    if (i < n.elements.len - 1) std.debug.print(", ", .{});
+                }
+
+                std.debug.print(" }}\n", .{});
+            },
+            else => std.debug.print("not yet printable\n", .{}),
+        }
+    }
+
+    return NULL;
+}
+
+const buildins = std.ComptimeStringMap(object.Builtin, .{
+    .{ "print", .{ .func = printBuiltin } },
+});
+
+fn evalIdentifier(node: *const ast.Identifier, env: *object.Environment) !object.Object {
+    return if (env.get(node.value)) |val|
+        val
+    else if (buildins.get(node.value)) |val|
+        .{ .builtin = val }
+    else
+        error.IdentifierNotFound;
+}
+
 pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environment) anyerror!object.Object {
     switch (node) {
         .expression => |exp| {
@@ -31,7 +78,7 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
                 },
                 .if_expression => |*if_exp| try evalIfExpression(allocator, if_exp, env),
 
-                .identifier => |iden| env.get(iden.value).?,
+                .identifier => |iden| try evalIdentifier(&iden, env), //env.get(iden.value).?,
 
                 .assignment_expression => |ass| try evalAssignment(allocator, ass, env),
 
@@ -83,11 +130,18 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
 
 fn applyFunction(allocator: std.mem.Allocator, func: object.Object, args: []object.Object) !object.Object {
     // TODO 147
-    var function = func.function;
-    var extended_env = try extendFunctionEnv(&function, args);
-    defer extended_env.deinit();
-    var evaluated = try eval(allocator, .{ .statement = .{ .block_statement = function.body } }, &extended_env);
-    return unwrapReturnValue(evaluated);
+    return switch (func) {
+        .function => |f| b: {
+            var extended_env = try extendFunctionEnv(@constCast(&f), args);
+            defer extended_env.deinit();
+            var evaluated = try eval(allocator, .{ .statement = .{ .block_statement = f.body } }, &extended_env);
+            break :b unwrapReturnValue(evaluated);
+        },
+
+        .builtin => |b| b.func(args),
+
+        else => error.NotAFunction,
+    };
 }
 
 fn extendFunctionEnv(func: *object.Function, args: []object.Object) anyerror!object.Environment {

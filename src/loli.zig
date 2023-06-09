@@ -27,12 +27,11 @@ pub fn main() !void {
     _ = args.next();
 
     var file_name = if (args.next()) |file| file else return error.MissingFILENAME;
-    std.debug.print("{s}\n", .{file_name});
 
     const input: []const u8 = try std.fs.cwd().readFileAlloc(allocator, file_name, 1024);
     defer allocator.free(input);
 
     try Loli.run(allocator, input);
 
-    std.debug.print("\n\t** loli gos brrr **\n", .{});
+    std.debug.print("\t** loli gos brrr **\n", .{});
 }

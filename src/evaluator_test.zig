@@ -7,6 +7,24 @@ const TokenType = @import("Token.zig").TokenType;
 const eval = @import("evaluator.zig").eval;
 const allocator = std.testing.allocator;
 
+test "print" {
+    var lexer = Lexer.init(
+        \\var foo = {1,2,3}
+        \\print(foo)
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    _ = obj;
+}
+
 test "redefine (=)" {
     var lexer = Lexer.init(
         \\var foo = 20
