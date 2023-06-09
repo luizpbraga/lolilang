@@ -1,12 +1,21 @@
+const Self = @This();
+lexer: *Lexer,
+cur_token: Token,
+last_token: Token,
+peek_token: Token,
+gc: GarbageCollector,
+allocator: std.mem.Allocator,
+infix_parse_fns: std.AutoHashMap(Token.TokenType, InfixParseFn),
+prefix_parse_fns: std.AutoHashMap(Token.TokenType, PrefixParseFn),
+
+// TODO: remove null and implement parsing error msg
+const PrefixParseFn = *const fn (*Self) anyerror!ast.Expression;
+const InfixParseFn = *const fn (*Self, *ast.Expression) anyerror!ast.Expression;
+
 const std = @import("std");
 const Token = @import("Token.zig");
 const Lexer = @import("Lexer.zig");
 const ast = @import("ast.zig");
-
-// TODO: remove null and implement parsing error msg
-const Self = @This();
-const PrefixParseFn = *const fn (*Self) anyerror!ast.Expression;
-const InfixParseFn = *const fn (*Self, *ast.Expression) anyerror!ast.Expression;
 
 // TODO: better error
 const ParseError = error{
@@ -31,7 +40,7 @@ pub const Precedence = enum {
             .@"+", .@"-" => .sum,
             .@"/", .@"*" => .product,
             .@"(" => .call,
-            .@"[" => .index,
+            .@"[", .@"." => .index,
             .@"=", .@"+=", .@"-=", .@"*=", .@"/=" => .assigne,
             else => .lower,
         };
@@ -45,6 +54,8 @@ const GarbageCollector = struct {
     identifiers: std.ArrayList([]ast.Identifier),
     statements: std.ArrayList([]ast.Statement),
     expressions: std.ArrayList([]ast.Expression),
+    vars_decl: std.ArrayList([]ast.VarStatement),
+    const_decl: std.ArrayList([]ast.ConstStatement),
 
     fn init(allocator: std.mem.Allocator) @This() {
         // TODO: use AutoHashMap(usize, pointer)
@@ -54,18 +65,11 @@ const GarbageCollector = struct {
             .identifiers = std.ArrayList([]ast.Identifier).init(allocator),
             .statements = std.ArrayList([]ast.Statement).init(allocator),
             .expressions = std.ArrayList([]ast.Expression).init(allocator),
+            .vars_decl = std.ArrayList([]ast.VarStatement).init(allocator),
+            .const_decl = std.ArrayList([]ast.ConstStatement).init(allocator),
         };
     }
 };
-
-lexer: *Lexer,
-cur_token: Token,
-last_token: Token,
-peek_token: Token,
-allocator: std.mem.Allocator,
-gc: GarbageCollector,
-infix_parse_fns: std.AutoHashMap(Token.TokenType, InfixParseFn),
-prefix_parse_fns: std.AutoHashMap(Token.TokenType, PrefixParseFn),
 
 pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) !Self {
     var prefix_parse_fns = std.AutoHashMap(Token.TokenType, PrefixParseFn).init(allocator);
@@ -109,6 +113,7 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) !Self {
     try p.registerInfix(.@">", parseInfixExpression);
     try p.registerInfix(.@"<", parseInfixExpression);
     try p.registerInfix(.@"(", parseCallExpression);
+    try p.registerInfix(.@".", parseMethodExpression);
 
     try p.registerInfix(.@"=", parseAssignmentExpression);
     try p.registerInfix(.@"+=", parseAssignmentExpression);
@@ -133,12 +138,20 @@ pub fn deinit(self: *Self) void {
     for (self.gc.expressions.items) |exp|
         self.allocator.free(exp);
 
+    for (self.gc.vars_decl.items) |dlc|
+        self.allocator.free(dlc);
+
+    for (self.gc.const_decl.items) |dlc|
+        self.allocator.free(dlc);
+
     self.prefix_parse_fns.deinit();
     self.infix_parse_fns.deinit();
     self.gc.expression.deinit();
     self.gc.statements.deinit();
     self.gc.identifiers.deinit();
     self.gc.expressions.deinit();
+    self.gc.vars_decl.deinit();
+    self.gc.const_decl.deinit();
 }
 
 fn registerPrefix(self: *Self, token_type: Token.TokenType, func: PrefixParseFn) !void {
@@ -236,6 +249,125 @@ fn parseAssignmentExpression(self: *Self, name: *ast.Expression) anyerror!ast.Ex
     return .{ .assignment_expression = stmt };
 }
 
+fn parseConstStatement(self: *Self) anyerror!ast.ConstStatement {
+    var stmt = ast.ConstStatement{
+        .token = self.cur_token,
+        .name = undefined,
+    };
+
+    if (!self.expectPeek(.identifier)) {
+        std.log.err("Expect Identifier, found '{s}'", .{self.cur_token.literal});
+        return error.UnexpectToken;
+    }
+
+    stmt.name = ast.Identifier{
+        .token = self.cur_token,
+        .value = self.cur_token.literal,
+    };
+
+    if (!self.expectPeek(.@"=")) {
+        std.log.err("Expect Assignment Token (=), found '{s}'", .{self.cur_token.literal});
+        return error.UnexpectToken;
+    }
+
+    self.nextToken();
+
+    // TODO: pointer?
+    stmt.value = (try self.parseExpression(Precedence.lower)).*;
+
+    if (self.peekTokenIs(.@";")) {
+        self.nextToken();
+    }
+
+    return stmt;
+}
+
+fn parseVarBlockStatement(self: *Self) anyerror!ast.VarBlockStatement {
+    var stmt = ast.VarBlockStatement{
+        .token = self.last_token,
+        .vars_decl = undefined,
+    };
+
+    var vars = std.ArrayList(ast.VarStatement).init(self.allocator);
+    errdefer vars.deinit();
+
+    self.nextToken();
+
+    while (self.cur_token.type != .@"}") {
+        const ident = try self.parseIdentifier();
+
+        if (ident != .identifier) return error.ExprectIdentifier;
+
+        self.nextToken();
+
+        if (self.expectPeek(.@"=")) return error.MissingAssingmentOperator;
+
+        self.nextToken();
+
+        const exp = try self.parseExpression(.lower);
+
+        var var_stmt = ast.VarStatement{
+            .token = stmt.token,
+            .name = ident.identifier,
+            .value = exp.*,
+        };
+
+        try vars.append(var_stmt);
+
+        self.nextToken();
+    }
+
+    var vars_owned = try vars.toOwnedSlice();
+
+    try self.gc.vars_decl.append(vars_owned);
+    stmt.vars_decl = vars_owned;
+
+    return stmt;
+}
+
+fn parseConstBlockStatement(self: *Self) anyerror!ast.ConstBlockStatement {
+    var stmt = ast.ConstBlockStatement{
+        .token = self.last_token,
+        .const_decl = undefined,
+    };
+
+    var vars = std.ArrayList(ast.ConstStatement).init(self.allocator);
+    errdefer vars.deinit();
+
+    self.nextToken();
+
+    while (self.cur_token.type != .@"}") {
+        const ident = try self.parseIdentifier();
+
+        if (ident != .identifier) return error.ExprectIdentifier;
+
+        self.nextToken();
+
+        if (self.expectPeek(.@"=")) return error.MissingAssingmentOperator;
+
+        self.nextToken();
+
+        const exp = try self.parseExpression(.lower);
+
+        var var_stmt = ast.ConstStatement{
+            .token = stmt.token,
+            .name = ident.identifier,
+            .value = exp.*,
+        };
+
+        try vars.append(var_stmt);
+
+        self.nextToken();
+    }
+
+    var vars_owned = try vars.toOwnedSlice();
+
+    try self.gc.const_decl.append(vars_owned);
+    stmt.const_decl = vars_owned;
+
+    return stmt;
+}
+
 fn parseVarStatement(self: *Self) anyerror!ast.VarStatement {
     var stmt = ast.VarStatement{
         .token = self.cur_token,
@@ -271,7 +403,16 @@ fn parseVarStatement(self: *Self) anyerror!ast.VarStatement {
 
 fn parseStatement(self: *Self) !ast.Statement {
     return switch (self.cur_token.type) {
-        .@"var" => .{ .var_statement = try self.parseVarStatement() },
+        .@"var" => if (!self.expectPeek(.@"{"))
+            .{ .var_statement = try self.parseVarStatement() }
+        else
+            .{ .var_block_statement = try self.parseVarBlockStatement() },
+
+        .@"const" => if (!self.expectPeek(.@"{"))
+            .{ .const_statement = try self.parseConstStatement() }
+        else
+            .{ .const_block_statement = try self.parseConstBlockStatement() },
+
         .@"return" => .{ .return_statement = try self.parseReturnStatement() },
         else => .{ .expression_statement = try self.parseExpressionStatement() },
     };
@@ -513,8 +654,31 @@ fn parseFunctionParameters(self: *Self) anyerror![]ast.Identifier {
     return ident_owner;
 }
 
+fn parseMethodExpression(self: *Self, exp: *ast.Expression) anyerror!ast.Expression {
+    var caller = try self.allocator.create(ast.Expression);
+    caller.* = exp.*;
+    try self.gc.expression.append(caller);
+
+    var method_exp = ast.MethodExpression{
+        .token = self.cur_token,
+        .caller = caller,
+        .method = undefined,
+    };
+
+    self.nextToken();
+
+    var exp_mathod = try self.parseIdentifier();
+
+    if (exp_mathod != .identifier) return error.ExpectIdentifier;
+
+    method_exp.method = exp_mathod.identifier;
+
+    return .{ .method_expression = method_exp };
+}
+
 fn parseCallExpression(self: *Self, func: *ast.Expression) anyerror!ast.Expression {
     var func_ = try self.allocator.create(ast.Expression);
+
     func_.* = func.*;
     try self.gc.expression.append(func_);
 

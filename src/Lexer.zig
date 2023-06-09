@@ -1,13 +1,13 @@
-const std = @import("std");
-const Token = @import("Token.zig");
-const TokenType = Token.TokenType;
 const Self = @This();
-
 input: []const u8,
 position: usize = 0,
 read_position: usize = 0,
 starting_line_position: usize = 0,
 ch: u8 = 0,
+
+const std = @import("std");
+const Token = @import("Token.zig");
+const TokenType = Token.TokenType;
 
 pub fn init(input: []const u8) Self {
     var lexer = Self{ .input = input };
@@ -116,6 +116,13 @@ pub fn nextToken(self: *Self) Token {
                 break :x newToken(.@"*=");
             },
             else => newToken(.@"*"),
+        },
+        '.' => switch (self.peekChar()) {
+            '.' => x: {
+                self.readChar();
+                break :x newToken(.@"..");
+            },
+            else => newToken(.@"."),
         },
         '/' => switch (self.peekChar()) {
             '=' => x: {

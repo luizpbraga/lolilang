@@ -236,6 +236,66 @@ test "Array Index" {
 //     try std.testing.expect(boole.value == true);
 // }
 
+test "const statement " {
+    var lexer = Lexer.init(
+        \\const x = "olamundo"
+        \\var y = 10
+        \\y = 1
+        \\return y + x
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+
+    try std.testing.expect(std.mem.eql(u8, obj.string.value, "1olamundo"));
+}
+
+test "var/const block  " {
+    var lexer = Lexer.init(
+        \\const { x = "olamundo" y = 1}
+        \\var { z = "olamundo" h = 1 }
+        \\return h + x
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+
+    try std.testing.expect(std.mem.eql(u8, obj.string.value, "1olamundo"));
+}
+
+// test "function - return concat string " {
+//     var lexer = Lexer.init(
+//         \\var f = fn(){ "ola" + "mundo" };
+//         \\f();
+//     );
+//     var parser = try Parser.new(allocator, &lexer);
+//     defer parser.deinit();
+
+//     const program = try parser.parseProgram(allocator);
+//     defer program.statements.deinit();
+
+//     var env = object.Environment.init(allocator);
+//     defer env.deinit();
+
+//     var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+
+//     try std.testing.expect(std.mem.eql(u8, obj.string.value, "olamundo"));
+// }
+
 test "function call " {
     var lexer = Lexer.init(
         \\var f = fn(){ return -5 };

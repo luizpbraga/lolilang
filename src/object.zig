@@ -83,6 +83,7 @@ pub const Builtin = struct {
 pub const Environment = struct {
     allocator: std.mem.Allocator,
     store: std.StringHashMap(Object),
+    is_const: std.StringHashMap(bool),
     outer: ?*Environment = null,
     allocated_obj: std.ArrayList([]Object),
     allocated_str: std.ArrayList([]u8),
@@ -91,6 +92,7 @@ pub const Environment = struct {
         return .{
             .allocator = allocator,
             .store = std.StringHashMap(Object).init(allocator),
+            .is_const = std.StringHashMap(bool).init(allocator),
             .allocated_obj = std.ArrayList([]Object).init(allocator),
             .allocated_str = std.ArrayList([]u8).init(allocator),
         };
@@ -113,6 +115,7 @@ pub const Environment = struct {
         self.allocated_str.deinit();
         self.allocated_obj.deinit();
         self.store.deinit();
+        self.is_const.deinit();
     }
 
     pub fn get(self: *Environment, name: []const u8) ?Object {
@@ -120,7 +123,18 @@ pub const Environment = struct {
     }
 
     pub fn set(self: *Environment, name: []const u8, obj: Object) !Object {
+        if (self.is_const.get(name)) |is_const| {
+            if (is_const) return error.CanNotReassingConstVariables;
+        }
         try self.store.put(name, obj);
+        try self.is_const.put(name, false);
+        return obj;
+    }
+
+    pub fn setConst(self: *Environment, name: []const u8, obj: Object) !Object {
+        if (self.is_const.get(name)) |_| return error.CanNotReassingConstVariables;
+        try self.store.put(name, obj);
+        try self.is_const.put(name, true);
         return obj;
     }
 };

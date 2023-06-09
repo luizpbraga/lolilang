@@ -112,9 +112,24 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
 
                 .expression_statement => |exp_stmt| eval(allocator, .{ .expression = exp_stmt.expression.* }, env),
 
+                .var_block_statement => |vars| for (vars.vars_decl) |var_stmt| {
+                    var val = try eval(allocator, .{ .expression = var_stmt.value.? }, env);
+                    _ = try env.set(var_stmt.name.value, val);
+                } else NULL,
+
+                .const_block_statement => |consts| for (consts.const_decl) |const_stmt| {
+                    var val = try eval(allocator, .{ .expression = const_stmt.value.? }, env);
+                    _ = try env.setConst(const_stmt.name.value, val);
+                } else NULL,
+
                 .var_statement => |var_stmt| blk: {
                     var val = try eval(allocator, .{ .expression = var_stmt.value.? }, env);
                     break :blk try env.set(var_stmt.name.value, val);
+                },
+
+                .const_statement => |const_stmt| blk: {
+                    var val = try eval(allocator, .{ .expression = const_stmt.value.? }, env);
+                    break :blk try env.setConst(const_stmt.name.value, val);
                 },
 
                 .return_statement => |ret_stmt| blk: {
@@ -123,6 +138,8 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
                         .@"return" = .{ .value = &(try eval(allocator, .{ .expression = exp }, env)) },
                     };
                 },
+
+                .method_expression => NULL,
             };
         },
     }

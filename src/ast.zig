@@ -18,6 +18,9 @@ pub const Node = union(enum) {
 pub const Statement = union(enum) {
     // implements Node,
     var_statement: VarStatement,
+    var_block_statement: VarBlockStatement,
+    const_statement: ConstStatement,
+    const_block_statement: ConstBlockStatement,
     return_statement: ReturnStatement,
     expression_statement: ExpressionStatement,
     block_statement: BlockStatement,
@@ -51,6 +54,7 @@ pub const Expression = union(enum) {
     infix_expression: InfixExpression,
     if_expression: IfExpression,
     call_expression: CallExpression,
+    method_expression: MethodExpression,
     index_expression: IndexExpression,
 
     fn expressionNode(self: *const Expression) void {
@@ -132,6 +136,28 @@ pub const Program = struct {
 };
 
 // ------------------------------------------------------------------------
+pub const ConstStatement = struct {
+    token: Token, //= .@"var",
+    name: Identifier,
+    value: ?Expression = null,
+
+    pub fn statementNode(self: *const ConstStatement) void {
+        _ = self;
+    }
+
+    pub fn tokenLiteral(self: *const ConstStatement) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const VarBlockStatement = struct {
+    token: Token, //= .@"var",
+    vars_decl: []VarStatement,
+};
+pub const ConstBlockStatement = struct {
+    token: Token, //= .@"var",
+    const_decl: []ConstStatement,
+};
 
 pub const VarStatement = struct {
     token: Token, //= .@"var",
@@ -245,7 +271,7 @@ pub const FunctionLiteral = struct {
     parameters: []Identifier,
     body: BlockStatement,
 
-    pub fn tokenLiteral(self: *const Boolean) []const u8 {
+    pub fn tokenLiteral(self: *const FunctionLiteral) []const u8 {
         return self.token.literal;
     }
 };
@@ -254,6 +280,16 @@ pub const CallExpression = struct {
     token: Token, // (
     function: *Expression, // Identifier or FunctionLiteral
     arguments: []Expression,
+
+    pub fn tokenLiteral(self: *const CallExpression) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const MethodExpression = struct {
+    token: Token, // .
+    caller: *Expression, //
+    method: Identifier,
 
     pub fn tokenLiteral(self: *const Boolean) []const u8 {
         return self.token.literal;

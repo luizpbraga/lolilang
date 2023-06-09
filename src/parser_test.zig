@@ -58,6 +58,70 @@ fn testInfixExpression(exp: *ast.Expression, left: anytype, op: []const u8, righ
     try testLiteralExpression(opExp.right, right);
 }
 
+test "method call" {
+    var lexer = Lexer.init(
+        \\const str = "ola mundo"
+        \\return str.len
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    if (program.statements.items.len != 2) {
+        std.log.err("len: {d}", .{program.statements.items.len});
+        return error.NotEnoughStatements;
+    }
+}
+
+test "const/var block" {
+    var lexer = Lexer.init(
+        \\var {   
+        \\  x = 10
+        \\  y = "ola"
+        \\}
+        \\
+        \\const {   
+        \\  x = 10
+        \\  y = "ola"
+        \\  z = "ola" + "mundo"
+        \\  w = {1,2,3,4}
+        \\}
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    if (program.statements.items.len != 2) {
+        std.log.err("len: {d}", .{program.statements.items.len});
+        return error.NotEnoughStatements;
+    }
+    // var stmt = program.statements.items[0].expression_statement;
+
+    // var exp = stmt.expression.call_expression;
+    // _ = exp;
+}
+
+test "Function Call 3" {
+    var lexer = Lexer.init("fn(){ \"1\" + \"2\" }();");
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    if (program.statements.items.len != 1) {
+        std.log.err("len: {d}", .{program.statements.items.len});
+        return error.NotEnoughStatements;
+    }
+    var stmt = program.statements.items[0].expression_statement;
+
+    var exp = stmt.expression.call_expression;
+    _ = exp;
+}
 test "Function Call 2" {
     var lexer = Lexer.init("fn(x, y){ 1 + 2 }(1,2);");
     var parser = try Parser.new(allocator, &lexer);
