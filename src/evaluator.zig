@@ -151,9 +151,14 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
 
 fn applyMethod(obj: *const object.Object, arg: *const object.BuiltinMethod) !object.Object {
 
-    // only string (for now)
-    if (obj.objType() == .string and std.mem.eql(u8, arg.method_name.value, "len")) {
-        return .{ .integer = .{ .value = @intCast(i64, obj.string.value.len) } };
+    // only string and lists (for now)
+    if (std.mem.eql(u8, arg.method_name.value, "len")) {
+        const len = switch (obj.objType()) {
+            .string => obj.string.value.len,
+            .array => obj.array.elements.len,
+            else => return error.MethodLenNotDefined,
+        };
+        return .{ .integer = .{ .value = @intCast(i64, len) } };
     }
 
     return error.MethodNotDefined;

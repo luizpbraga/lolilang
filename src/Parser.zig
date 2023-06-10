@@ -658,8 +658,6 @@ fn parseMethodExpression(self: *Self, exp: *ast.Expression) anyerror!ast.Express
     caller.* = exp.*;
     try self.gc.expression.append(caller);
 
-    std.debug.print("\n> {s}", .{self.cur_token.literal});
-
     var method_exp = ast.MethodExpression{
         .token = self.cur_token,
         .caller = caller,
@@ -667,8 +665,6 @@ fn parseMethodExpression(self: *Self, exp: *ast.Expression) anyerror!ast.Express
     };
 
     self.nextToken();
-
-    std.debug.print("\n> {s}", .{self.cur_token.literal});
 
     var exp_mathod = try self.parseIdentifier();
 

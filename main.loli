@@ -1,16 +1,20 @@
 
-var x = 10
-
-
-var foo = fn(x) {
-    return if x != 0 {
-        x
-    } else {
-        1
-    }
+const {
+    ONE = 1
+    TWO = 2
 }
 
+var foo = fn(x, y) {
+    var hello = "Hello Loli"
+    return if x > y { x } else { hello }
+}
 
+var v = { 1, true, "2" , false, 4 }
 
-print( foo(5) )
+v[0] += 1
 
+print( foo(1,2), v[0], {1,2,3} , ONE + 1 == TWO)
+
+const dia = "ola mundo"
+
+print( dia.len == "ola mundo".len , v.len)
