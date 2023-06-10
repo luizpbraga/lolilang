@@ -19,5 +19,5 @@ var v = { 1, true, "2" , false, 4 }
 
 v[0] += 1
 
-print( foo(1,2), v[0], {1,2,3} , ONE + 1 == TWO)
+print( foo(1,2), v[0], {1,2,3} , ONE + 1 == TWO, "Tchau!".len )
 ```
