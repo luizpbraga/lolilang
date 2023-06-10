@@ -39,18 +39,11 @@ fn skipWhiteSpace(self: *Self) void {
 }
 
 fn skipComments(self: *Self) void {
-    if (self.ch != '\\') return;
+    while (self.ch != '\n' and self.ch != 0) {
+        self.readChar();
+    }
 
-    self.readChar();
-
-    if (self.ch == '\\')
-        while (self.ch != '\n' and self.ch != 0) {
-            self.readChar();
-        };
-
-    self.readChar();
-
-    self.skipComments();
+    self.skipWhiteSpace();
 }
 
 fn readIdentifier(self: *Self) []const u8 {
@@ -77,7 +70,11 @@ fn newToken(token_type: TokenType) Token {
 
 pub fn nextToken(self: *Self) Token {
     self.skipWhiteSpace();
-    self.skipComments();
+
+    if (self.ch == '/' and self.peekChar() == '/') {
+        self.skipComments();
+        return self.nextToken();
+    }
 
     var tok = switch (self.ch) {
         '=' => switch (self.peekChar()) {
