@@ -101,6 +101,12 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
                     var index = try eval(allocator, .{ .expression = idx.index.* }, env);
                     break :blk evalIndexExpression(left, index);
                 },
+
+                .method_expression => |met| b: {
+                    const left = try eval(allocator, .{ .expression = met.caller.* }, env);
+                    const ident = object.BuiltinMethod{ .method_name = met.method };
+                    break :b try applyMethod(&left, &ident);
+                },
             };
         },
 
@@ -138,11 +144,19 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
                         .@"return" = .{ .value = &(try eval(allocator, .{ .expression = exp }, env)) },
                     };
                 },
-
-                .method_expression => NULL,
             };
         },
     }
+}
+
+fn applyMethod(obj: *const object.Object, arg: *const object.BuiltinMethod) !object.Object {
+
+    // only string (for now)
+    if (obj.objType() == .string and std.mem.eql(u8, arg.method_name.value, "len")) {
+        return .{ .integer = .{ .value = @intCast(i64, obj.string.value.len) } };
+    }
+
+    return error.MethodNotDefined;
 }
 
 fn applyFunction(allocator: std.mem.Allocator, func: object.Object, args: []object.Object) !object.Object {

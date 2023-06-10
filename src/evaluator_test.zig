@@ -25,6 +25,44 @@ test "print" {
     _ = obj;
 }
 
+test "string length 1" {
+    var lexer = Lexer.init(
+        \\var str = "1" + "0" 
+        \\const y = 1 + str.len + 1
+        \\return y
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    try std.testing.expect(obj.integer.value == 4);
+}
+
+test "string length 2" {
+    var lexer = Lexer.init(
+        \\var str_a = "amor" + "amor"
+        \\var str_b = "amor"
+        \\return fn(x,y){ return x + y }(str_a.len, str_b.len)
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    try std.testing.expect(obj.integer.value == 12);
+}
+
 test "redefine (=)" {
     var lexer = Lexer.init(
         \\var foo = 20

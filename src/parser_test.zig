@@ -61,7 +61,8 @@ fn testInfixExpression(exp: *ast.Expression, left: anytype, op: []const u8, righ
 test "method call" {
     var lexer = Lexer.init(
         \\const str = "ola mundo"
-        \\return str.len
+        \\const y = str.len + 1
+        \\var x = 10
     );
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
@@ -69,16 +70,21 @@ test "method call" {
     const program = try parser.parseProgram(allocator);
     defer program.statements.deinit();
 
-    if (program.statements.items.len != 2) {
+    if (program.statements.items.len != 3) {
         std.log.err("len: {d}", .{program.statements.items.len});
         return error.NotEnoughStatements;
     }
+
+    var stmt = program.statements.items[1].const_statement;
+    _ = stmt;
+    // var len = stmt.value.?.method_expression.method.value;
+    // _ = len;
 }
 
 test "const/var block" {
     var lexer = Lexer.init(
         \\var {   
-        \\  x = 10
+        \\  x = 10 + 1
         \\  y = "ola"
         \\}
         \\

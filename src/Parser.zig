@@ -266,7 +266,7 @@ fn parseConstStatement(self: *Self) anyerror!ast.ConstStatement {
     };
 
     if (!self.expectPeek(.@"=")) {
-        std.log.err("Expect Assignment Token (=), found '{s}'", .{self.cur_token.literal});
+        std.log.err("Expect Assignment Token (=), found '{s}' (hint: U cannot use numbers in var names...)", .{self.cur_token.literal});
         return error.UnexpectToken;
     }
 
@@ -443,9 +443,7 @@ fn parseExpression(self: *Self, precedence: Precedence) !*ast.Expression {
     left_exp.* = try prefix_fn(self);
     try self.gc.expression.append(left_exp);
 
-    while (!self.peekTokenIs(.@";") and
-        @enumToInt(precedence) < @enumToInt(self.peekPrecedence()))
-    {
+    while (@enumToInt(precedence) < @enumToInt(self.peekPrecedence())) {
         const infix_fn = self.infix_parse_fns.get(self.peek_token.type) orelse return left_exp;
         self.nextToken();
 
@@ -655,9 +653,12 @@ fn parseFunctionParameters(self: *Self) anyerror![]ast.Identifier {
 }
 
 fn parseMethodExpression(self: *Self, exp: *ast.Expression) anyerror!ast.Expression {
+    // TODO: parse the Expression
     var caller = try self.allocator.create(ast.Expression);
     caller.* = exp.*;
     try self.gc.expression.append(caller);
+
+    std.debug.print("\n> {s}", .{self.cur_token.literal});
 
     var method_exp = ast.MethodExpression{
         .token = self.cur_token,
@@ -667,11 +668,15 @@ fn parseMethodExpression(self: *Self, exp: *ast.Expression) anyerror!ast.Express
 
     self.nextToken();
 
+    std.debug.print("\n> {s}", .{self.cur_token.literal});
+
     var exp_mathod = try self.parseIdentifier();
 
     if (exp_mathod != .identifier) return error.ExpectIdentifier;
 
     method_exp.method = exp_mathod.identifier;
+
+    // self.nextToken();
 
     return .{ .method_expression = method_exp };
 }

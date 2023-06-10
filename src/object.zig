@@ -1,7 +1,18 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 
-const LolliType = enum { integer, string, array, boolean, null, @"return", err, function, builtin };
+const LolliType = enum {
+    integer,
+    string,
+    array,
+    boolean,
+    null,
+    @"return",
+    err,
+    function,
+    builtin,
+    builtin_method,
+};
 
 pub const Object = union(enum) {
     integer: Integer,
@@ -13,6 +24,7 @@ pub const Object = union(enum) {
     err: Error,
     function: Function,
     builtin: Builtin,
+    builtin_method: BuiltinMethod,
 
     pub fn objType(self: *const Object) LolliType {
         return switch (self.*) {
@@ -78,6 +90,11 @@ const BuiltinFunction = *const fn ([]const Object) Object;
 pub const Builtin = struct {
     obj_type: LolliType = .builtin,
     func: BuiltinFunction,
+};
+
+pub const BuiltinMethod = struct {
+    obj_type: LolliType = .builtin_method,
+    method_name: ast.Identifier,
 };
 
 pub const Environment = struct {
