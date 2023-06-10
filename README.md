@@ -11,7 +11,7 @@ const {
     TWO = 2
 }
 
-// functions (sometimes it's does not work HEHE)
+// functions (sometimes it does not work HEHE)
 var foo = fn(x, y) {
     var hello = "Hello Loli"
     return if x > y { x } else { hello }
