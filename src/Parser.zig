@@ -99,6 +99,7 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) !Self {
     try p.registerPrefix(.@"if", parseIfExpression);
     try p.registerPrefix(.@"else", parseIfExpression);
     try p.registerPrefix(.@"fn", parseFunctionLiteral);
+    // try p.registerPrefix(.@"enum", parseEnumLiteral);
     try p.registerPrefix(.string, parseStringLiteral);
     try p.registerPrefix(.@"{", parseArrayLiteral);
 
@@ -592,6 +593,29 @@ fn parseBlockStatement(self: *Self) anyerror!ast.BlockStatement {
     return block;
 }
 
+// fn parseEnumLiteral(self: *Self) anyerror!ast.Expression {
+//     var enu = ast.EnumLiteral{
+//         .token = ast.cur_token,
+//         .fields = undefined, // hash(ident, value)
+//     };
+
+//     if (!self.expectPeek(.@"{")) return error.MissingBrance;
+
+//     var i: usize = 0;
+//     while (!self.expectPeek(.@"}")) {
+//         var ident_exp = try self.parseIdentifier();
+
+//         if (ident_exp != .identifier) return error.NotAIdent;
+
+//         try enu.fields.put(ident_exp.identifier, i);
+//         i += 1;
+
+//         self.nextToken();
+//     }
+
+//     return .{ .enum_literal = enu };
+// }
+
 fn parseFunctionLiteral(self: *Self) anyerror!ast.Expression {
     var lit = ast.FunctionLiteral{
         .token = self.cur_token,
@@ -744,6 +768,7 @@ pub fn parseArrayLiteral(self: *Self) anyerror!ast.Expression {
         },
     };
 }
+
 pub fn parseExpressionList(self: *Self, end: Token.TokenType) anyerror![]ast.Expression {
     var list = std.ArrayList(ast.Expression).init(self.allocator);
     errdefer list.deinit();

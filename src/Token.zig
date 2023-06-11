@@ -6,6 +6,9 @@ const std = @import("std");
 
 pub const keywords = std.ComptimeStringMap(TokenType, .{
     .{ "fn", .@"fn" },
+    .{ "enum", .@"enum" },
+    .{ "for", .@"for" },
+    .{ "switch", .@"switch" },
     .{ "if", .@"if" },
     .{ "or", .@"or" },
     .{ "true", .true },
@@ -47,12 +50,12 @@ pub const TokenType = enum {
     // Delimiters
     @",",
     @";",
+    @":",
 
     @"(",
     @")",
     @"{",
     @"}",
-    @"\\",
     @"[",
     @"]",
     // method
@@ -63,6 +66,9 @@ pub const TokenType = enum {
 
     // keywords
     @"fn",
+    @"enum",
+    @"for",
+    @"switch",
     @"return",
     @"var",
     @"const",

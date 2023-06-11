@@ -136,6 +136,7 @@ pub fn nextToken(self: *Self) Token {
         '}' => newToken(.@"}"),
         '[' => newToken(.@"["),
         ']' => newToken(.@"]"),
+        ':' => newToken(.@":"),
         '"' => Token{
             .type = .string,
             .literal = self.readString(),
