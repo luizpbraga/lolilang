@@ -56,6 +56,7 @@ const GarbageCollector = struct {
     expressions: std.ArrayList([]ast.Expression),
     vars_decl: std.ArrayList([]ast.VarStatement),
     const_decl: std.ArrayList([]ast.ConstStatement),
+    hash: std.ArrayList(std.AutoHashMap(*ast.Expression, *ast.Expression)),
 
     fn init(allocator: std.mem.Allocator) @This() {
         // TODO: use AutoHashMap(usize, pointer)
@@ -67,6 +68,7 @@ const GarbageCollector = struct {
             .expressions = std.ArrayList([]ast.Expression).init(allocator),
             .vars_decl = std.ArrayList([]ast.VarStatement).init(allocator),
             .const_decl = std.ArrayList([]ast.ConstStatement).init(allocator),
+            .hash = std.ArrayList(std.AutoHashMap(*ast.Expression, *ast.Expression)).init(allocator),
         };
     }
 };
@@ -101,12 +103,12 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) !Self {
     try p.registerPrefix(.@"fn", parseFunctionLiteral);
     // try p.registerPrefix(.@"enum", parseEnumLiteral);
     try p.registerPrefix(.string, parseStringLiteral);
-    try p.registerPrefix(.@"{", parseArrayLiteral);
-
+    try p.registerPrefix(.@"{", parseArrayOrHashLiteral);
     try p.registerInfix(.@"[", parseIndexExpression);
 
     try p.registerInfix(.@"+", parseInfixExpression);
     try p.registerInfix(.@"-", parseInfixExpression);
+    try p.registerInfix(.@":", parseInfixExpression);
     try p.registerInfix(.@"==", parseInfixExpression);
     try p.registerInfix(.@"!=", parseInfixExpression);
     try p.registerInfix(.@"*", parseInfixExpression);
@@ -145,6 +147,10 @@ pub fn deinit(self: *Self) void {
     for (self.gc.const_decl.items) |dlc|
         self.allocator.free(dlc);
 
+    for (self.gc.hash.items) |*hash| {
+        hash.deinit();
+    }
+
     self.prefix_parse_fns.deinit();
     self.infix_parse_fns.deinit();
     self.gc.expression.deinit();
@@ -153,6 +159,7 @@ pub fn deinit(self: *Self) void {
     self.gc.expressions.deinit();
     self.gc.vars_decl.deinit();
     self.gc.const_decl.deinit();
+    self.gc.hash.deinit();
 }
 
 fn registerPrefix(self: *Self, token_type: Token.TokenType, func: PrefixParseFn) !void {
@@ -760,25 +767,90 @@ pub fn parseStringLiteral(self: *Self) anyerror!ast.Expression {
     };
 }
 
-pub fn parseArrayLiteral(self: *Self) anyerror!ast.Expression {
-    return .{
-        .array_literal = .{
-            .token = self.cur_token,
-            .elements = try self.parseExpressionList(.@"}"),
-        },
-    };
-}
+pub fn parseArrayOrHashLiteral(self: *Self) anyerror!ast.Expression {
+    const token = self.cur_token;
+    var elements = std.ArrayList(ast.Expression).init(self.allocator);
+    errdefer elements.deinit();
 
-pub fn parseExpressionList(self: *Self, end: Token.TokenType) anyerror![]ast.Expression {
-    var list = std.ArrayList(ast.Expression).init(self.allocator);
-    errdefer list.deinit();
-
-    if (self.peekTokenIs(end)) {
+    if (self.peekTokenIs(.@"}")) {
         self.nextToken();
-        return &.{};
+        elements.deinit();
+        return .{
+            .array_literal = .{ .token = token, .elements = &.{} },
+        };
     }
 
     self.nextToken();
+
+    var element1 = try self.parseExpression(.lower);
+    try elements.append(element1.*);
+
+    if (self.peekTokenIs(.@"}")) {
+        self.nextToken();
+        var elements_owned = try elements.toOwnedSlice();
+        try self.gc.expressions.append(elements_owned);
+        return .{ .array_literal = .{ .token = token, .elements = elements_owned } };
+    }
+
+    if (self.peekTokenIs(.@",")) {
+        self.nextToken();
+        self.nextToken(); // proxima expressao
+        elements.deinit();
+
+        var elements_owned = try self.parseExpressionList(element1, .@"}");
+        return .{ .array_literal = .{ .token = token, .elements = elements_owned } };
+    }
+
+    if (self.peekTokenIs(.@":")) {
+        self.nextToken(); // :
+        self.nextToken(); // proxima expressao
+        elements.deinit();
+
+        var elements_owned = try self.parseHashLiteral(element1, .@"}");
+        return .{ .hash_literal = .{ .token = token, .elements = elements_owned } };
+    }
+
+    return error.UnrechableCodeMapHash;
+}
+
+pub fn parseHashLiteral(
+    self: *Self,
+    key1: *ast.Expression,
+    end: Token.TokenType,
+) anyerror!std.AutoHashMap(*ast.Expression, *ast.Expression) {
+    //
+    var hash = std.AutoHashMap(*ast.Expression, *ast.Expression).init(self.allocator);
+    errdefer hash.deinit();
+
+    var val1 = try self.parseExpression(Precedence.lower);
+
+    try hash.put(key1, val1);
+
+    while (self.peekTokenIs(.@",")) {
+        self.nextToken();
+        self.nextToken();
+        var key = try self.parseExpression(Precedence.lower);
+        if (!self.expectPeek(.@":")) return error.MissingValueInHash;
+        self.nextToken();
+        var val = try self.parseExpression(Precedence.lower);
+        try hash.put(key, val);
+    }
+
+    if (!self.expectPeek(end)) {
+        return error.MissingRightBrace;
+    }
+
+    try self.gc.hash.append(hash);
+
+    return hash;
+}
+
+pub fn parseExpressionList(self: *Self, exp1: *ast.Expression, end: Token.TokenType) anyerror![]ast.Expression {
+    var list = std.ArrayList(ast.Expression).init(self.allocator);
+    errdefer list.deinit();
+
+    try list.append(exp1.*);
+
     var exp = try self.parseExpression(Precedence.lower);
     try list.append(exp.*);
 
@@ -788,6 +860,9 @@ pub fn parseExpressionList(self: *Self, end: Token.TokenType) anyerror![]ast.Exp
         var exp2 = try self.parseExpression(Precedence.lower);
         try list.append(exp2.*);
     }
+
+    if (self.expectPeek(.@":"))
+        return error.NotAHash;
 
     if (!self.expectPeek(end)) {
         return error.MissingRightBrace;

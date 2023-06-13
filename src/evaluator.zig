@@ -60,13 +60,22 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
     switch (node) {
         .expression => |exp| {
             return switch (exp) {
+                .void => NULL,
                 .boolean => |b| .{ .boolean = .{ .value = b.value } },
                 .integer_literal => |i| .{ .integer = .{ .value = i.value } },
                 .string_literal => |i| .{ .string = .{ .value = i.value } },
+
                 .array_literal => |array| bkl: {
                     var elements = try evalExpression(allocator, array.elements, env);
                     break :bkl .{ .array = .{ .elements = elements } };
                 },
+
+                .hash_literal => |*hash| bkl: {
+                    var elements = try evalHashExpression(allocator, &hash.elements, env);
+
+                    break :bkl .{ .hash = .{ .elements = elements } };
+                },
+
                 .prefix_expression => |pre| blk: {
                     const right = try eval(allocator, .{ .expression = pre.right.* }, env);
                     break :blk evalPrefixExpression(pre.operator, right);
@@ -97,9 +106,9 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
                 },
 
                 .index_expression => |idx| blk: {
-                    const left = try eval(allocator, .{ .expression = idx.left.* }, env);
+                    var left = try eval(allocator, .{ .expression = idx.left.* }, env);
                     var index = try eval(allocator, .{ .expression = idx.index.* }, env);
-                    break :blk evalIndexExpression(left, index);
+                    break :blk evalIndexExpression(&left, &index);
                 },
 
                 .method_expression => |met| b: {
@@ -156,6 +165,7 @@ fn applyMethod(obj: *const object.Object, arg: *const object.BuiltinMethod) !obj
         const len = switch (obj.objType()) {
             .string => obj.string.value.len,
             .array => obj.array.elements.len,
+            .hash => obj.hash.elements.count(),
             else => return error.MethodLenNotDefined,
         };
         return .{ .integer = .{ .value = @intCast(i64, len) } };
@@ -251,6 +261,30 @@ fn evalAssignment(allocator: std.mem.Allocator, assig: ast.AssignmentExpression,
         },
         else => return error.AssignmentExpressionNotDefined,
     }
+}
+
+fn evalHashExpression(
+    allocator: std.mem.Allocator,
+    hash_exp: *const std.AutoHashMap(*ast.Expression, *ast.Expression),
+    env: *object.Environment,
+) !std.AutoHashMap(*object.Object, *object.Object) {
+    var hash_obj = std.AutoHashMap(*object.Object, *object.Object).init(allocator);
+    errdefer hash_obj.deinit();
+
+    var iter0 = hash_exp.iterator();
+
+    while (iter0.next()) |hash| {
+        var keyval = try allocator.alloc(object.Object, 2);
+        keyval[0] = try eval(allocator, .{ .expression = hash.key_ptr.*.* }, env);
+        keyval[1] = try eval(allocator, .{ .expression = hash.value_ptr.*.* }, env);
+
+        try env.allocated_obj.append(keyval);
+        try hash_obj.put(&keyval[0], &keyval[1]);
+    }
+
+    try env.allocated_hash.append(hash_obj);
+
+    return hash_obj;
 }
 
 fn evalExpression(allocator: std.mem.Allocator, exps: []ast.Expression, env: *object.Environment) ![]object.Object {
@@ -423,14 +457,36 @@ fn evalPrefixExpression(op: []const u8, right: object.Object) object.Object {
     return NULL;
 }
 
-fn evalIndexExpression(left: object.Object, index: object.Object) !object.Object {
+fn evalIndexExpression(left: *const object.Object, index: *const object.Object) !object.Object {
     return if (left.objType() == .array and index.objType() == .integer)
         evalArrayIndexExpression(left, index)
+    else if (left.objType() == .hash)
+        evalHashIndexExpression(left, index)
     else
         error.IndexOPNotSupported;
 }
 
-fn evalArrayIndexExpression(array: object.Object, index: object.Object) !object.Object {
+fn evalHashIndexExpression(hash: *const object.Object, key: *const object.Object) !object.Object {
+    const hash_obj = hash.hash;
+    var k = @constCast(key);
+
+    var iter = hash_obj.elements.iterator();
+
+    // TODO: implement a better logic
+    while (iter.next()) |h| {
+        if (h.key_ptr.*.* == .string and k.* == .string) {
+            if (std.mem.eql(u8, h.key_ptr.*.*.string.value, k.*.string.value)) return h.value_ptr.*.*;
+            return NULL;
+        }
+
+        if (std.meta.eql(h.key_ptr.*.*, k.*)) {
+            return h.value_ptr.*.*;
+        }
+    }
+    return NULL;
+}
+
+fn evalArrayIndexExpression(array: *const object.Object, index: *const object.Object) !object.Object {
     const arr_obj = array.array;
 
     const idx = @intCast(usize, index.integer.value);
