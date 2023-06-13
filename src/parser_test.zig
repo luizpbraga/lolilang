@@ -60,7 +60,7 @@ fn testInfixExpression(exp: *ast.Expression, left: anytype, op: []const u8, righ
 
 test "hash array" {
     var lexer = Lexer.init(
-        \\{ true, 1 : 0 }
+        \\{ true: false, 1: 0 }
     );
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
@@ -73,7 +73,7 @@ test "hash array" {
         return error.NotEnoughStatements;
     }
     var stmt = program.statements.items[0].expression_statement.expression.hash_literal.elements;
-    std.debug.print("{}", .{stmt});
+    _ = stmt;
 }
 
 // test "method call" {

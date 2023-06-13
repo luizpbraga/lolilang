@@ -9,7 +9,8 @@ const allocator = std.testing.allocator;
 
 test "hash map" {
     var lexer = Lexer.init(
-        \\var map = { "2":"data"+"!" }
+        \\const y = "!"
+        \\var map = { "2": "data"+y, y : y }
         \\var x = map["2"]
     );
     var parser = try Parser.new(allocator, &lexer);
