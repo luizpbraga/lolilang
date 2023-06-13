@@ -49,6 +49,7 @@ pub const Expression = union(enum) {
     array_literal: ArrayLiteral,
     hash_literal: HashLiteral,
     identifier: Identifier,
+    forloop_expression: ForLoopExpression,
     function_literal: FunctionLiteral,
     assignment_expression: AssignmentExpression,
 
@@ -305,4 +306,13 @@ pub const MethodExpression = struct {
     pub fn tokenLiteral(self: *const Boolean) []const u8 {
         return self.token.literal;
     }
+};
+const ForLoopMode = enum { infinity, decl_infinity, decl_cond, dec_cond_inc, cond, cond_inc, range, multi_range };
+// for i = 0, i < 10, i++, i in 0..10
+pub const ForLoopExpression = struct {
+    token: Token,
+    //TODO: list of conditions
+    condition: *Expression,
+    consequence: BlockStatement,
+    mode: ForLoopMode = .infinity,
 };

@@ -58,6 +58,29 @@ fn testInfixExpression(exp: *ast.Expression, left: anytype, op: []const u8, righ
     try testLiteralExpression(opExp.right, right);
 }
 
+test "for loop" {
+    for ([_][]const u8{"for { var y = 10 }"}) |x| {
+        var lexer = Lexer.init(x);
+        var parser = try Parser.new(allocator, &lexer);
+        defer parser.deinit();
+
+        const program = try parser.parseProgram(allocator);
+        defer program.statements.deinit();
+
+        if (program.statements.items.len != 1) {
+            std.log.err("len: {d}", .{program.statements.items.len});
+            return error.NotEnoughStatements;
+        }
+        var stmt = program.statements.items[0].expression_statement.expression.forloop_expression;
+
+        var con = stmt.consequence;
+
+        var v = con.statements[0].var_statement;
+
+        std.debug.print("{}", .{v});
+    }
+}
+
 test "hash array" {
     var lexer = Lexer.init(
         \\{ true: false, 1: 0 }

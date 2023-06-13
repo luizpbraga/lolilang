@@ -99,6 +99,9 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) !Self {
     try p.registerPrefix(.@"-", parsePrefixExpression);
     try p.registerPrefix(.@"(", parseGroupExpression);
     try p.registerPrefix(.@"if", parseIfExpression);
+
+    try p.registerPrefix(.@"for", parseForLoop);
+
     try p.registerPrefix(.@"else", parseIfExpression);
     try p.registerPrefix(.@"fn", parseFunctionLiteral);
     // try p.registerPrefix(.@"enum", parseEnumLiteral);
@@ -184,6 +187,7 @@ fn peekTokenIs(self: *const Self, token_type: Token.TokenType) bool {
     return self.peek_token.type == token_type;
 }
 
+/// eat the token if true
 fn expectPeek(self: *Self, token_type: Token.TokenType) bool {
     if (self.peekTokenIs(token_type)) {
         self.nextToken();
@@ -210,6 +214,22 @@ fn parseIdentifier(self: *const Self) anyerror!ast.Expression {
 }
 
 fn parseReturnStatement(self: *Self) anyerror!ast.ReturnStatement {
+    var stmt = ast.ReturnStatement{
+        .token = self.cur_token,
+    };
+
+    self.nextToken();
+
+    stmt.value = (try self.parseExpression(Precedence.lower)).*;
+
+    if (self.peekTokenIs(.@";")) {
+        self.nextToken();
+    }
+
+    return stmt;
+}
+
+fn parseBreakStatement(self: *Self) anyerror!ast.ReturnStatement {
     var stmt = ast.ReturnStatement{
         .token = self.cur_token,
     };
@@ -895,4 +915,23 @@ pub fn parseIndexExpression(self: *Self, left: *ast.Expression) anyerror!ast.Exp
         return error.MissingRightBracket;
 
     return .{ .index_expression = exp };
+}
+
+pub fn parseForLoop(self: *Self) anyerror!ast.Expression {
+    var fl = ast.ForLoopExpression{ .token = self.cur_token, .consequence = undefined, .condition = undefined };
+
+    if (self.expectPeek(.@"{")) {
+        fl.consequence = try self.parseBlockStatement();
+        return .{ .forloop_expression = fl };
+    }
+
+    self.nextToken();
+
+    fl.condition = try self.parseExpression(.lower);
+
+    if (!self.expectPeek(.@"{")) return error.MissingBrance;
+
+    fl.consequence = try self.parseBlockStatement();
+
+    return .{ .forloop_expression = fl };
 }

@@ -111,6 +111,8 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
                     break :blk evalIndexExpression(&left, &index);
                 },
 
+                .forloop_expression => |*fl| try evalForLoopExpression(allocator, fl, env),
+
                 .method_expression => |met| b: {
                     const left = try eval(allocator, .{ .expression = met.caller.* }, env);
                     const ident = object.BuiltinMethod{ .method_name = met.method };
@@ -204,7 +206,7 @@ fn unwrapReturnValue(obj: object.Object) object.Object {
     return if (obj == .@"return") obj.@"return".value.* else obj;
 }
 
-// sometimes a do not know to to write beautiful code ...
+// sometimes i do not know how to write beautiful code ...
 fn evalAssignment(allocator: std.mem.Allocator, assig: ast.AssignmentExpression, env: *object.Environment) !object.Object {
     switch (assig.name.*) {
         .identifier => |ident| {
@@ -374,19 +376,19 @@ fn evalInfixExpression(allocator: std.mem.Allocator, op: []const u8, left: *obje
             .{ .boolean = .{ .value = left.integer.value != right.integer.value } }
         else if (eql(u8, op, "=")) b: {
             left.integer.value = right.integer.value;
-            break :b NULL;
+            break :b left.*;
         } else if (eql(u8, op, "+=")) b: {
             left.integer.value += right.integer.value;
-            break :b NULL;
+            break :b left.*;
         } else if (eql(u8, op, "-=")) b: {
             left.integer.value -= right.integer.value;
-            break :b NULL;
+            break :b left.*;
         } else if (eql(u8, op, "*=")) b: {
             left.integer.value *= right.integer.value;
-            break :b NULL;
+            break :b left.*;
         } else if (eql(u8, op, "/=")) b: {
             left.integer.value = @divFloor(left.integer.value, right.integer.value);
-            break :b NULL;
+            break :b left.*;
         } else NULL;
     }
 
@@ -410,7 +412,7 @@ fn evalInfixExpression(allocator: std.mem.Allocator, op: []const u8, left: *obje
             var new_string = try std.fmt.allocPrint(allocator, "{s}{s}", .{ left.string.value, right.string.value });
             try env.allocated_str.append(new_string);
             left.string.value = new_string;
-            break :b NULL;
+            break :b left.*;
         } else NULL;
     }
 
@@ -423,7 +425,7 @@ fn evalInfixExpression(allocator: std.mem.Allocator, op: []const u8, left: *obje
             var new_string = try std.fmt.allocPrint(allocator, "{s}{any}", .{ left.string.value, right.integer.value });
             try env.allocated_str.append(new_string);
             left.string.value = new_string;
-            break :b NULL;
+            break :b left.*;
         } else NULL;
     }
 
@@ -437,7 +439,7 @@ fn evalInfixExpression(allocator: std.mem.Allocator, op: []const u8, left: *obje
             try env.allocated_str.append(new_string);
             // left.string.value = new_string;
             left.* = .{ .string = .{ .value = new_string } };
-            break :b NULL;
+            break :b left.*;
         } else NULL;
     }
 
@@ -498,4 +500,24 @@ fn evalArrayIndexExpression(array: *const object.Object, index: *const object.Ob
     }
 
     return arr_obj.elements[idx];
+}
+
+fn evalForLoopExpression(allocator: std.mem.Allocator, fl: *const ast.ForLoopExpression, env: *object.Environment) !object.Object {
+    var rt = object.Boolean{ .value = true };
+    while (true) {
+        var condition = try eval(allocator, .{ .expression = fl.condition.* }, env);
+
+        if (condition != .boolean) condition = .{ .boolean = .{ .value = false } };
+
+        if (condition.boolean.value) {
+            var rt2 = try eval(
+                allocator,
+                .{ .statement = .{ .block_statement = fl.consequence } },
+                env,
+            );
+
+            if (rt2.objType() == .@"return") return rt2;
+        } else break;
+    }
+    return .{ .boolean = rt };
 }

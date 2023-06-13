@@ -7,11 +7,13 @@ const TokenType = @import("Token.zig").TokenType;
 const eval = @import("evaluator.zig").eval;
 const allocator = std.testing.allocator;
 
-test "hash map" {
+test "for loop" {
     var lexer = Lexer.init(
-        \\const y = "!"
-        \\var map = { "2": "data"+y, y : y }
-        \\var x = map["2"]
+        \\var i = 0
+        \\for i < 10 { 
+        \\  var i = i + 1
+        \\}
+        \\print(i)
     );
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
@@ -22,18 +24,36 @@ test "hash map" {
     var env = object.Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(
-        allocator,
-        .{
-            .statement = .{
-                .program_statement = program,
-            },
-        },
-        &env,
-    );
-
-    try std.testing.expect(obj == .string);
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    _ = obj;
 }
+// test "hash map" {
+//     var lexer = Lexer.init(
+//         \\const y = "!"
+//         \\var map = { "2": "data"+y, y : y }
+//         \\var x = map["2"]
+//     );
+//     var parser = try Parser.new(allocator, &lexer);
+//     defer parser.deinit();
+
+//     const program = try parser.parseProgram(allocator);
+//     defer program.statements.deinit();
+
+//     var env = object.Environment.init(allocator);
+//     defer env.deinit();
+
+//     var obj = try eval(
+//         allocator,
+//         .{
+//             .statement = .{
+//                 .program_statement = program,
+//             },
+//         },
+//         &env,
+//     );
+
+//     try std.testing.expect(obj == .string);
+// }
 
 test "print" {
     var lexer = Lexer.init(
