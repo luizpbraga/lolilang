@@ -42,10 +42,12 @@ pub const Statement = union(enum) {
 
 /// implements Node,
 pub const Expression = union(enum) {
+    void,
     boolean: Boolean,
     integer_literal: IntegerLiteral,
     string_literal: StringLiteral,
     array_literal: ArrayLiteral,
+    hash_literal: HashLiteral,
     identifier: Identifier,
     function_literal: FunctionLiteral,
     assignment_expression: AssignmentExpression,
@@ -262,6 +264,15 @@ pub const ArrayLiteral = struct {
     elements: []Expression,
 
     pub fn tokenLiteral(self: *const ArrayLiteral) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const HashLiteral = struct {
+    token: Token,
+    elements: std.AutoHashMap(*Expression, *Expression),
+
+    pub fn tokenLiteral(self: *const HashLiteral) []const u8 {
         return self.token.literal;
     }
 };

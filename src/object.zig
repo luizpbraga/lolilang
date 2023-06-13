@@ -5,6 +5,7 @@ const LolliType = enum {
     integer,
     string,
     array,
+    hash,
     boolean,
     null,
     @"return",
@@ -20,6 +21,7 @@ pub const Object = union(enum) {
     string: String,
     null: Null,
     array: Array,
+    hash: Hash,
     @"return": Return,
     err: Error,
     function: Function,
@@ -60,6 +62,11 @@ pub const Boolean = struct {
 pub const Array = struct {
     obj_type: LolliType = .array,
     elements: []Object,
+};
+
+pub const Hash = struct {
+    obj_type: LolliType = .hash,
+    elements: std.AutoHashMap(*Object, *Object),
 };
 
 pub const Null = struct {
@@ -104,6 +111,7 @@ pub const Environment = struct {
     outer: ?*Environment = null,
     allocated_obj: std.ArrayList([]Object),
     allocated_str: std.ArrayList([]u8),
+    allocated_hash: std.ArrayList(std.AutoHashMap(*Object, *Object)),
 
     pub fn init(allocator: std.mem.Allocator) @This() {
         return .{
@@ -112,6 +120,7 @@ pub const Environment = struct {
             .is_const = std.StringHashMap(bool).init(allocator),
             .allocated_obj = std.ArrayList([]Object).init(allocator),
             .allocated_str = std.ArrayList([]u8).init(allocator),
+            .allocated_hash = std.ArrayList(std.AutoHashMap(*Object, *Object)).init(allocator),
         };
     }
 
@@ -129,10 +138,16 @@ pub const Environment = struct {
         for (self.allocated_obj.items) |item| {
             self.allocator.free(item);
         }
+
+        for (self.allocated_hash.items) |*item| {
+            item.deinit();
+        }
+
         self.allocated_str.deinit();
         self.allocated_obj.deinit();
         self.store.deinit();
         self.is_const.deinit();
+        self.allocated_hash.deinit();
     }
 
     pub fn get(self: *Environment, name: []const u8) ?Object {

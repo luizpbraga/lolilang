@@ -7,6 +7,33 @@ const TokenType = @import("Token.zig").TokenType;
 const eval = @import("evaluator.zig").eval;
 const allocator = std.testing.allocator;
 
+test "hash map" {
+    var lexer = Lexer.init(
+        \\var map = { "2":"data"+"!" }
+        \\var x = map["2"]
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var obj = try eval(
+        allocator,
+        .{
+            .statement = .{
+                .program_statement = program,
+            },
+        },
+        &env,
+    );
+
+    try std.testing.expect(obj == .string);
+}
+
 test "print" {
     var lexer = Lexer.init(
         \\var foo = {1,2,3}
@@ -22,12 +49,13 @@ test "print" {
     defer env.deinit();
 
     var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
-    _ = obj;
+
+    try std.testing.expect(obj == .null);
 }
 
 test "string length 1" {
     var lexer = Lexer.init(
-        \\var str = "1" + "0" 
+        \\var str = "1" + "0"
         \\const y = 1 + str.len + 1
         \\return y
     );
