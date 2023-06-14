@@ -24,4 +24,17 @@ const v_size = v.len
 
 // yes, Sr!!! The print function!!!
 print( foo(1,2), v[0], {1,2,3} , ONE + 1 == TWO, "Tchau!".len )
+
+// loops
+var i = 0
+for i < 100 {
+    print(i)
+    i+=1
+}
+
+const list = {1,2,3,4}
+for idx, item in list {
+    const str = idx + " " + item
+    print(str)
+}
 ```
