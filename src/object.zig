@@ -34,6 +34,14 @@ pub const Object = union(enum) {
         };
     }
 
+    pub fn next(self: *Object) anyerror!NextReturn {
+        return switch (self.*) {
+            .string => |*s| s.next(),
+            .array => |*s| s.next(),
+            else => error.NotIterable,
+        };
+    }
+
     pub fn inspect(self: *const Object) ![]const u8 {
         var buff: [50]u8 = undefined;
         return switch (self.*) {
@@ -52,6 +60,26 @@ pub const Integer = struct {
 pub const String = struct {
     value: []const u8,
     obj_type: LolliType = .string,
+    offset: usize = 0,
+
+    pub fn next(self: *String) NextReturn {
+        if (self.offset < self.value.len) {
+            self.offset += 1;
+
+            const ch = self.value[self.offset - 1];
+            var w = "0".*;
+            w[0] = ch;
+            const w2 = &w;
+            const element = .{ .string = .{ .value = w2 } };
+            return .{ .element = element, .index = .{ .integer = .{ .value = @intCast(i64, self.offset - 1) } }, .ok = true };
+        }
+
+        return .{ .element = .{ .null = Null{} }, .index = .{ .integer = .{ .value = 0 } }, .ok = false };
+    }
+
+    pub fn reset(self: *String) void {
+        self.offset = 0;
+    }
 };
 
 pub const Boolean = struct {
@@ -59,9 +87,26 @@ pub const Boolean = struct {
     obj_type: LolliType = .boolean,
 };
 
+const NextReturn = struct { element: Object, index: Object, ok: bool };
+
 pub const Array = struct {
     obj_type: LolliType = .array,
     elements: []Object,
+    offset: usize = 0,
+
+    pub fn next(self: *Array) NextReturn {
+        if (self.offset < self.elements.len) {
+            self.offset += 1;
+
+            const element = self.elements[self.offset - 1];
+            return .{ .element = element, .index = .{ .integer = .{ .value = @intCast(i64, self.offset - 1) } }, .ok = true };
+        }
+        return .{ .element = .{ .null = Null{} }, .index = .{ .integer = .{ .value = 0 } }, .ok = false };
+    }
+
+    pub fn reset(self: *Array) void {
+        self.offset = 0;
+    }
 };
 
 pub const Hash = struct {
@@ -109,6 +154,7 @@ pub const Environment = struct {
     store: std.StringHashMap(Object),
     is_const: std.StringHashMap(bool),
     outer: ?*Environment = null,
+    permit: ?[]const []const u8 = null,
     allocated_obj: std.ArrayList([]Object),
     allocated_str: std.ArrayList([]u8),
     allocated_hash: std.ArrayList(std.AutoHashMap(*Object, *Object)),
@@ -127,6 +173,13 @@ pub const Environment = struct {
     pub fn newEncloseEnv(outer: *Environment) Environment {
         var env = Environment.init(outer.allocator);
         env.outer = outer;
+        return env;
+    }
+
+    pub fn newTemporaryScope(outer: *Environment, keys: []const []const u8) Environment {
+        var env = Environment.init(outer.allocator);
+        env.outer = outer;
+        env.permit = keys;
         return env;
     }
 

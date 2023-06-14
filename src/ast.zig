@@ -50,6 +50,7 @@ pub const Expression = union(enum) {
     hash_literal: HashLiteral,
     identifier: Identifier,
     forloop_expression: ForLoopExpression,
+    forloop_range_expression: ForLoopRangeExpression,
     function_literal: FunctionLiteral,
     assignment_expression: AssignmentExpression,
 
@@ -315,4 +316,12 @@ pub const ForLoopExpression = struct {
     condition: *Expression,
     consequence: BlockStatement,
     mode: ForLoopMode = .infinity,
+};
+
+pub const ForLoopRangeExpression = struct {
+    token: Token,
+    ident: []const u8,
+    index: ?[]const u8 = null,
+    iterable: *Expression,
+    body: BlockStatement,
 };

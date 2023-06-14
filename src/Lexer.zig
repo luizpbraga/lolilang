@@ -91,19 +91,40 @@ pub fn nextToken(self: *Self) Token {
             },
             else => newToken(.@"!"),
         },
-        '>' => newToken(.@">"),
-        '<' => newToken(.@"<"),
+        '>' => switch (self.peekChar()) {
+            '=' => x: {
+                self.readChar();
+                break :x newToken(.@">=");
+            },
+            else => newToken(.@">"),
+        },
+        '<' => switch (self.peekChar()) {
+            '=' => x: {
+                self.readChar();
+                break :x newToken(.@"<=");
+            },
+            else => newToken(.@"<"),
+        },
         '+' => switch (self.peekChar()) {
             '=' => x: {
                 self.readChar();
                 break :x newToken(.@"+=");
             },
+            '+' => x: {
+                self.readChar();
+                break :x newToken(.@"++");
+            },
+
             else => newToken(.@"+"),
         },
         '-' => switch (self.peekChar()) {
             '=' => x: {
                 self.readChar();
                 break :x newToken(.@"-=");
+            },
+            '-' => x: {
+                self.readChar();
+                break :x newToken(.@"--");
             },
             else => newToken(.@"-"),
         },

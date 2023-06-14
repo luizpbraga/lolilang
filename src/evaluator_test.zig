@@ -7,6 +7,26 @@ const TokenType = @import("Token.zig").TokenType;
 const eval = @import("evaluator.zig").eval;
 const allocator = std.testing.allocator;
 
+test "for loop range" {
+    var lexer = Lexer.init(
+        \\var list = {10,20,30,40}
+        \\for i, j in list { 
+        \\  print(i,j)
+        \\}
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    _ = obj;
+}
+
 test "for loop" {
     var lexer = Lexer.init(
         \\var i = 0
@@ -27,6 +47,7 @@ test "for loop" {
     var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
     _ = obj;
 }
+
 // test "hash map" {
 //     var lexer = Lexer.init(
 //         \\const y = "!"

@@ -113,6 +113,8 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
 
                 .forloop_expression => |*fl| try evalForLoopExpression(allocator, fl, env),
 
+                .forloop_range_expression => |*fl| try evalForLoopRangeExpression(allocator, fl, env),
+
                 .method_expression => |met| b: {
                     const left = try eval(allocator, .{ .expression = met.caller.* }, env);
                     const ident = object.BuiltinMethod{ .method_name = met.method };
@@ -520,4 +522,43 @@ fn evalForLoopExpression(allocator: std.mem.Allocator, fl: *const ast.ForLoopExp
         } else break;
     }
     return .{ .boolean = rt };
+}
+
+fn evalForLoopRangeExpression(allocator: std.mem.Allocator, fl: *const ast.ForLoopRangeExpression, env: *object.Environment) !object.Object {
+    var iterabol = try eval(allocator, .{ .expression = fl.iterable.* }, env);
+
+    std.debug.print("{}", .{iterabol.objType()});
+
+    var permit0 = std.ArrayList([]const u8).init(allocator);
+    defer permit0.deinit();
+    try permit0.append(fl.ident);
+    if (fl.index) |index|
+        try permit0.append(index);
+
+    const permit = try permit0.toOwnedSlice();
+    defer allocator.free(permit);
+    var child_env = object.Environment.newTemporaryScope(env, permit);
+    defer child_env.deinit();
+    var info = try iterabol.next();
+    var element = info.element;
+    var idx = info.index;
+    var ok = info.ok;
+
+    while (ok) {
+        _ = try child_env.set(fl.ident, element);
+
+        if (fl.index) |index|
+            _ = try child_env.set(index, idx);
+
+        var block_eval = try eval(allocator, .{ .statement = .{ .block_statement = fl.body } }, &child_env);
+
+        if (block_eval.objType() == .@"return") return block_eval;
+
+        info = try iterabol.next();
+        element = info.element;
+        idx = info.index;
+        ok = info.ok;
+    }
+
+    return NULL;
 }

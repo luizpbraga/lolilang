@@ -918,7 +918,11 @@ pub fn parseIndexExpression(self: *Self, left: *ast.Expression) anyerror!ast.Exp
 }
 
 pub fn parseForLoop(self: *Self) anyerror!ast.Expression {
-    var fl = ast.ForLoopExpression{ .token = self.cur_token, .consequence = undefined, .condition = undefined };
+    var fl = ast.ForLoopExpression{
+        .token = self.cur_token,
+        .condition = undefined,
+        .consequence = undefined,
+    };
 
     if (self.expectPeek(.@"{")) {
         fl.consequence = try self.parseBlockStatement();
@@ -928,6 +932,35 @@ pub fn parseForLoop(self: *Self) anyerror!ast.Expression {
     self.nextToken();
 
     fl.condition = try self.parseExpression(.lower);
+
+    // for range expression paeser: make it  a function
+    if (fl.condition.* == .identifier and (self.expectPeek(.in) or self.expectPeek(.@","))) {
+        var flr = ast.ForLoopRangeExpression{
+            .token = fl.token,
+            .ident = fl.condition.identifier.value,
+            .body = undefined,
+            .iterable = undefined,
+        };
+
+        if (self.cur_token.type == .in) {
+            self.nextToken();
+            var exp = try self.parseExpression(.lower);
+            flr.iterable = exp;
+        } else if (self.cur_token.type == .@",") {
+            self.nextToken();
+            var index = try self.parseIdentifier();
+            flr.index = index.identifier.value;
+            if (self.expectPeek(.in)) {
+                self.nextToken();
+                var exp = try self.parseExpression(.lower);
+                flr.iterable = exp;
+            }
+        }
+
+        if (!self.expectPeek(.@"{")) return error.MissingBrance;
+        flr.body = try self.parseBlockStatement();
+        return .{ .forloop_range_expression = flr };
+    }
 
     if (!self.expectPeek(.@"{")) return error.MissingBrance;
 

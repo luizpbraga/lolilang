@@ -21,7 +21,7 @@ const Loli = struct {
 };
 
 pub fn main() !void {
-    const allocator = std.heap.page_allocator;
+    const allocator = std.heap.c_allocator;
 
     var args = std.process.args();
     _ = args.next();

@@ -5,6 +5,9 @@ literal: []const u8,
 const std = @import("std");
 
 pub const keywords = std.ComptimeStringMap(TokenType, .{
+    .{ "in", .in },
+    .{ "continue", .@"continue" },
+    .{ "in", .@"break" },
     .{ "fn", .@"fn" },
     .{ "enum", .@"enum" },
     .{ "for", .@"for" },
@@ -36,6 +39,8 @@ pub const TokenType = enum {
     @"!=",
     @"+",
     @"-",
+    @"++",
+    @"--",
     @"/",
     @"*",
     @">",
@@ -74,10 +79,13 @@ pub const TokenType = enum {
     @"const",
     false,
     true,
+    in,
     @"if",
     @"else",
     @"or",
     @"and",
+    @"continue",
+    @"break",
 };
 
 pub fn lookupIdentfier(ident: []const u8) TokenType {
