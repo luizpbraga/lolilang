@@ -82,6 +82,10 @@ pub fn nextToken(self: *Self) Token {
                 self.readChar();
                 break :x newToken(.@"==");
             },
+            '>' => x: {
+                self.readChar();
+                break :x newToken(.@"=>");
+            },
             else => newToken(.@"="),
         },
         '!' => switch (self.peekChar()) {

@@ -7,12 +7,38 @@ const TokenType = @import("Token.zig").TokenType;
 const eval = @import("evaluator.zig").eval;
 const allocator = std.testing.allocator;
 
+test "switch " {
+    var lexer = Lexer.init(
+        \\const x = 30
+        \\var t = x + switch 0 {
+        \\  0    => { 0 },
+        \\  1    => { 1 },
+        \\  3    => { 3 },
+        \\  else => {-1 }
+        \\}
+        \\print( t )
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
+
+    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    _ = obj;
+}
+
 test "for loop range" {
     var lexer = Lexer.init(
+        \\//for loop test
         \\var list = {10,20,30,40}
-        \\for i, j in list { 
-        \\  print(i,j)
+        \\for i, j in list {
+        \\  print(i,j, list)
         \\}
+        \\print( "ooooooooooh ma goooood" )
     );
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
@@ -30,7 +56,7 @@ test "for loop range" {
 test "for loop" {
     var lexer = Lexer.init(
         \\var i = 0
-        \\for i < 10 { 
+        \\for i < 10 {
         \\  var i = i + 1
         \\}
         \\print(i)
@@ -48,33 +74,33 @@ test "for loop" {
     _ = obj;
 }
 
-// test "hash map" {
-//     var lexer = Lexer.init(
-//         \\const y = "!"
-//         \\var map = { "2": "data"+y, y : y }
-//         \\var x = map["2"]
-//     );
-//     var parser = try Parser.new(allocator, &lexer);
-//     defer parser.deinit();
+test "hash map" {
+    var lexer = Lexer.init(
+        \\const y = "!"
+        \\var map = { "2": "data"+y, y : y }
+        \\var x = map["2"]
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
 
-//     const program = try parser.parseProgram(allocator);
-//     defer program.statements.deinit();
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
 
-//     var env = object.Environment.init(allocator);
-//     defer env.deinit();
+    var env = object.Environment.init(allocator);
+    defer env.deinit();
 
-//     var obj = try eval(
-//         allocator,
-//         .{
-//             .statement = .{
-//                 .program_statement = program,
-//             },
-//         },
-//         &env,
-//     );
+    var obj = try eval(
+        allocator,
+        .{
+            .statement = .{
+                .program_statement = program,
+            },
+        },
+        &env,
+    );
 
-//     try std.testing.expect(obj == .string);
-// }
+    try std.testing.expect(obj == .string);
+}
 
 test "print" {
     var lexer = Lexer.init(

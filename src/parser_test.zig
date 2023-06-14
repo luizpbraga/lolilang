@@ -58,6 +58,28 @@ fn testInfixExpression(exp: *ast.Expression, left: anytype, op: []const u8, righ
     try testLiteralExpression(opExp.right, right);
 }
 
+test "switch" {
+    var lexer = Lexer.init(
+        \\var x = 0
+        \\switch x { 
+        \\  0    => { 0 },
+        \\  1    => { 1 },
+        \\  else => { 2 }
+        \\}
+        \\print(x)
+    );
+    var parser = try Parser.new(allocator, &lexer);
+    defer parser.deinit();
+
+    const program = try parser.parseProgram(allocator);
+    defer program.statements.deinit();
+
+    if (program.statements.items.len != 3) {
+        std.log.err("len: {d}", .{program.statements.items.len});
+        return error.NotEnoughStatements;
+    }
+}
+
 test "for in loop" {
     for ([_][]const u8{"for i,idx in list { var y = 10 }"}) |x| {
         var lexer = Lexer.init(x);
@@ -636,7 +658,10 @@ test "Parse Prefix OP (!)" {
 }
 
 test "Comment (bruh)" {
-    const input = @embedFile("./comment.loli");
+    const input =
+        \\//loli gos brrr
+        \\-5
+    ;
 
     const output = -5;
 

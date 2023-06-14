@@ -54,6 +54,7 @@ const GarbageCollector = struct {
     identifiers: std.ArrayList([]ast.Identifier),
     statements: std.ArrayList([]ast.Statement),
     expressions: std.ArrayList([]ast.Expression),
+    choices: std.ArrayList([]ast.SwitchChoices),
     vars_decl: std.ArrayList([]ast.VarStatement),
     const_decl: std.ArrayList([]ast.ConstStatement),
     hash: std.ArrayList(std.AutoHashMap(*ast.Expression, *ast.Expression)),
@@ -64,6 +65,7 @@ const GarbageCollector = struct {
             .allocator = allocator,
             .expression = std.ArrayList(*ast.Expression).init(allocator),
             .identifiers = std.ArrayList([]ast.Identifier).init(allocator),
+            .choices = std.ArrayList([]ast.SwitchChoices).init(allocator),
             .statements = std.ArrayList([]ast.Statement).init(allocator),
             .expressions = std.ArrayList([]ast.Expression).init(allocator),
             .vars_decl = std.ArrayList([]ast.VarStatement).init(allocator),
@@ -101,6 +103,7 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) !Self {
     try p.registerPrefix(.@"if", parseIfExpression);
 
     try p.registerPrefix(.@"for", parseForLoop);
+    try p.registerPrefix(.@"switch", parseSwitch);
 
     try p.registerPrefix(.@"else", parseIfExpression);
     try p.registerPrefix(.@"fn", parseFunctionLiteral);
@@ -154,6 +157,10 @@ pub fn deinit(self: *Self) void {
         hash.deinit();
     }
 
+    for (self.gc.choices.items) |swi| {
+        self.allocator.free(swi);
+    }
+
     self.prefix_parse_fns.deinit();
     self.infix_parse_fns.deinit();
     self.gc.expression.deinit();
@@ -163,6 +170,7 @@ pub fn deinit(self: *Self) void {
     self.gc.vars_decl.deinit();
     self.gc.const_decl.deinit();
     self.gc.hash.deinit();
+    self.gc.choices.deinit();
 }
 
 fn registerPrefix(self: *Self, token_type: Token.TokenType, func: PrefixParseFn) !void {
@@ -833,6 +841,7 @@ pub fn parseArrayOrHashLiteral(self: *Self) anyerror!ast.Expression {
     return error.UnrechableCodeMapHash;
 }
 
+// var hash = {1:1, 2:2, 3:3}
 pub fn parseHashLiteral(
     self: *Self,
     key1: *ast.Expression,
@@ -865,6 +874,7 @@ pub fn parseHashLiteral(
     return hash;
 }
 
+// (...)
 pub fn parseExpressionList(self: *Self, exp1: *ast.Expression, end: Token.TokenType) anyerror![]ast.Expression {
     var list = std.ArrayList(ast.Expression).init(self.allocator);
     errdefer list.deinit();
@@ -894,6 +904,7 @@ pub fn parseExpressionList(self: *Self, exp1: *ast.Expression, end: Token.TokenT
     return list_owned;
 }
 
+// v[exp]
 pub fn parseIndexExpression(self: *Self, left: *ast.Expression) anyerror!ast.Expression {
     var new_left = try self.allocator.create(ast.Expression);
     errdefer self.allocator.destroy(new_left);
@@ -917,6 +928,79 @@ pub fn parseIndexExpression(self: *Self, left: *ast.Expression) anyerror!ast.Exp
     return .{ .index_expression = exp };
 }
 
+// var y = switch {
+//      exp1 => [block1, exp],
+//      exp2 => [block2, exp],
+//      else => [block3, exp],
+//}
+pub fn parseSwitch(self: *Self) anyerror!ast.Expression {
+    var swi = ast.SwitchExpression{
+        .token = self.cur_token,
+        .value = undefined,
+        .choices = undefined,
+    };
+
+    self.nextToken();
+
+    swi.value = try self.parseExpression(.lower);
+
+    var choices = std.ArrayList(ast.SwitchChoices).init(self.allocator);
+    errdefer choices.deinit();
+
+    if (!self.expectPeek(.@"{")) return error.MissingBrance;
+
+    self.nextToken();
+
+    while (self.cur_token.type != .@"}") {
+        if (self.curTokenIs(.eof)) return error.Bruuuuuuuuuuuh;
+
+        var stop = if (self.cur_token.type == .@"else") true else false;
+
+        var exp = if (stop) b: {
+            var v = try self.parseIdentifier();
+            var cpy = try self.allocator.create(ast.Expression);
+            errdefer self.allocator.destroy(cpy);
+
+            try self.gc.expression.append(cpy);
+            cpy.* = v;
+
+            break :b cpy;
+        } else try self.parseExpression(.lower);
+
+        if (!self.expectPeek(.@"=>")) return error.UnexpectToken;
+
+        var sc = ast.SwitchChoices{
+            .token = self.cur_token,
+            .exp = exp,
+            .block = undefined,
+        };
+
+        if (!self.expectPeek(.@"{")) return error.MissingBlockBrace;
+
+        sc.block = try self.parseBlockStatement();
+
+        self.nextToken();
+
+        if (!stop)
+            if (self.cur_token.type != .@",")
+                return error.MissingSemiColon;
+
+        if (!stop)
+            self.nextToken();
+
+        try choices.append(sc);
+
+        if (stop) break;
+    }
+
+    var choice_owned = try choices.toOwnedSlice();
+    try self.gc.choices.append(choice_owned);
+    swi.choices = choice_owned;
+
+    return .{ .switch_expression = swi };
+}
+
+// for true { } or for idx, val in list {}
 pub fn parseForLoop(self: *Self) anyerror!ast.Expression {
     var fl = ast.ForLoopExpression{
         .token = self.cur_token,

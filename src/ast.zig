@@ -51,6 +51,7 @@ pub const Expression = union(enum) {
     identifier: Identifier,
     forloop_expression: ForLoopExpression,
     forloop_range_expression: ForLoopRangeExpression,
+    switch_expression: SwitchExpression,
     function_literal: FunctionLiteral,
     assignment_expression: AssignmentExpression,
 
@@ -304,7 +305,7 @@ pub const MethodExpression = struct {
     caller: *Expression, //
     method: Identifier,
 
-    pub fn tokenLiteral(self: *const Boolean) []const u8 {
+    pub fn tokenLiteral(self: *const MethodExpression) []const u8 {
         return self.token.literal;
     }
 };
@@ -316,6 +317,10 @@ pub const ForLoopExpression = struct {
     condition: *Expression,
     consequence: BlockStatement,
     mode: ForLoopMode = .infinity,
+
+    pub fn tokenLiteral(self: *const ForLoopExpression) []const u8 {
+        return self.token.literal;
+    }
 };
 
 pub const ForLoopRangeExpression = struct {
@@ -324,4 +329,24 @@ pub const ForLoopRangeExpression = struct {
     index: ?[]const u8 = null,
     iterable: *Expression,
     body: BlockStatement,
+
+    pub fn tokenLiteral(self: *const ForLoopRangeExpression) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const SwitchChoices = struct {
+    token: Token, // =>
+    exp: *Expression,
+    block: BlockStatement,
+};
+
+pub const SwitchExpression = struct {
+    token: Token,
+    value: *Expression,
+    choices: []SwitchChoices,
+
+    pub fn tokenLiteral(self: *const SwitchExpression) []const u8 {
+        return self.token.literal;
+    }
 };

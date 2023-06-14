@@ -51,6 +51,7 @@ pub const TokenType = enum {
     @"/=",
     @">=",
     @"<=",
+    @"=>",
 
     // Delimiters
     @",",

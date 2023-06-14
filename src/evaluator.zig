@@ -22,10 +22,10 @@ fn pprint(arg: *object.Object) void {
 fn printBuiltin(args: []const object.Object) object.Object {
     for (args) |arg| {
         switch (arg) {
-            .null => |n| std.debug.print("{any}\n", .{n.value}),
-            .integer => |n| std.debug.print("{}\n", .{n.value}),
-            .string => |n| std.debug.print("{s}\n", .{n.value}),
-            .boolean => |n| std.debug.print("{}\n", .{n.value}),
+            .null => |n| std.debug.print("{any} ", .{n.value}),
+            .integer => |n| std.debug.print("{} ", .{n.value}),
+            .string => |n| std.debug.print("{s} ", .{n.value}),
+            .boolean => |n| std.debug.print("{} ", .{n.value}),
             .array => |n| {
                 std.debug.print("{{ ", .{});
 
@@ -39,6 +39,7 @@ fn printBuiltin(args: []const object.Object) object.Object {
             else => std.debug.print("not yet printable\n", .{}),
         }
     }
+    if (args.len > 1) std.debug.print("\n", .{});
 
     return NULL;
 }
@@ -52,8 +53,10 @@ fn evalIdentifier(node: *const ast.Identifier, env: *object.Environment) !object
         val
     else if (buildins.get(node.value)) |val|
         .{ .builtin = val }
-    else
-        error.IdentifierNotFound;
+    else err: {
+        std.log.warn("the identifier: {s}\n", .{node.value});
+        break :err error.IdentifierNotFound;
+    };
 }
 
 pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environment) anyerror!object.Object {
@@ -98,6 +101,8 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
                         .env = env,
                     },
                 },
+
+                .switch_expression => |*swi| try evalSwitchExpression(allocator, swi, env),
 
                 .call_expression => |call| blk: {
                     var func = try eval(allocator, .{ .expression = call.function.* }, env);
@@ -527,37 +532,59 @@ fn evalForLoopExpression(allocator: std.mem.Allocator, fl: *const ast.ForLoopExp
 fn evalForLoopRangeExpression(allocator: std.mem.Allocator, fl: *const ast.ForLoopRangeExpression, env: *object.Environment) !object.Object {
     var iterabol = try eval(allocator, .{ .expression = fl.iterable.* }, env);
 
-    std.debug.print("{}", .{iterabol.objType()});
-
     var permit0 = std.ArrayList([]const u8).init(allocator);
     defer permit0.deinit();
+
     try permit0.append(fl.ident);
     if (fl.index) |index|
         try permit0.append(index);
 
     const permit = try permit0.toOwnedSlice();
     defer allocator.free(permit);
-    var child_env = object.Environment.newTemporaryScope(env, permit);
-    defer child_env.deinit();
+
     var info = try iterabol.next();
     var element = info.element;
     var idx = info.index;
     var ok = info.ok;
 
     while (ok) {
-        _ = try child_env.set(fl.ident, element);
+        _ = try env.set(fl.ident, element);
 
         if (fl.index) |index|
-            _ = try child_env.set(index, idx);
+            _ = try env.set(index, idx);
 
-        var block_eval = try eval(allocator, .{ .statement = .{ .block_statement = fl.body } }, &child_env);
+        var block_eval = try eval(allocator, .{ .statement = .{ .block_statement = fl.body } }, env);
+
+        // drop the index and val
+        env.dropScopeVar(fl.ident);
+        if (fl.index) |index| env.dropScopeVar(index);
 
         if (block_eval.objType() == .@"return") return block_eval;
 
         info = try iterabol.next();
-        element = info.element;
-        idx = info.index;
         ok = info.ok;
+        idx = info.index;
+        element = info.element;
+    }
+
+    return NULL;
+}
+
+fn evalSwitchExpression(allocator: std.mem.Allocator, sw: *const ast.SwitchExpression, env: *object.Environment) !object.Object {
+    var value = try eval(allocator, .{ .expression = sw.value.* }, env);
+
+    for (sw.choices) |ch| {
+        const block_eval = try eval(allocator, .{ .statement = .{ .block_statement = ch.block } }, env);
+
+        if (ch.exp.* == .identifier and ch.exp.identifier.token.type == .@"else") {
+            return block_eval;
+        }
+
+        const swi_value = try eval(allocator, .{ .expression = ch.exp.* }, env);
+
+        if (std.meta.eql(value, swi_value)) {
+            return block_eval;
+        }
     }
 
     return NULL;

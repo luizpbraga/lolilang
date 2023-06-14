@@ -42,6 +42,13 @@ pub const Object = union(enum) {
         };
     }
 
+    pub fn reset(self: *Object) anyerror!NextReturn {
+        return switch (self.*) {
+            .string => |*s| s.reset(),
+            .array => |*s| s.reset(),
+            else => error.NotIterable,
+        };
+    }
     pub fn inspect(self: *const Object) ![]const u8 {
         var buff: [50]u8 = undefined;
         return switch (self.*) {
@@ -214,6 +221,11 @@ pub const Environment = struct {
         try self.store.put(name, obj);
         try self.is_const.put(name, false);
         return obj;
+    }
+
+    pub fn dropScopeVar(self: *Environment, name: []const u8) void {
+        _ = self.is_const.remove(name);
+        _ = self.store.remove(name);
     }
 
     pub fn setConst(self: *Environment, name: []const u8, obj: Object) !Object {
