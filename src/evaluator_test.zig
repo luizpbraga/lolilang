@@ -21,8 +21,7 @@ test "switch " {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -43,8 +42,7 @@ test "for loop range" {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -64,8 +62,7 @@ test "for loop" {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -83,8 +80,7 @@ test "hash map" {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -110,8 +106,7 @@ test "print" {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -130,8 +125,7 @@ test "string length 1" {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -149,8 +143,7 @@ test "string length 2" {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -172,8 +165,7 @@ test "redefine (=)" {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -191,8 +183,7 @@ test "redefine returns?" {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -212,8 +203,7 @@ test "redefine 2: arrays" {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -244,8 +234,7 @@ test "redefine 3: arrays += " {
         var parser = try Parser.new(allocator, &lexer);
         defer parser.deinit();
 
-        const program = try parser.parseProgram(allocator);
-        defer program.statements.deinit();
+        const program = try parser.parseProgram();
 
         var env = object.Environment.init(allocator);
         defer env.deinit();
@@ -273,8 +262,7 @@ test "string concat" {
         var parser = try Parser.new(allocator, &lexer);
         defer parser.deinit();
 
-        const program = try parser.parseProgram(allocator);
-        defer program.statements.deinit();
+        const program = try parser.parseProgram();
 
         var env = object.Environment.init(allocator);
         defer env.deinit();
@@ -298,8 +286,7 @@ test "code example" {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -314,8 +301,7 @@ test "Array Literal" {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -335,8 +321,7 @@ test "Array Index" {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -357,8 +342,7 @@ test "Array Index" {
 //     var parser = try Parser.new(allocator, &lexer);
 //     defer parser.deinit();
 
-//     const program = try parser.parseProgram(allocator);
-//     defer program.statements.deinit();
+//     const program = try parser.parseProgram();
 
 //     var env = object.Environment.init(allocator);
 //     defer env.deinit();
@@ -380,8 +364,7 @@ test "const statement " {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -400,8 +383,7 @@ test "var/const block  " {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -419,8 +401,7 @@ test "var/const block  " {
 //     var parser = try Parser.new(allocator, &lexer);
 //     defer parser.deinit();
 
-//     const program = try parser.parseProgram(allocator);
-//     defer program.statements.deinit();
+//     const program = try parser.parseProgram();
 
 //     var env = object.Environment.init(allocator);
 //     defer env.deinit();
@@ -438,8 +419,7 @@ test "function call " {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -456,8 +436,7 @@ test "function Obj 0" {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -474,8 +453,7 @@ test "function Obj 1" {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -492,8 +470,7 @@ test "string" {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -516,8 +493,7 @@ test "int" {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();
@@ -540,8 +516,7 @@ test "bool" {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var stmt = program.statements.items[0];
 
@@ -572,8 +547,7 @@ test "infix int" {
         var parser = try Parser.new(allocator, &lexer);
         defer parser.deinit();
 
-        const program = try parser.parseProgram(allocator);
-        defer program.statements.deinit();
+        const program = try parser.parseProgram();
 
         var stmt = program.statements.items[0];
 
@@ -604,8 +578,7 @@ test "infix bool" {
         var parser = try Parser.new(allocator, &lexer);
         defer parser.deinit();
 
-        const program = try parser.parseProgram(allocator);
-        defer program.statements.deinit();
+        const program = try parser.parseProgram();
 
         var stmt = program.statements.items[0];
 
@@ -637,8 +610,7 @@ test "if-else expression" {
         var parser = try Parser.new(allocator, &lexer);
         defer parser.deinit();
 
-        const program = try parser.parseProgram(allocator);
-        defer program.statements.deinit();
+        const program = try parser.parseProgram();
 
         var stmt = program.statements.items[0];
 
@@ -665,8 +637,7 @@ test "return" {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var stmt = program.statements.items[0];
 
@@ -692,8 +663,7 @@ test "env" {
     var parser = try Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     var env = object.Environment.init(allocator);
     defer env.deinit();

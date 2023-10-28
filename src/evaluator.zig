@@ -3,7 +3,6 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const object = @import("object.zig");
 const Lexer = @import("Lexer.zig");
-const Parser = @import("Parser.zig");
 const TokenType = @import("Token.zig").TokenType;
 const eql = std.mem.eql;
 
@@ -177,7 +176,7 @@ fn applyMethod(obj: *const object.Object, arg: *const object.BuiltinMethod) !obj
             .hash => obj.hash.elements.count(),
             else => return error.MethodLenNotDefined,
         };
-        return .{ .integer = .{ .value = @intCast(i64, len) } };
+        return .{ .integer = .{ .value = @as(i64, @intCast(len)) } };
     }
 
     return error.MethodNotDefined;
@@ -247,7 +246,7 @@ fn evalAssignment(allocator: std.mem.Allocator, assig: ast.AssignmentExpression,
             const evaluated = try eval(allocator, .{ .expression = assig.value.* }, env);
             const var_name = exp.left.identifier.value;
             if (env.get(var_name)) |*current| {
-                const uindex = @intCast(usize, index);
+                const uindex = @as(usize, @intCast(index));
                 switch (current.array.elements[uindex]) {
                     .integer => {
                         var element = &current.array.elements[uindex];
@@ -498,7 +497,7 @@ fn evalHashIndexExpression(hash: *const object.Object, key: *const object.Object
 fn evalArrayIndexExpression(array: *const object.Object, index: *const object.Object) !object.Object {
     const arr_obj = array.array;
 
-    const idx = @intCast(usize, index.integer.value);
+    const idx = @as(usize, @intCast(index.integer.value));
 
     const max = arr_obj.elements.len - 1;
 

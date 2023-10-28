@@ -16,16 +16,16 @@ const LolliType = enum {
 };
 
 pub const Object = union(enum) {
-    integer: Integer,
-    boolean: Boolean,
-    string: String,
-    null: Null,
-    array: Array,
-    hash: Hash,
-    @"return": Return,
     err: Error,
-    function: Function,
+    null: Null,
+    hash: Hash,
+    array: Array,
+    string: String,
+    integer: Integer,
     builtin: Builtin,
+    boolean: Boolean,
+    @"return": Return,
+    function: Function,
     builtin_method: BuiltinMethod,
 
     pub fn objType(self: *const Object) LolliType {
@@ -78,7 +78,7 @@ pub const String = struct {
             w[0] = ch;
             const w2 = &w;
             const element = .{ .string = .{ .value = w2 } };
-            return .{ .element = element, .index = .{ .integer = .{ .value = @intCast(i64, self.offset - 1) } }, .ok = true };
+            return .{ .element = element, .index = .{ .integer = .{ .value = @as(i64, @intCast(self.offset - 1)) } }, .ok = true };
         }
 
         return .{ .element = .{ .null = Null{} }, .index = .{ .integer = .{ .value = 0 } }, .ok = false };
@@ -106,7 +106,7 @@ pub const Array = struct {
             self.offset += 1;
 
             const element = self.elements[self.offset - 1];
-            return .{ .element = element, .index = .{ .integer = .{ .value = @intCast(i64, self.offset - 1) } }, .ok = true };
+            return .{ .element = element, .index = .{ .integer = .{ .value = @as(i64, @intCast(self.offset - 1)) } }, .ok = true };
         }
         return .{ .element = .{ .null = Null{} }, .index = .{ .integer = .{ .value = 0 } }, .ok = false };
     }
@@ -122,12 +122,14 @@ pub const Hash = struct {
 };
 
 pub const Null = struct {
-    value: @TypeOf(null) = null,
+    // NOTE: this fix the error "union depend on itself" (something like that)
+    comptime value: @TypeOf(null) = null,
     obj_type: LolliType = .null,
 };
 
 pub const Return = struct {
-    value: *const Object = &.{ .null = .{} },
+    /// nao sei pq nao consigo inicializer esse cara
+    value: *const Object,
     obj_type: LolliType = .@"return",
 };
 
@@ -138,17 +140,17 @@ pub const Error = struct {
 };
 
 pub const Function = struct {
-    obj_type: LolliType = .function,
-    parameters: []ast.Identifier,
-    body: ast.BlockStatement,
     env: *Environment,
+    body: ast.BlockStatement,
+    parameters: []ast.Identifier,
+    obj_type: LolliType = .function,
 };
 
 const BuiltinFunction = *const fn ([]const Object) Object;
 
 pub const Builtin = struct {
-    obj_type: LolliType = .builtin,
     func: BuiltinFunction,
+    obj_type: LolliType = .builtin,
 };
 
 pub const BuiltinMethod = struct {
@@ -156,17 +158,23 @@ pub const BuiltinMethod = struct {
     method_name: ast.Identifier,
 };
 
+// TODO: desalocar imediatamente assim que o escopo ({}) acabar
 pub const Environment = struct {
-    allocator: std.mem.Allocator,
-    store: std.StringHashMap(Object),
-    is_const: std.StringHashMap(bool),
+    x: ?*Object = null,
+    // / outer scope (like globals for a scope)
     outer: ?*Environment = null,
     permit: ?[]const []const u8 = null,
-    allocated_obj: std.ArrayList([]Object),
     allocated_str: std.ArrayList([]u8),
+    is_const: std.StringHashMap(bool),
+
+    allocator: std.mem.Allocator,
+
+    store: std.StringHashMap(Object),
+    allocated_obj: std.ArrayList([]Object),
+    // /// pq eu usso isso mesmo?
     allocated_hash: std.ArrayList(std.AutoHashMap(*Object, *Object)),
 
-    pub fn init(allocator: std.mem.Allocator) @This() {
+    pub fn init(allocator: std.mem.Allocator) Environment {
         return .{
             .allocator = allocator,
             .store = std.StringHashMap(Object).init(allocator),
@@ -190,6 +198,7 @@ pub const Environment = struct {
         return env;
     }
 
+    // TODO: remove this function
     pub fn deinit(self: *Environment) void {
         for (self.allocated_str.items) |item| {
             self.allocator.free(item);
@@ -203,10 +212,10 @@ pub const Environment = struct {
             item.deinit();
         }
 
-        self.allocated_str.deinit();
-        self.allocated_obj.deinit();
         self.store.deinit();
         self.is_const.deinit();
+        self.allocated_str.deinit();
+        self.allocated_obj.deinit();
         self.allocated_hash.deinit();
     }
 

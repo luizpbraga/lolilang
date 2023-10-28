@@ -169,6 +169,8 @@ pub fn nextToken(self: *Self) Token {
         0 => newToken(.eof),
         // identifiers
         'a'...'z', 'A'...'Z', '_' => {
+            // TODO
+            // allow number in variables name (x1, x2, x2)
             const literal = self.readIdentifier();
             const token_type = Token.lookupIdentfier(literal);
             return Token{ .type = token_type, .literal = literal };

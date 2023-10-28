@@ -7,11 +7,11 @@ const eval = @import("evaluator.zig").eval;
 const Loli = struct {
     fn run(allocator: std.mem.Allocator, input: []const u8) !void {
         var lexer = Lexer.init(input);
+
         var parser = try Parser.new(allocator, &lexer);
         defer parser.deinit();
 
-        const program = try parser.parseProgram(allocator);
-        defer program.statements.deinit();
+        const program = try parser.parseProgram();
 
         var env = object.Environment.init(allocator);
         defer env.deinit();
