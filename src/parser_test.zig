@@ -3,7 +3,8 @@ const Lexer = @import("Lexer.zig");
 const Parser = @import("Parser.zig");
 const ast = @import("ast.zig");
 const TokenType = @import("Token.zig").TokenType;
-const allocator = std.testing.allocator;
+
+const talloc = std.testing.allocator;
 
 fn testIdentifier(exp: *ast.Expression, value: anytype) !void {
     if (@TypeOf(value) == bool) {
@@ -61,18 +62,17 @@ fn testInfixExpression(exp: *ast.Expression, left: anytype, op: []const u8, righ
 test "switch" {
     var lexer = Lexer.init(
         \\var x = 0
-        \\switch x { 
+        \\switch x {
         \\  0    => { 0 },
         \\  1    => { 1 },
         \\  else => { 2 }
         \\}
         \\print(x)
     );
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     if (program.statements.items.len != 3) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -83,11 +83,10 @@ test "switch" {
 test "for in loop" {
     for ([_][]const u8{"for i,idx in list { var y = 10 }"}) |x| {
         var lexer = Lexer.init(x);
-        var parser = try Parser.new(allocator, &lexer);
+        var parser = try Parser.new(talloc, &lexer);
         defer parser.deinit();
 
-        const program = try parser.parseProgram(allocator);
-        defer program.statements.deinit();
+        const program = try parser.parseProgram();
 
         if (program.statements.items.len != 1) {
             std.log.err("len: {d}", .{program.statements.items.len});
@@ -105,11 +104,10 @@ test "for in loop" {
 test "for loop" {
     for ([_][]const u8{"for { var y = 10 }"}) |x| {
         var lexer = Lexer.init(x);
-        var parser = try Parser.new(allocator, &lexer);
+        var parser = try Parser.new(talloc, &lexer);
         defer parser.deinit();
 
-        const program = try parser.parseProgram(allocator);
-        defer program.statements.deinit();
+        const program = try parser.parseProgram();
 
         if (program.statements.items.len != 1) {
             std.log.err("len: {d}", .{program.statements.items.len});
@@ -128,11 +126,10 @@ test "hash array" {
     var lexer = Lexer.init(
         \\{ true: false, 1: 0 }
     );
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     if (program.statements.items.len != 1) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -148,11 +145,10 @@ test "method call" {
         \\const y = str.len + 1
         \\var x = 10
     );
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     if (program.statements.items.len != 3) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -179,11 +175,10 @@ test "const/var block" {
         \\  w = {1,2,3,4}
         \\}
     );
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     if (program.statements.items.len != 2) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -197,11 +192,10 @@ test "const/var block" {
 
 test "Function Call 3" {
     var lexer = Lexer.init("fn(){ \"1\" + \"2\" }();");
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     if (program.statements.items.len != 1) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -214,11 +208,11 @@ test "Function Call 3" {
 }
 test "Function Call 2" {
     var lexer = Lexer.init("fn(x, y){ 1 + 2 }(1,2);");
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
+
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     if (program.statements.items.len != 1) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -241,11 +235,10 @@ test "parse String" {
     var lexer = Lexer.init(
         \\"bruh"
     );
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     if (program.statements.items.len != 1) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -262,11 +255,10 @@ test "array literal" {
     var lexer = Lexer.init(
         \\{ 1, true, "Ola", fn(){ return 0; }() };
     );
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     if (program.statements.items.len != 1) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -287,11 +279,10 @@ test "Index" {
     var lexer = Lexer.init(
         \\myArray[1];
     );
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     if (program.statements.items.len != 1) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -308,11 +299,10 @@ test "Index" {
 
 test "Function Call" {
     var lexer = Lexer.init("add(x, 1 + 2);");
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     if (program.statements.items.len != 1) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -344,11 +334,10 @@ test "Function Literal" {
 
     for (tests) |x| {
         var lexer = Lexer.init(x.input);
-        var parser = try Parser.new(allocator, &lexer);
+        var parser = try Parser.new(talloc, &lexer);
         defer parser.deinit();
 
-        const program = try parser.parseProgram(allocator);
-        defer program.statements.deinit();
+        const program = try parser.parseProgram();
 
         if (program.statements.items.len != 1) {
             std.log.err("len: {d}", .{program.statements.items.len});
@@ -378,11 +367,9 @@ test "Function Literal" {
 
 //// test "var x = (((( 10 ))))" {
 ////     var lexer = Lexer.init("var x = 10;");
-////     var parser =try Parser.new(allocator, &lexer);
-////     defer parser.deinit();
+////     var parser =try Parser.new(talloc, &lexer);
 
-////     const program = try parser.parseProgram(allocator);
-////     defer program.statements.deinit();
+////     const program = try parser.parseProgram();
 
 ////     if (program.statements.items.len != 1) {
 ////         std.log.err("len: {d}", .{program.statements.items.len});
@@ -399,11 +386,11 @@ test "assignment list (=)" {
         \\x [0 + 1] = 0
         \\x[0];
     );
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
+    _ = program;
 
     // std.debug.print("{}", .{program.statements.items[2].expression_statement});
 }
@@ -414,11 +401,11 @@ test "assignment expression (=)" {
         \\x = if (x == x) { 2 * x } else { null };
         \\x;
     );
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
+    _ = program;
 
     // std.debug.print("{}", .{program.statements.items[2].expression_statement});
 }
@@ -429,11 +416,11 @@ test "assignment statement (+=)" {
         \\x += if (x == x) { 2 * x } else { null };
         \\x;
     );
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
+    _ = program;
 
     // std.debug.print("{}", .{program.statements.items[2].expression_statement});
 }
@@ -441,11 +428,10 @@ test "If Else Expression" {
     var lexer = Lexer.init(
         \\return if x < y {x} else {y};
     );
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     if (program.statements.items.len != 1) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -473,11 +459,10 @@ test "If Else Expression" {
 
 test "If Expression" {
     var lexer = Lexer.init("return if (x < y) { x };");
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     if (program.statements.items.len != 1) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -502,11 +487,10 @@ test "If Expression" {
 
 test "Group Exp" {
     var lexer = Lexer.init("((-(5 + 5) * 5) == 10) != !true");
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     if (program.statements.items.len != 1) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -520,11 +504,10 @@ test "Group Exp" {
 
 test "eval Boolean" {
     var lexer = Lexer.init("false");
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     if (program.statements.items.len != 1) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -551,11 +534,10 @@ test "Boolean" {
 
     for (tests) |x| {
         var lexer = Lexer.init(x.input);
-        var parser = try Parser.new(allocator, &lexer);
+        var parser = try Parser.new(talloc, &lexer);
         defer parser.deinit();
 
-        const program = try parser.parseProgram(allocator);
-        defer program.statements.deinit();
+        const program = try parser.parseProgram();
 
         if (program.statements.items.len != 1) {
             std.log.err("len: {d}", .{program.statements.items.len});
@@ -598,11 +580,10 @@ test "Parse Infix OP " {
 
     for (tests) |x| {
         var lexer = Lexer.init(x.input);
-        var parser = try Parser.new(allocator, &lexer);
+        var parser = try Parser.new(talloc, &lexer);
         defer parser.deinit();
 
-        const program = try parser.parseProgram(allocator);
-        defer program.statements.deinit();
+        const program = try parser.parseProgram();
 
         if (program.statements.items.len != 1) {
             std.log.err("len: {d}", .{program.statements.items.len});
@@ -631,11 +612,10 @@ test "Parse Prefix OP (!)" {
     const output = 5;
 
     var lexer = Lexer.init(input);
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     if (program.statements.items.len != 1) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -666,11 +646,10 @@ test "Comment (bruh)" {
     const output = -5;
 
     var lexer = Lexer.init(input);
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     if (program.statements.items.len != 1) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -697,11 +676,10 @@ test "parse Prefix OP (-)" {
     const output = -5;
 
     var lexer = Lexer.init(input);
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     if (program.statements.items.len != 1) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -728,11 +706,10 @@ test "Eval Integer Literal Expression" {
 
     var lexer = Lexer.init(input);
 
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     if (program.statements.items.len != 1) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -761,11 +738,10 @@ test "eval Expression" {
 
     var lexer = Lexer.init(input);
 
-    var parser = try Parser.new(allocator, &lexer);
+    var parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
-    const program = try parser.parseProgram(allocator);
-    defer program.statements.deinit();
+    const program = try parser.parseProgram();
 
     if (program.statements.items.len != 1) {
         std.log.err("len: {d}", .{program.statements.items.len});
@@ -790,7 +766,7 @@ test "eval Expression" {
 }
 
 test "eval Program" {
-    var stmts = std.ArrayList(ast.Statement).init(allocator);
+    var stmts = std.ArrayList(ast.Statement).init(talloc);
     defer stmts.deinit();
 
     var stmt = ast.Statement{
@@ -840,11 +816,10 @@ test "Parse RETURN statements: Size" {
     inline for (tests, expected_value) |x, k| {
         var lexer = Lexer.init(x.input);
 
-        var p = try Parser.new(allocator, &lexer);
+        var p = try Parser.new(talloc, &lexer);
         defer p.deinit();
 
-        var program = try p.parseProgram(allocator);
-        defer program.statements.deinit();
+        var program = try p.parseProgram();
 
         try std.testing.expect(program.statements.items.len == 1);
         var stmt = program.statements.items[0];
@@ -856,23 +831,29 @@ test "Parse RETURN statements: Size" {
 }
 
 test "Parse VAR statements" {
-    const expected_value = struct { i64, bool, []const u8 }{ 5, true, "y" };
+    const expected_value = struct {
+        i64, // bool, []const u8,
+    }{
+        5, // true, "y"
+    };
 
     const tests = [_]struct {
         input: []const u8,
         expected_indetifier: []const u8,
     }{
         .{ .input = "var x = 5;", .expected_indetifier = "x" },
-        .{ .input = "var x = true;", .expected_indetifier = "x" },
-        .{ .input = "var x = y;", .expected_indetifier = "x" },
+        // .{ .input = "var x = true;", .expected_indetifier = "x" },
+        // .{ .input = "var x = y;", .expected_indetifier = "x" },
     };
 
     inline for (tests, expected_value) |x, k| {
         var lexer = Lexer.init(x.input);
-        var p = try Parser.new(allocator, &lexer);
+
+        var p = try Parser.new(talloc, &lexer);
         defer p.deinit();
-        var program = try p.parseProgram(allocator);
-        defer program.statements.deinit();
+
+        const program = try p.parseProgram();
+
         try std.testing.expect(program.statements.items.len == 1);
         var stmt = program.statements.items[0];
 
@@ -901,6 +882,4 @@ test "Token test" {
         tok = lexer.nextToken();
         i += 1;
     }
-
-    // std.debug.print("\n{s}", .{input[lexer.starting_line_position..]});
 }

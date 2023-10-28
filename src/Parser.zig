@@ -1,10 +1,10 @@
+/// Parser
 const Self = @This();
 lexer: *Lexer,
 cur_token: Token,
 last_token: Token,
 peek_token: Token,
-gc: GarbageCollector,
-allocator: std.mem.Allocator,
+arena: std.heap.ArenaAllocator,
 infix_parse_fns: std.AutoHashMap(Token.TokenType, InfixParseFn),
 prefix_parse_fns: std.AutoHashMap(Token.TokenType, PrefixParseFn),
 
@@ -47,48 +47,23 @@ pub const Precedence = enum {
     }
 };
 
-const GarbageCollector = struct {
-    allocator: std.mem.Allocator,
-
-    expression: std.ArrayList(*ast.Expression),
-    identifiers: std.ArrayList([]ast.Identifier),
-    statements: std.ArrayList([]ast.Statement),
-    expressions: std.ArrayList([]ast.Expression),
-    choices: std.ArrayList([]ast.SwitchChoices),
-    vars_decl: std.ArrayList([]ast.VarStatement),
-    const_decl: std.ArrayList([]ast.ConstStatement),
-    hash: std.ArrayList(std.AutoHashMap(*ast.Expression, *ast.Expression)),
-
-    fn init(allocator: std.mem.Allocator) @This() {
-        // TODO: use AutoHashMap(usize, pointer)
-        return .{
-            .allocator = allocator,
-            .expression = std.ArrayList(*ast.Expression).init(allocator),
-            .identifiers = std.ArrayList([]ast.Identifier).init(allocator),
-            .choices = std.ArrayList([]ast.SwitchChoices).init(allocator),
-            .statements = std.ArrayList([]ast.Statement).init(allocator),
-            .expressions = std.ArrayList([]ast.Expression).init(allocator),
-            .vars_decl = std.ArrayList([]ast.VarStatement).init(allocator),
-            .const_decl = std.ArrayList([]ast.ConstStatement).init(allocator),
-            .hash = std.ArrayList(std.AutoHashMap(*ast.Expression, *ast.Expression)).init(allocator),
-        };
-    }
-};
-
-pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) !Self {
-    var prefix_parse_fns = std.AutoHashMap(Token.TokenType, PrefixParseFn).init(allocator);
-    var infix_parse_fns = std.AutoHashMap(Token.TokenType, InfixParseFn).init(allocator);
+pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Self {
+    var arena = std.heap.ArenaAllocator.init(child_alloc);
 
     var p = Self{
+        .arena = arena,
         .lexer = lexer,
         .cur_token = undefined,
         .last_token = Token{ .type = .eof, .literal = "" },
         .peek_token = undefined,
-        .prefix_parse_fns = prefix_parse_fns,
-        .infix_parse_fns = infix_parse_fns,
-        .allocator = allocator,
-        .gc = GarbageCollector.init(allocator),
+        .infix_parse_fns = undefined,
+        .prefix_parse_fns = undefined,
     };
+
+    const allocator = p.arena.allocator();
+
+    p.infix_parse_fns = std.AutoHashMap(Token.TokenType, InfixParseFn).init(allocator);
+    p.prefix_parse_fns = std.AutoHashMap(Token.TokenType, PrefixParseFn).init(allocator);
 
     p.nextToken();
     p.nextToken();
@@ -134,43 +109,7 @@ pub fn new(allocator: std.mem.Allocator, lexer: *Lexer) !Self {
 }
 
 pub fn deinit(self: *Self) void {
-    for (self.gc.expression.items) |f|
-        self.allocator.destroy(f);
-
-    for (self.gc.statements.items) |stmt| {
-        self.allocator.free(stmt);
-    }
-
-    for (self.gc.identifiers.items) |iden|
-        self.allocator.free(iden);
-
-    for (self.gc.expressions.items) |exp|
-        self.allocator.free(exp);
-
-    for (self.gc.vars_decl.items) |dlc|
-        self.allocator.free(dlc);
-
-    for (self.gc.const_decl.items) |dlc|
-        self.allocator.free(dlc);
-
-    for (self.gc.hash.items) |*hash| {
-        hash.deinit();
-    }
-
-    for (self.gc.choices.items) |swi| {
-        self.allocator.free(swi);
-    }
-
-    self.prefix_parse_fns.deinit();
-    self.infix_parse_fns.deinit();
-    self.gc.expression.deinit();
-    self.gc.statements.deinit();
-    self.gc.identifiers.deinit();
-    self.gc.expressions.deinit();
-    self.gc.vars_decl.deinit();
-    self.gc.const_decl.deinit();
-    self.gc.hash.deinit();
-    self.gc.choices.deinit();
+    self.arena.deinit();
 }
 
 fn registerPrefix(self: *Self, token_type: Token.TokenType, func: PrefixParseFn) !void {
@@ -254,11 +193,12 @@ fn parseBreakStatement(self: *Self) anyerror!ast.ReturnStatement {
 }
 
 fn parseAssignmentExpression(self: *Self, name: *ast.Expression) anyerror!ast.Expression {
-    var left_exp = try self.allocator.create(ast.Expression);
-    errdefer self.allocator.destroy(left_exp);
+    const allocator = self.arena.allocator();
+    var left_exp = try allocator.create(ast.Expression);
+    errdefer allocator.destroy(left_exp);
 
     left_exp.* = name.*;
-    try self.gc.expression.append(left_exp);
+    // try self.gc.expression.append(left_exp);
 
     var stmt = ast.AssignmentExpression{
         .token = self.cur_token,
@@ -324,7 +264,9 @@ fn parseVarBlockStatement(self: *Self) anyerror!ast.VarBlockStatement {
         .vars_decl = undefined,
     };
 
-    var vars = std.ArrayList(ast.VarStatement).init(self.allocator);
+    const allocator = self.arena.allocator();
+
+    var vars = std.ArrayList(ast.VarStatement).init(allocator);
     errdefer vars.deinit();
 
     self.nextToken();
@@ -355,7 +297,7 @@ fn parseVarBlockStatement(self: *Self) anyerror!ast.VarBlockStatement {
 
     var vars_owned = try vars.toOwnedSlice();
 
-    try self.gc.vars_decl.append(vars_owned);
+    // try self.gc.vars_decl.append(vars_owned);
     stmt.vars_decl = vars_owned;
 
     return stmt;
@@ -367,7 +309,9 @@ fn parseConstBlockStatement(self: *Self) anyerror!ast.ConstBlockStatement {
         .const_decl = undefined,
     };
 
-    var vars = std.ArrayList(ast.ConstStatement).init(self.allocator);
+    const allocator = self.arena.allocator();
+
+    var vars = std.ArrayList(ast.ConstStatement).init(allocator);
     errdefer vars.deinit();
 
     self.nextToken();
@@ -398,7 +342,7 @@ fn parseConstBlockStatement(self: *Self) anyerror!ast.ConstBlockStatement {
 
     var vars_owned = try vars.toOwnedSlice();
 
-    try self.gc.const_decl.append(vars_owned);
+    // try self.gc.const_decl.append(vars_owned);
     stmt.const_decl = vars_owned;
 
     return stmt;
@@ -473,21 +417,23 @@ fn parseExpression(self: *Self, precedence: Precedence) !*ast.Expression {
         return error.UnknowPrefixFn;
     };
 
-    var left_exp = try self.allocator.create(ast.Expression);
-    errdefer self.allocator.destroy(left_exp);
+    const allocator = self.arena.allocator();
+
+    var left_exp = try allocator.create(ast.Expression);
+    errdefer allocator.destroy(left_exp);
 
     left_exp.* = try prefix_fn(self);
-    try self.gc.expression.append(left_exp);
+    // try self.gc.expression.append(left_exp);
 
-    while (@enumToInt(precedence) < @enumToInt(self.peekPrecedence())) {
+    while (@intFromEnum(precedence) < @intFromEnum(self.peekPrecedence())) {
         const infix_fn = self.infix_parse_fns.get(self.peek_token.type) orelse return left_exp;
         self.nextToken();
 
-        var new_left_exp = try self.allocator.create(ast.Expression);
-        errdefer self.allocator.destroy(new_left_exp);
+        var new_left_exp = try allocator.create(ast.Expression);
+        errdefer allocator.destroy(new_left_exp);
 
         new_left_exp.* = try infix_fn(self, left_exp);
-        try self.gc.expression.append(new_left_exp);
+        // try self.gc.expression.append(new_left_exp);
 
         left_exp.* = new_left_exp.*;
     }
@@ -495,7 +441,9 @@ fn parseExpression(self: *Self, precedence: Precedence) !*ast.Expression {
     return left_exp;
 }
 
-pub fn parseProgram(self: *Self, allocator: std.mem.Allocator) !ast.Program {
+pub fn parseProgram(self: *Self) !ast.Program {
+    const allocator = self.arena.allocator();
+
     var stmts = std.ArrayList(ast.Statement).init(allocator);
     errdefer stmts.deinit();
 
@@ -553,10 +501,12 @@ fn parsePrefixExpression(self: *Self) anyerror!ast.Expression {
 }
 
 fn parseInfixExpression(self: *Self, left: *ast.Expression) anyerror!ast.Expression {
-    var new_left = try self.allocator.create(ast.Expression);
-    errdefer self.allocator.destroy(new_left);
+    const allocator = self.arena.allocator();
 
-    try self.gc.expression.append(new_left);
+    var new_left = try allocator.create(ast.Expression);
+    errdefer allocator.destroy(new_left);
+
+    // try self.gc.expression.append(new_left);
     new_left.* = left.*;
 
     var expression = ast.InfixExpression{
@@ -603,7 +553,9 @@ fn parseIfExpression(self: *Self) anyerror!ast.Expression {
 }
 
 fn parseBlockStatement(self: *Self) anyerror!ast.BlockStatement {
-    var stmts = std.ArrayList(ast.Statement).init(self.allocator);
+    const allocator = self.arena.allocator();
+
+    var stmts = std.ArrayList(ast.Statement).init(allocator);
     errdefer stmts.deinit();
 
     var block = ast.BlockStatement{
@@ -621,7 +573,7 @@ fn parseBlockStatement(self: *Self) anyerror!ast.BlockStatement {
 
     var stmts_owner = try stmts.toOwnedSlice();
 
-    try self.gc.statements.append(stmts_owner);
+    // try self.gc.statements.append(stmts_owner);
 
     block.statements = stmts_owner;
 
@@ -670,7 +622,9 @@ fn parseFunctionLiteral(self: *Self) anyerror!ast.Expression {
 }
 
 fn parseFunctionParameters(self: *Self) anyerror![]ast.Identifier {
-    var indentifiers = std.ArrayList(ast.Identifier).init(self.allocator);
+    const allocator = self.arena.allocator();
+
+    var indentifiers = std.ArrayList(ast.Identifier).init(allocator);
     errdefer indentifiers.deinit();
 
     if (self.peekTokenIs(.@")")) {
@@ -680,7 +634,6 @@ fn parseFunctionParameters(self: *Self) anyerror![]ast.Identifier {
 
     self.nextToken();
 
-    // var ident = try self.allocator.create(ast.Identifier);
     var ident = ast.Identifier{
         .token = self.cur_token,
         .value = self.cur_token.literal,
@@ -692,7 +645,6 @@ fn parseFunctionParameters(self: *Self) anyerror![]ast.Identifier {
         self.nextToken();
         self.nextToken();
 
-        // var ident2 = try self.allocator.create(ast.Identifier);
         var ident2 = ast.Identifier{
             .token = self.cur_token,
             .value = self.cur_token.literal,
@@ -706,16 +658,18 @@ fn parseFunctionParameters(self: *Self) anyerror![]ast.Identifier {
 
     var ident_owner = try indentifiers.toOwnedSlice();
 
-    try self.gc.identifiers.append(ident_owner);
+    // try self.gc.identifiers.append(ident_owner);
 
     return ident_owner;
 }
 
 fn parseMethodExpression(self: *Self, exp: *ast.Expression) anyerror!ast.Expression {
+    const allocator = self.arena.allocator();
+
     // TODO: parse the Expression
-    var caller = try self.allocator.create(ast.Expression);
+    var caller = try allocator.create(ast.Expression);
     caller.* = exp.*;
-    try self.gc.expression.append(caller);
+    // try self.gc.expression.append(caller);
 
     var method_exp = ast.MethodExpression{
         .token = self.cur_token,
@@ -737,10 +691,11 @@ fn parseMethodExpression(self: *Self, exp: *ast.Expression) anyerror!ast.Express
 }
 
 fn parseCallExpression(self: *Self, func: *ast.Expression) anyerror!ast.Expression {
-    var func_ = try self.allocator.create(ast.Expression);
+    const allocator = self.arena.allocator();
+    var func_ = try allocator.create(ast.Expression);
 
     func_.* = func.*;
-    try self.gc.expression.append(func_);
+    // try self.gc.expression.append(func_);
 
     var call = .{
         .call_expression = .{
@@ -755,7 +710,8 @@ fn parseCallExpression(self: *Self, func: *ast.Expression) anyerror!ast.Expressi
 }
 
 fn parseCallArguments(self: *Self) anyerror![]ast.Expression {
-    var args = std.ArrayList(ast.Expression).init(self.allocator);
+    const allocator = self.arena.allocator();
+    var args = std.ArrayList(ast.Expression).init(allocator);
     errdefer args.deinit();
 
     if (self.peekTokenIs(.@")")) {
@@ -781,7 +737,6 @@ fn parseCallArguments(self: *Self) anyerror![]ast.Expression {
     if (!self.expectPeek(.@")")) return error.MissingRightParenteses;
 
     var args_owned = try args.toOwnedSlice();
-    try self.gc.expressions.append(args_owned);
 
     return args_owned;
 }
@@ -797,7 +752,8 @@ pub fn parseStringLiteral(self: *Self) anyerror!ast.Expression {
 
 pub fn parseArrayOrHashLiteral(self: *Self) anyerror!ast.Expression {
     const token = self.cur_token;
-    var elements = std.ArrayList(ast.Expression).init(self.allocator);
+    const allocator = self.arena.allocator();
+    var elements = std.ArrayList(ast.Expression).init(allocator);
     errdefer elements.deinit();
 
     if (self.peekTokenIs(.@"}")) {
@@ -816,7 +772,7 @@ pub fn parseArrayOrHashLiteral(self: *Self) anyerror!ast.Expression {
     if (self.peekTokenIs(.@"}")) {
         self.nextToken();
         var elements_owned = try elements.toOwnedSlice();
-        try self.gc.expressions.append(elements_owned);
+        // try self.gc.expressions.append(elements_owned);
         return .{ .array_literal = .{ .token = token, .elements = elements_owned } };
     }
 
@@ -848,7 +804,9 @@ pub fn parseHashLiteral(
     end: Token.TokenType,
 ) anyerror!std.AutoHashMap(*ast.Expression, *ast.Expression) {
     //
-    var hash = std.AutoHashMap(*ast.Expression, *ast.Expression).init(self.allocator);
+
+    const allocator = self.arena.allocator();
+    var hash = std.AutoHashMap(*ast.Expression, *ast.Expression).init(allocator);
     errdefer hash.deinit();
 
     var val1 = try self.parseExpression(Precedence.lower);
@@ -869,14 +827,15 @@ pub fn parseHashLiteral(
         return error.MissingRightBrace;
     }
 
-    try self.gc.hash.append(hash);
+    // try self.gc.hash.append(hash);
 
     return hash;
 }
 
 // (...)
 pub fn parseExpressionList(self: *Self, exp1: *ast.Expression, end: Token.TokenType) anyerror![]ast.Expression {
-    var list = std.ArrayList(ast.Expression).init(self.allocator);
+    const allocator = self.arena.allocator();
+    var list = std.ArrayList(ast.Expression).init(allocator);
     errdefer list.deinit();
 
     try list.append(exp1.*);
@@ -899,17 +858,18 @@ pub fn parseExpressionList(self: *Self, exp1: *ast.Expression, end: Token.TokenT
     }
 
     var list_owned = try list.toOwnedSlice();
-    try self.gc.expressions.append(list_owned);
+    // try self.gc.expressions.append(list_owned);
 
     return list_owned;
 }
 
 // v[exp]
 pub fn parseIndexExpression(self: *Self, left: *ast.Expression) anyerror!ast.Expression {
-    var new_left = try self.allocator.create(ast.Expression);
-    errdefer self.allocator.destroy(new_left);
+    const allocator = self.arena.allocator();
+    var new_left = try allocator.create(ast.Expression);
+    errdefer allocator.destroy(new_left);
 
-    try self.gc.expression.append(new_left);
+    // try self.gc.expression.append(new_left);
     new_left.* = left.*;
 
     var exp = ast.IndexExpression{
@@ -944,7 +904,9 @@ pub fn parseSwitch(self: *Self) anyerror!ast.Expression {
 
     swi.value = try self.parseExpression(.lower);
 
-    var choices = std.ArrayList(ast.SwitchChoices).init(self.allocator);
+    const allocator = self.arena.allocator();
+
+    var choices = std.ArrayList(ast.SwitchChoices).init(allocator);
     errdefer choices.deinit();
 
     if (!self.expectPeek(.@"{")) return error.MissingBrance;
@@ -958,10 +920,10 @@ pub fn parseSwitch(self: *Self) anyerror!ast.Expression {
 
         var exp = if (stop) b: {
             var v = try self.parseIdentifier();
-            var cpy = try self.allocator.create(ast.Expression);
-            errdefer self.allocator.destroy(cpy);
+            var cpy = try allocator.create(ast.Expression);
+            errdefer allocator.destroy(cpy);
 
-            try self.gc.expression.append(cpy);
+            // try self.gc.expression.append(cpy);
             cpy.* = v;
 
             break :b cpy;
@@ -994,7 +956,7 @@ pub fn parseSwitch(self: *Self) anyerror!ast.Expression {
     }
 
     var choice_owned = try choices.toOwnedSlice();
-    try self.gc.choices.append(choice_owned);
+    // try self.gc.choices.append(choice_owned);
     swi.choices = choice_owned;
 
     return .{ .switch_expression = swi };

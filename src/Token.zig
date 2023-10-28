@@ -1,4 +1,5 @@
 const Self = @This();
+
 type: TokenType,
 literal: []const u8,
 
