@@ -1,8 +1,7 @@
 const std = @import("std");
 const Lexer = @import("Lexer.zig");
 const Parser = @import("Parser.zig");
-const object = @import("object.zig");
-const eval = @import("evaluator.zig").eval;
+const Environment = @import("Environment.zig");
 
 const Loli = struct {
     fn run(allocator: std.mem.Allocator, input: []const u8) !void {
@@ -13,10 +12,10 @@ const Loli = struct {
 
         const program = try parser.parseProgram();
 
-        var env = object.Environment.init(allocator);
+        var env = Environment.init(allocator);
         defer env.deinit();
 
-        _ = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+        _ = try env.eval(.{ .statement = .{ .program_statement = program } });
     }
 };
 

@@ -1,5 +1,6 @@
 /// Parser
-const Self = @This();
+const Parser = @This();
+
 lexer: *Lexer,
 cur_token: Token,
 last_token: Token,
@@ -9,8 +10,8 @@ infix_parse_fns: std.AutoHashMap(Token.TokenType, InfixParseFn),
 prefix_parse_fns: std.AutoHashMap(Token.TokenType, PrefixParseFn),
 
 // TODO: remove null and implement parsing error msg
-const PrefixParseFn = *const fn (*Self) anyerror!ast.Expression;
-const InfixParseFn = *const fn (*Self, *ast.Expression) anyerror!ast.Expression;
+const PrefixParseFn = *const fn (*Parser) anyerror!ast.Expression;
+const InfixParseFn = *const fn (*Parser, *ast.Expression) anyerror!ast.Expression;
 
 const std = @import("std");
 const Token = @import("Token.zig");
@@ -47,10 +48,10 @@ pub const Precedence = enum {
     }
 };
 
-pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Self {
+pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Parser {
     var arena = std.heap.ArenaAllocator.init(child_alloc);
 
-    var p = Self{
+    var p = Parser{
         .arena = arena,
         .lexer = lexer,
         .cur_token = undefined,
@@ -108,34 +109,34 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Self {
     return p;
 }
 
-pub fn deinit(self: *Self) void {
+pub fn deinit(self: *Parser) void {
     self.arena.deinit();
 }
 
-fn registerPrefix(self: *Self, token_type: Token.TokenType, func: PrefixParseFn) !void {
+fn registerPrefix(self: *Parser, token_type: Token.TokenType, func: PrefixParseFn) !void {
     try self.prefix_parse_fns.put(token_type, func);
 }
 
-fn registerInfix(self: *Self, token_type: Token.TokenType, func: InfixParseFn) !void {
+fn registerInfix(self: *Parser, token_type: Token.TokenType, func: InfixParseFn) !void {
     try self.infix_parse_fns.put(token_type, func);
 }
 
-fn nextToken(self: *Self) void {
+fn nextToken(self: *Parser) void {
     self.last_token = self.cur_token;
     self.cur_token = self.peek_token;
     self.peek_token = self.lexer.nextToken();
 }
 
-fn curTokenIs(self: *const Self, token_type: Token.TokenType) bool {
+fn curTokenIs(self: *const Parser, token_type: Token.TokenType) bool {
     return self.cur_token.type == token_type;
 }
 
-fn peekTokenIs(self: *const Self, token_type: Token.TokenType) bool {
+fn peekTokenIs(self: *const Parser, token_type: Token.TokenType) bool {
     return self.peek_token.type == token_type;
 }
 
 /// eat the token if true
-fn expectPeek(self: *Self, token_type: Token.TokenType) bool {
+fn expectPeek(self: *Parser, token_type: Token.TokenType) bool {
     if (self.peekTokenIs(token_type)) {
         self.nextToken();
         return true;
@@ -144,23 +145,23 @@ fn expectPeek(self: *Self, token_type: Token.TokenType) bool {
     }
 }
 
-fn peekPrecedence(self: *const Self) Precedence {
+fn peekPrecedence(self: *const Parser) Precedence {
     return Precedence.peek(self.peek_token.type);
 }
 
-fn currentPrecedence(self: *const Self) Precedence {
+fn currentPrecedence(self: *const Parser) Precedence {
     return Precedence.peek(self.cur_token.type);
 }
 
 // parsers fn -----------------------------------------------------------
-fn parseIdentifier(self: *const Self) anyerror!ast.Expression {
+fn parseIdentifier(self: *const Parser) anyerror!ast.Expression {
     return .{ .identifier = ast.Identifier{
         .token = self.cur_token,
         .value = self.cur_token.literal,
     } };
 }
 
-fn parseReturnStatement(self: *Self) anyerror!ast.ReturnStatement {
+fn parseReturnStatement(self: *Parser) anyerror!ast.ReturnStatement {
     var stmt = ast.ReturnStatement{
         .token = self.cur_token,
     };
@@ -176,7 +177,7 @@ fn parseReturnStatement(self: *Self) anyerror!ast.ReturnStatement {
     return stmt;
 }
 
-fn parseBreakStatement(self: *Self) anyerror!ast.ReturnStatement {
+fn parseBreakStatement(self: *Parser) anyerror!ast.ReturnStatement {
     var stmt = ast.ReturnStatement{
         .token = self.cur_token,
     };
@@ -192,7 +193,7 @@ fn parseBreakStatement(self: *Self) anyerror!ast.ReturnStatement {
     return stmt;
 }
 
-fn parseAssignmentExpression(self: *Self, name: *ast.Expression) anyerror!ast.Expression {
+fn parseAssignmentExpression(self: *Parser, name: *ast.Expression) anyerror!ast.Expression {
     const allocator = self.arena.allocator();
     var left_exp = try allocator.create(ast.Expression);
     errdefer allocator.destroy(left_exp);
@@ -225,7 +226,7 @@ fn parseAssignmentExpression(self: *Self, name: *ast.Expression) anyerror!ast.Ex
     return .{ .assignment_expression = stmt };
 }
 
-fn parseConstStatement(self: *Self) anyerror!ast.ConstStatement {
+fn parseConstStatement(self: *Parser) anyerror!ast.ConstStatement {
     var stmt = ast.ConstStatement{
         .token = self.cur_token,
         .name = undefined,
@@ -258,7 +259,7 @@ fn parseConstStatement(self: *Self) anyerror!ast.ConstStatement {
     return stmt;
 }
 
-fn parseVarBlockStatement(self: *Self) anyerror!ast.VarBlockStatement {
+fn parseVarBlockStatement(self: *Parser) anyerror!ast.VarBlockStatement {
     var stmt = ast.VarBlockStatement{
         .token = self.last_token,
         .vars_decl = undefined,
@@ -303,7 +304,7 @@ fn parseVarBlockStatement(self: *Self) anyerror!ast.VarBlockStatement {
     return stmt;
 }
 
-fn parseConstBlockStatement(self: *Self) anyerror!ast.ConstBlockStatement {
+fn parseConstBlockStatement(self: *Parser) anyerror!ast.ConstBlockStatement {
     var stmt = ast.ConstBlockStatement{
         .token = self.last_token,
         .const_decl = undefined,
@@ -348,7 +349,7 @@ fn parseConstBlockStatement(self: *Self) anyerror!ast.ConstBlockStatement {
     return stmt;
 }
 
-fn parseVarStatement(self: *Self) anyerror!ast.VarStatement {
+fn parseVarStatement(self: *Parser) anyerror!ast.VarStatement {
     var stmt = ast.VarStatement{
         .token = self.cur_token,
         .name = undefined,
@@ -381,7 +382,7 @@ fn parseVarStatement(self: *Self) anyerror!ast.VarStatement {
     return stmt;
 }
 
-fn parseStatement(self: *Self) !ast.Statement {
+fn parseStatement(self: *Parser) !ast.Statement {
     return switch (self.cur_token.type) {
         .@"var" => if (!self.expectPeek(.@"{"))
             .{ .var_statement = try self.parseVarStatement() }
@@ -398,7 +399,7 @@ fn parseStatement(self: *Self) !ast.Statement {
     };
 }
 
-fn parseExpressionStatement(self: *Self) anyerror!ast.ExpressionStatement {
+fn parseExpressionStatement(self: *Parser) anyerror!ast.ExpressionStatement {
     var stmt = ast.ExpressionStatement{
         .token = self.cur_token,
         .expression = try self.parseExpression(Precedence.lower),
@@ -411,7 +412,7 @@ fn parseExpressionStatement(self: *Self) anyerror!ast.ExpressionStatement {
     return stmt;
 }
 
-fn parseExpression(self: *Self, precedence: Precedence) !*ast.Expression {
+fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
     const prefix_fn = self.prefix_parse_fns.get(self.cur_token.type) orelse {
         std.log.warn("at token: {s}\n", .{self.cur_token.literal});
         return error.UnknowPrefixFn;
@@ -441,7 +442,7 @@ fn parseExpression(self: *Self, precedence: Precedence) !*ast.Expression {
     return left_exp;
 }
 
-pub fn parseProgram(self: *Self) !ast.Program {
+pub fn parseProgram(self: *Parser) !ast.Program {
     const allocator = self.arena.allocator();
 
     var stmts = std.ArrayList(ast.Statement).init(allocator);
@@ -459,7 +460,7 @@ pub fn parseProgram(self: *Self) !ast.Program {
     return program;
 }
 
-fn parseIntegerLiteral(self: *Self) anyerror!ast.Expression {
+fn parseIntegerLiteral(self: *Parser) anyerror!ast.Expression {
     return .{
         .integer_literal = ast.IntegerLiteral{
             .token = self.cur_token,
@@ -471,12 +472,12 @@ fn parseIntegerLiteral(self: *Self) anyerror!ast.Expression {
     };
 }
 
-fn parseBoolean(self: *Self) anyerror!ast.Expression {
+fn parseBoolean(self: *Parser) anyerror!ast.Expression {
     return .{ .boolean = .{ .token = self.cur_token, .value = self.curTokenIs(.true) } };
 }
 
 //  BUG
-fn parseGroupExpression(self: *Self) anyerror!ast.Expression {
+fn parseGroupExpression(self: *Parser) anyerror!ast.Expression {
     self.nextToken();
 
     var exp = try self.parseExpression(Precedence.lower);
@@ -486,7 +487,7 @@ fn parseGroupExpression(self: *Self) anyerror!ast.Expression {
     return exp.*;
 }
 
-fn parsePrefixExpression(self: *Self) anyerror!ast.Expression {
+fn parsePrefixExpression(self: *Parser) anyerror!ast.Expression {
     var expression = ast.PrefixExpression{
         .operator = self.cur_token.literal,
         .token = self.cur_token,
@@ -500,7 +501,7 @@ fn parsePrefixExpression(self: *Self) anyerror!ast.Expression {
     return .{ .prefix_expression = expression };
 }
 
-fn parseInfixExpression(self: *Self, left: *ast.Expression) anyerror!ast.Expression {
+fn parseInfixExpression(self: *Parser, left: *ast.Expression) anyerror!ast.Expression {
     const allocator = self.arena.allocator();
 
     var new_left = try allocator.create(ast.Expression);
@@ -525,7 +526,7 @@ fn parseInfixExpression(self: *Self, left: *ast.Expression) anyerror!ast.Express
     return .{ .infix_expression = expression };
 }
 
-fn parseIfExpression(self: *Self) anyerror!ast.Expression {
+fn parseIfExpression(self: *Parser) anyerror!ast.Expression {
     var expression = ast.IfExpression{
         .token = self.cur_token,
         .condition = undefined,
@@ -552,7 +553,7 @@ fn parseIfExpression(self: *Self) anyerror!ast.Expression {
     return .{ .if_expression = expression };
 }
 
-fn parseBlockStatement(self: *Self) anyerror!ast.BlockStatement {
+fn parseBlockStatement(self: *Parser) anyerror!ast.BlockStatement {
     const allocator = self.arena.allocator();
 
     var stmts = std.ArrayList(ast.Statement).init(allocator);
@@ -603,7 +604,7 @@ fn parseBlockStatement(self: *Self) anyerror!ast.BlockStatement {
 //     return .{ .enum_literal = enu };
 // }
 
-fn parseFunctionLiteral(self: *Self) anyerror!ast.Expression {
+fn parseFunctionLiteral(self: *Parser) anyerror!ast.Expression {
     var lit = ast.FunctionLiteral{
         .token = self.cur_token,
         .parameters = undefined,
@@ -621,7 +622,7 @@ fn parseFunctionLiteral(self: *Self) anyerror!ast.Expression {
     return .{ .function_literal = lit };
 }
 
-fn parseFunctionParameters(self: *Self) anyerror![]ast.Identifier {
+fn parseFunctionParameters(self: *Parser) anyerror![]ast.Identifier {
     const allocator = self.arena.allocator();
 
     var indentifiers = std.ArrayList(ast.Identifier).init(allocator);
@@ -663,7 +664,7 @@ fn parseFunctionParameters(self: *Self) anyerror![]ast.Identifier {
     return ident_owner;
 }
 
-fn parseMethodExpression(self: *Self, exp: *ast.Expression) anyerror!ast.Expression {
+fn parseMethodExpression(self: *Parser, exp: *ast.Expression) anyerror!ast.Expression {
     const allocator = self.arena.allocator();
 
     // TODO: parse the Expression
@@ -690,7 +691,7 @@ fn parseMethodExpression(self: *Self, exp: *ast.Expression) anyerror!ast.Express
     return .{ .method_expression = method_exp };
 }
 
-fn parseCallExpression(self: *Self, func: *ast.Expression) anyerror!ast.Expression {
+fn parseCallExpression(self: *Parser, func: *ast.Expression) anyerror!ast.Expression {
     const allocator = self.arena.allocator();
     var func_ = try allocator.create(ast.Expression);
 
@@ -709,7 +710,7 @@ fn parseCallExpression(self: *Self, func: *ast.Expression) anyerror!ast.Expressi
     return call;
 }
 
-fn parseCallArguments(self: *Self) anyerror![]ast.Expression {
+fn parseCallArguments(self: *Parser) anyerror![]ast.Expression {
     const allocator = self.arena.allocator();
     var args = std.ArrayList(ast.Expression).init(allocator);
     errdefer args.deinit();
@@ -741,7 +742,7 @@ fn parseCallArguments(self: *Self) anyerror![]ast.Expression {
     return args_owned;
 }
 
-pub fn parseStringLiteral(self: *Self) anyerror!ast.Expression {
+pub fn parseStringLiteral(self: *Parser) anyerror!ast.Expression {
     return .{
         .string_literal = .{
             .token = self.cur_token,
@@ -750,7 +751,7 @@ pub fn parseStringLiteral(self: *Self) anyerror!ast.Expression {
     };
 }
 
-pub fn parseArrayOrHashLiteral(self: *Self) anyerror!ast.Expression {
+pub fn parseArrayOrHashLiteral(self: *Parser) anyerror!ast.Expression {
     const token = self.cur_token;
     const allocator = self.arena.allocator();
     var elements = std.ArrayList(ast.Expression).init(allocator);
@@ -799,7 +800,7 @@ pub fn parseArrayOrHashLiteral(self: *Self) anyerror!ast.Expression {
 
 // var hash = {1:1, 2:2, 3:3}
 pub fn parseHashLiteral(
-    self: *Self,
+    self: *Parser,
     key1: *ast.Expression,
     end: Token.TokenType,
 ) anyerror!std.AutoHashMap(*ast.Expression, *ast.Expression) {
@@ -833,7 +834,7 @@ pub fn parseHashLiteral(
 }
 
 // (...)
-pub fn parseExpressionList(self: *Self, exp1: *ast.Expression, end: Token.TokenType) anyerror![]ast.Expression {
+pub fn parseExpressionList(self: *Parser, exp1: *ast.Expression, end: Token.TokenType) anyerror![]ast.Expression {
     const allocator = self.arena.allocator();
     var list = std.ArrayList(ast.Expression).init(allocator);
     errdefer list.deinit();
@@ -864,7 +865,7 @@ pub fn parseExpressionList(self: *Self, exp1: *ast.Expression, end: Token.TokenT
 }
 
 // v[exp]
-pub fn parseIndexExpression(self: *Self, left: *ast.Expression) anyerror!ast.Expression {
+pub fn parseIndexExpression(self: *Parser, left: *ast.Expression) anyerror!ast.Expression {
     const allocator = self.arena.allocator();
     var new_left = try allocator.create(ast.Expression);
     errdefer allocator.destroy(new_left);
@@ -893,7 +894,7 @@ pub fn parseIndexExpression(self: *Self, left: *ast.Expression) anyerror!ast.Exp
 //      exp2 => [block2, exp],
 //      else => [block3, exp],
 //}
-pub fn parseSwitch(self: *Self) anyerror!ast.Expression {
+pub fn parseSwitch(self: *Parser) anyerror!ast.Expression {
     var swi = ast.SwitchExpression{
         .token = self.cur_token,
         .value = undefined,
@@ -963,7 +964,7 @@ pub fn parseSwitch(self: *Self) anyerror!ast.Expression {
 }
 
 // for true { } or for idx, val in list {}
-pub fn parseForLoop(self: *Self) anyerror!ast.Expression {
+pub fn parseForLoop(self: *Parser) anyerror!ast.Expression {
     var fl = ast.ForLoopExpression{
         .token = self.cur_token,
         .condition = undefined,

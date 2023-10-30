@@ -1,10 +1,9 @@
 const std = @import("std");
 const ast = @import("ast.zig");
-const object = @import("object.zig");
 const Lexer = @import("Lexer.zig");
 const Parser = @import("Parser.zig");
-const TokenType = @import("Token.zig").TokenType;
-const eval = @import("evaluator.zig").eval;
+const Environment = @import("Environment.zig");
+
 const allocator = std.testing.allocator;
 
 test "switch " {
@@ -23,10 +22,12 @@ test "switch " {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    var obj = try env.eval(
+        .{ .statement = .{ .program_statement = program } },
+    );
     _ = obj;
 }
 
@@ -44,10 +45,12 @@ test "for loop range" {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    var obj = try env.eval(
+        .{ .statement = .{ .program_statement = program } },
+    );
     _ = obj;
 }
 
@@ -64,10 +67,12 @@ test "for loop" {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    var obj = try env.eval(
+        .{ .statement = .{ .program_statement = program } },
+    );
     _ = obj;
 }
 
@@ -82,17 +87,11 @@ test "hash map" {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(
-        allocator,
-        .{
-            .statement = .{
-                .program_statement = program,
-            },
-        },
-        &env,
+    var obj = try env.eval(
+        .{ .statement = .{ .program_statement = program } },
     );
 
     try std.testing.expect(obj == .string);
@@ -108,10 +107,12 @@ test "print" {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    var obj = try env.eval(
+        .{ .statement = .{ .program_statement = program } },
+    );
 
     try std.testing.expect(obj == .null);
 }
@@ -127,10 +128,12 @@ test "string length 1" {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    var obj = try env.eval(
+        .{ .statement = .{ .program_statement = program } },
+    );
     try std.testing.expect(obj.integer.value == 4);
 }
 
@@ -145,10 +148,12 @@ test "string length 2" {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    var obj = try env.eval(
+        .{ .statement = .{ .program_statement = program } },
+    );
     try std.testing.expect(obj.integer.value == 12);
 }
 
@@ -167,10 +172,12 @@ test "redefine (=)" {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    var obj = try env.eval(
+        .{ .statement = .{ .program_statement = program } },
+    );
 
     try std.testing.expect(obj.integer.value == 21);
 }
@@ -185,10 +192,12 @@ test "redefine returns?" {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    var obj = try env.eval(
+        .{ .statement = .{ .program_statement = program } },
+    );
 
     try std.testing.expect(obj.integer.value == 21);
 }
@@ -205,10 +214,12 @@ test "redefine 2: arrays" {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    var obj = try env.eval(
+        .{ .statement = .{ .program_statement = program } },
+    );
     try std.testing.expect(obj.integer.value == 69);
 
     // for (obj.array.elements, [3]i64{ 1, 69, 3 }) |int, val| {
@@ -236,10 +247,12 @@ test "redefine 3: arrays += " {
 
         const program = try parser.parseProgram();
 
-        var env = object.Environment.init(allocator);
+        var env = Environment.init(allocator);
         defer env.deinit();
 
-        var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+        var obj = try env.eval(
+            .{ .statement = .{ .program_statement = program } },
+        );
         try std.testing.expect(obj.integer.value == 10);
     }
 }
@@ -264,10 +277,12 @@ test "string concat" {
 
         const program = try parser.parseProgram();
 
-        var env = object.Environment.init(allocator);
+        var env = Environment.init(allocator);
         defer env.deinit();
 
-        var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+        var obj = try env.eval(
+            .{ .statement = .{ .program_statement = program } },
+        );
         try std.testing.expect(std.mem.eql(u8, obj.string.value, "169"));
     }
 }
@@ -288,10 +303,12 @@ test "code example" {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    var obj = try env.eval(
+        .{ .statement = .{ .program_statement = program } },
+    );
 
     try std.testing.expect(obj.integer.value == 9);
 }
@@ -303,10 +320,12 @@ test "Array Literal" {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    var obj = try env.eval(
+        .{ .statement = .{ .program_statement = program } },
+    );
 
     var array = obj.array;
     try std.testing.expect(array.elements.len == 3);
@@ -323,10 +342,12 @@ test "Array Index" {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    var obj = try env.eval(
+        .{ .statement = .{ .program_statement = program } },
+    );
 
     var integer = obj.integer;
 
@@ -344,7 +365,7 @@ test "Array Index" {
 
 //     const program = try parser.parseProgram();
 
-//     var env = object.Environment.init(allocator);
+//     var env = Environment.init(allocator);
 //     defer env.deinit();
 
 //     var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
@@ -366,10 +387,12 @@ test "const statement " {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    var obj = try env.eval(
+        .{ .statement = .{ .program_statement = program } },
+    );
 
     try std.testing.expect(std.mem.eql(u8, obj.string.value, "1olamundo"));
 }
@@ -385,10 +408,12 @@ test "var/const block  " {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    var obj = try env.eval(
+        .{ .statement = .{ .program_statement = program } },
+    );
 
     try std.testing.expect(std.mem.eql(u8, obj.string.value, "1olamundo"));
 }
@@ -403,7 +428,7 @@ test "var/const block  " {
 
 //     const program = try parser.parseProgram();
 
-//     var env = object.Environment.init(allocator);
+//     var env = Environment.init(allocator);
 //     defer env.deinit();
 
 //     var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
@@ -421,10 +446,12 @@ test "function call " {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    var obj = try env.eval(
+        .{ .statement = .{ .program_statement = program } },
+    );
 
     try std.testing.expect(obj.integer.value == -5);
 }
@@ -438,10 +465,12 @@ test "function Obj 0" {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    var obj = try env.eval(
+        .{ .statement = .{ .program_statement = program } },
+    );
 
     try std.testing.expect(obj.integer.value == -10 + 1 + 2);
 }
@@ -455,10 +484,12 @@ test "function Obj 1" {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    var obj = try env.eval(
+        .{ .statement = .{ .program_statement = program } },
+    );
 
     try std.testing.expect(obj.integer.value == -10 + 1 + 2);
 }
@@ -472,7 +503,7 @@ test "string" {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
     var stmt = program.statements.items[0];
@@ -483,7 +514,9 @@ test "string" {
 
     var node = ast.Node{ .expression = exp.* };
 
-    var obj = try eval(allocator, node, &env);
+    var obj = try env.eval(
+        node,
+    );
 
     try std.testing.expect(std.mem.eql(u8, obj.string.value, "-69 - 1ola"));
 }
@@ -495,7 +528,7 @@ test "int" {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
     var stmt = program.statements.items[0];
@@ -506,7 +539,9 @@ test "int" {
 
     var node = ast.Node{ .expression = exp.* };
 
-    var obj = try eval(allocator, node, &env);
+    var obj = try env.eval(
+        node,
+    );
 
     try std.testing.expect(obj.integer.value == -69 - 1);
 }
@@ -526,9 +561,11 @@ test "bool" {
 
     var node = ast.Node{ .expression = exp.* };
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
-    var obj = try eval(allocator, node, &env);
+    var obj = try env.eval(
+        node,
+    );
 
     try std.testing.expect(obj.boolean.value == (!!true == true));
 }
@@ -555,9 +592,11 @@ test "infix int" {
 
         var node = ast.Node{ .expression = exp.* };
 
-        var env = object.Environment.init(allocator);
+        var env = Environment.init(allocator);
         defer env.deinit();
-        var obj = try eval(allocator, node, &env);
+        var obj = try env.eval(
+            node,
+        );
 
         try std.testing.expect(obj.integer.value == x.value);
     }
@@ -586,9 +625,11 @@ test "infix bool" {
 
         var node = ast.Node{ .expression = exp.* };
 
-        var env = object.Environment.init(allocator);
+        var env = Environment.init(allocator);
         defer env.deinit();
-        var obj = try eval(allocator, node, &env);
+        var obj = try env.eval(
+            node,
+        );
         try std.testing.expect(obj.boolean.value == x.value);
     }
 }
@@ -618,9 +659,11 @@ test "if-else expression" {
 
         var node = ast.Node{ .expression = exp.* };
 
-        var env = object.Environment.init(allocator);
+        var env = Environment.init(allocator);
         defer env.deinit();
-        var obj = try eval(allocator, node, &env);
+        var obj = try env.eval(
+            node,
+        );
 
         switch (obj) {
             .integer => |int| try std.testing.expect(int.value == x.value),
@@ -645,9 +688,11 @@ test "return" {
 
     var node = ast.Node{ .expression = exp.* };
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
-    var obj = try eval(allocator, node, &env);
+    var obj = try env.eval(
+        node,
+    );
 
     var int = obj.@"return".value.integer;
 
@@ -665,10 +710,12 @@ test "env" {
 
     const program = try parser.parseProgram();
 
-    var env = object.Environment.init(allocator);
+    var env = Environment.init(allocator);
     defer env.deinit();
 
-    var obj = try eval(allocator, .{ .statement = .{ .program_statement = program } }, &env);
+    var obj = try env.eval(
+        .{ .statement = .{ .program_statement = program } },
+    );
 
     try std.testing.expect(obj.integer.value == 30);
 }

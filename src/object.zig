@@ -1,63 +1,10 @@
 const std = @import("std");
 const ast = @import("ast.zig");
+const Environment = @import("Environment.zig");
 
-const LolliType = enum {
-    integer,
-    string,
-    array,
-    hash,
-    boolean,
-    null,
-    @"return",
-    err,
-    function,
-    builtin,
-    builtin_method,
-};
+pub const NULL = Object{ .null = Null{} };
 
-pub const Object = union(enum) {
-    err: Error,
-    null: Null,
-    hash: Hash,
-    array: Array,
-    string: String,
-    integer: Integer,
-    builtin: Builtin,
-    boolean: Boolean,
-    @"return": Return,
-    function: Function,
-    builtin_method: BuiltinMethod,
-
-    pub fn objType(self: *const Object) LolliType {
-        return switch (self.*) {
-            inline else => |x| x.obj_type,
-        };
-    }
-
-    pub fn next(self: *Object) anyerror!NextReturn {
-        return switch (self.*) {
-            .string => |*s| s.next(),
-            .array => |*s| s.next(),
-            else => error.NotIterable,
-        };
-    }
-
-    pub fn reset(self: *Object) anyerror!NextReturn {
-        return switch (self.*) {
-            .string => |*s| s.reset(),
-            .array => |*s| s.reset(),
-            else => error.NotIterable,
-        };
-    }
-    pub fn inspect(self: *const Object) ![]const u8 {
-        var buff: [50]u8 = undefined;
-        return switch (self.*) {
-            .integer => |obj_type| try std.fmt.bufPrint(&buff, "{d}", .{obj_type.value}),
-            .boolean => |obj_type| if (obj_type.value) "true" else "false",
-            else => "null",
-        };
-    }
-};
+const LolliType = enum { integer, string, array, hash, boolean, null, @"return", err, function, builtin, builtin_method };
 
 pub const Integer = struct {
     value: i64,
@@ -144,6 +91,17 @@ pub const Function = struct {
     body: ast.BlockStatement,
     parameters: []ast.Identifier,
     obj_type: LolliType = .function,
+
+    fn extendFunctionEnv(func: *Function, args: []Object) anyerror!Environment {
+        // TODO: sipa tem que alocar env
+        // TODO asset local variables names with args and global variables names
+        var enclose_env = func.env.newEncloseEnv();
+
+        for (func.parameters, args) |param, arg|
+            _ = try enclose_env.set(param.value, arg);
+
+        return enclose_env;
+    }
 };
 
 const BuiltinFunction = *const fn ([]const Object) Object;
@@ -158,89 +116,138 @@ pub const BuiltinMethod = struct {
     method_name: ast.Identifier,
 };
 
-// TODO: desalocar imediatamente assim que o escopo ({}) acabar
-pub const Environment = struct {
-    x: ?*Object = null,
-    // / outer scope (like globals for a scope)
-    outer: ?*Environment = null,
-    permit: ?[]const []const u8 = null,
-    allocated_str: std.ArrayList([]u8),
-    is_const: std.StringHashMap(bool),
+pub const Object = union(enum) {
+    err: Error,
+    null: Null,
+    hash: Hash,
+    array: Array,
+    string: String,
+    integer: Integer,
+    builtin: Builtin,
+    boolean: Boolean,
+    @"return": Return,
+    function: Function,
+    builtin_method: BuiltinMethod,
 
-    allocator: std.mem.Allocator,
-
-    store: std.StringHashMap(Object),
-    allocated_obj: std.ArrayList([]Object),
-    // /// pq eu usso isso mesmo?
-    allocated_hash: std.ArrayList(std.AutoHashMap(*Object, *Object)),
-
-    pub fn init(allocator: std.mem.Allocator) Environment {
-        return .{
-            .allocator = allocator,
-            .store = std.StringHashMap(Object).init(allocator),
-            .is_const = std.StringHashMap(bool).init(allocator),
-            .allocated_obj = std.ArrayList([]Object).init(allocator),
-            .allocated_str = std.ArrayList([]u8).init(allocator),
-            .allocated_hash = std.ArrayList(std.AutoHashMap(*Object, *Object)).init(allocator),
+    pub fn objType(self: *const Object) LolliType {
+        return switch (self.*) {
+            inline else => |x| x.obj_type,
         };
     }
 
-    pub fn newEncloseEnv(outer: *Environment) Environment {
-        var env = Environment.init(outer.allocator);
-        env.outer = outer;
-        return env;
+    pub fn next(self: *Object) anyerror!NextReturn {
+        return switch (self.*) {
+            .string => |*s| s.next(),
+            .array => |*s| s.next(),
+            else => error.NotIterable,
+        };
     }
 
-    pub fn newTemporaryScope(outer: *Environment, keys: []const []const u8) Environment {
-        var env = Environment.init(outer.allocator);
-        env.outer = outer;
-        env.permit = keys;
-        return env;
+    pub fn reset(self: *Object) anyerror!NextReturn {
+        return switch (self.*) {
+            .string => |*s| s.reset(),
+            .array => |*s| s.reset(),
+            else => error.NotIterable,
+        };
+    }
+    pub fn inspect(self: *const Object) ![]const u8 {
+        var buff: [50]u8 = undefined;
+        return switch (self.*) {
+            .integer => |obj_type| try std.fmt.bufPrint(&buff, "{d}", .{obj_type.value}),
+            .boolean => |obj_type| if (obj_type.value) "true" else "false",
+            else => "null",
+        };
     }
 
-    // TODO: remove this function
-    pub fn deinit(self: *Environment) void {
-        for (self.allocated_str.items) |item| {
-            self.allocator.free(item);
+    pub fn applyMethod(obj: *const Object, arg: *const BuiltinMethod) !Object {
+
+        // only string and lists (for now)
+        if (std.mem.eql(u8, arg.method_name.value, "len")) {
+            const len = switch (obj.objType()) {
+                .string => obj.string.value.len,
+                .array => obj.array.elements.len,
+                .hash => obj.hash.elements.count(),
+                else => return error.MethodLenNotDefined,
+            };
+            return .{ .integer = .{ .value = @intCast(len) } };
         }
 
-        for (self.allocated_obj.items) |item| {
-            self.allocator.free(item);
+        return error.MethodNotDefined;
+    }
+
+    pub fn applyFunction(func: *Object, args: []Object) !Object {
+        // TODO 147
+        return switch (func.*) {
+            .function => |*f| b: {
+                var extended_env = try f.extendFunctionEnv(args);
+                defer extended_env.deinit();
+                var evaluated = try extended_env.eval(.{ .statement = .{ .block_statement = f.body } });
+                break :b unwrapReturnValue(&evaluated);
+            },
+
+            .builtin => |b| b.func(args),
+
+            else => error.NotAFunction,
+        };
+    }
+
+    pub fn unwrapReturnValue(obj: *const Object) Object {
+        return if (obj.* == .@"return") obj.@"return".value.* else obj.*;
+    }
+
+    pub fn evalPrefixExpression(right: Object, op: []const u8) Object {
+        // TODO: op deve ser um u8
+        if (right.objType() == .boolean and op[0] == '!') {
+            return .{ .boolean = .{ .value = !right.boolean.value } };
         }
 
-        for (self.allocated_hash.items) |*item| {
-            item.deinit();
+        if (right.objType() == .integer and op[0] == '-') {
+            return .{ .integer = .{ .value = -right.integer.value } };
         }
 
-        self.store.deinit();
-        self.is_const.deinit();
-        self.allocated_str.deinit();
-        self.allocated_obj.deinit();
-        self.allocated_hash.deinit();
+        return NULL;
     }
 
-    pub fn get(self: *Environment, name: []const u8) ?Object {
-        return self.store.get(name);
+    pub fn evalIndexExpression(left: *const Object, index: *const Object) !Object {
+        return if (left.objType() == .array and index.objType() == .integer)
+            evalArrayIndexExpression(left, index)
+        else if (left.objType() == .hash)
+            evalHashIndexExpression(left, index)
+        else
+            error.IndexOPNotSupported;
     }
 
-    pub fn set(self: *Environment, name: []const u8, obj: Object) !Object {
-        if (self.is_const.get(name)) |is_const| {
-            if (is_const) return error.CanNotReassingConstVariables;
+    pub fn evalArrayIndexExpression(array: *const Object, index: *const Object) !Object {
+        const arr_obj = array.array;
+
+        const idx = @as(usize, @intCast(index.integer.value));
+
+        const max = arr_obj.elements.len - 1;
+
+        if (idx < 0 or idx > max) {
+            return NULL;
         }
-        try self.store.put(name, obj);
-        try self.is_const.put(name, false);
-        return obj;
+
+        return arr_obj.elements[idx];
     }
 
-    pub fn dropScopeVar(self: *Environment, name: []const u8) void {
-        _ = self.is_const.remove(name);
-        _ = self.store.remove(name);
-    }
+    pub fn evalHashIndexExpression(hash: *const Object, key: *const Object) !Object {
+        const hash_obj = hash.hash;
+        var k = @constCast(key);
 
-    pub fn setConst(self: *Environment, name: []const u8, obj: Object) !Object {
-        if (self.is_const.get(name)) |_| return error.CanNotReassingConstVariables;
-        try self.store.put(name, obj);
-        try self.is_const.put(name, true);
-        return obj;
+        var iter = hash_obj.elements.iterator();
+
+        // TODO: implement a better logic
+        while (iter.next()) |h| {
+            if (h.key_ptr.*.* == .string and k.* == .string) {
+                if (std.mem.eql(u8, h.key_ptr.*.*.string.value, k.*.string.value)) return h.value_ptr.*.*;
+                return NULL;
+            }
+
+            if (std.meta.eql(h.key_ptr.*.*, k.*)) {
+                return h.value_ptr.*.*;
+            }
+        }
+        return NULL;
     }
 };

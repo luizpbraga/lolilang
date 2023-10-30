@@ -1,18 +1,97 @@
-// TODO: implement errors for parsing and evaluation
 const std = @import("std");
 const ast = @import("ast.zig");
-const object = @import("object.zig");
-const Lexer = @import("Lexer.zig");
-const TokenType = @import("Token.zig").TokenType;
+const object = @import("./object.zig");
 const eql = std.mem.eql;
 
-const NULL = object.Object{ .null = object.Null{} };
+const Environment = @This();
+
+/// outer scope (like globals for a scope)
+/// TODO: arena ?
+allocator: std.mem.Allocator,
+outer: ?*Environment = null,
+permit: ?[]const []const u8 = null,
+
+is_const: std.StringHashMap(bool),
+allocated_str: std.ArrayList([]u8),
+store: std.StringHashMap(object.Object),
+allocated_obj: std.ArrayList([]object.Object),
+allocated_hash: std.ArrayList(std.AutoHashMap(*object.Object, *object.Object)),
+
+pub fn init(allocator: std.mem.Allocator) Environment {
+    return .{
+        .allocator = allocator,
+        .store = std.StringHashMap(object.Object).init(allocator),
+        .is_const = std.StringHashMap(bool).init(allocator),
+        .allocated_obj = std.ArrayList([]object.Object).init(allocator),
+        .allocated_str = std.ArrayList([]u8).init(allocator),
+        .allocated_hash = std.ArrayList(std.AutoHashMap(*object.Object, *object.Object)).init(allocator),
+    };
+}
+
+pub fn newEncloseEnv(outer: *Environment) Environment {
+    var env = Environment.init(outer.allocator);
+    env.outer = outer;
+    return env;
+}
+
+pub fn newTemporaryScope(outer: *Environment, keys: []const []const u8) Environment {
+    var env = Environment.init(outer.allocator);
+    env.outer = outer;
+    env.permit = keys;
+    return env;
+}
+
+// TODO: remove this function
+pub fn deinit(self: *Environment) void {
+    for (self.allocated_str.items) |item| {
+        self.allocator.free(item);
+    }
+
+    for (self.allocated_obj.items) |item| {
+        self.allocator.free(item);
+    }
+
+    for (self.allocated_hash.items) |*item| {
+        item.deinit();
+    }
+
+    self.store.deinit();
+    self.is_const.deinit();
+    self.allocated_str.deinit();
+    self.allocated_obj.deinit();
+    self.allocated_hash.deinit();
+}
+
+pub fn get(self: *Environment, name: []const u8) ?object.Object {
+    return self.store.get(name);
+}
+
+pub fn set(self: *Environment, name: []const u8, obj: object.Object) !object.Object {
+    if (self.is_const.get(name)) |is_const| {
+        if (is_const) return error.CanNotReassingConstVariables;
+    }
+    try self.store.put(name, obj);
+    try self.is_const.put(name, false);
+    return obj;
+}
+
+pub fn dropScopeVar(self: *Environment, name: []const u8) void {
+    _ = self.is_const.remove(name);
+    _ = self.store.remove(name);
+}
+
+pub fn setConst(self: *Environment, name: []const u8, obj: object.Object) !object.Object {
+    if (self.is_const.get(name)) |_| return error.CanNotReassingConstVariables;
+    try self.store.put(name, obj);
+    try self.is_const.put(name, true);
+    return obj;
+}
 
 fn pprint(arg: *object.Object) void {
     switch (arg.*) {
         .null => |n| std.debug.print("{any}", .{n.value}),
-        .integer => |n| std.debug.print("{}", .{n.value}),
         .string => |n| std.debug.print("{s}", .{n.value}),
+        .integer => |n| std.debug.print("{}", .{n.value}),
         .boolean => |n| std.debug.print("{}", .{n.value}),
         else => std.debug.print("not yet printable\n", .{}),
     }
@@ -22,8 +101,8 @@ fn printBuiltin(args: []const object.Object) object.Object {
     for (args) |arg| {
         switch (arg) {
             .null => |n| std.debug.print("{any} ", .{n.value}),
-            .integer => |n| std.debug.print("{} ", .{n.value}),
             .string => |n| std.debug.print("{s} ", .{n.value}),
+            .integer => |n| std.debug.print("{} ", .{n.value}),
             .boolean => |n| std.debug.print("{} ", .{n.value}),
             .array => |n| {
                 std.debug.print("{{ ", .{});
@@ -40,14 +119,14 @@ fn printBuiltin(args: []const object.Object) object.Object {
     }
     if (args.len > 1) std.debug.print("\n", .{});
 
-    return NULL;
+    return object.NULL;
 }
 
 const buildins = std.ComptimeStringMap(object.Builtin, .{
     .{ "print", .{ .func = printBuiltin } },
 });
 
-fn evalIdentifier(node: *const ast.Identifier, env: *object.Environment) !object.Object {
+fn evalIdentifier(env: *Environment, node: *const ast.Identifier) !object.Object {
     return if (env.get(node.value)) |val|
         val
     else if (buildins.get(node.value)) |val|
@@ -58,40 +137,46 @@ fn evalIdentifier(node: *const ast.Identifier, env: *object.Environment) !object
     };
 }
 
-pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environment) anyerror!object.Object {
+pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
+    const allocator = env.allocator;
+    _ = allocator;
+
     switch (node) {
         .expression => |exp| {
             return switch (exp) {
-                .void => NULL,
+                .void => object.NULL,
                 .boolean => |b| .{ .boolean = .{ .value = b.value } },
-                .integer_literal => |i| .{ .integer = .{ .value = i.value } },
+
                 .string_literal => |i| .{ .string = .{ .value = i.value } },
 
+                .integer_literal => |i| .{ .integer = .{ .value = i.value } },
+
                 .array_literal => |array| bkl: {
-                    var elements = try evalExpression(allocator, array.elements, env);
+                    var elements = try env.evalExpression(array.elements);
                     break :bkl .{ .array = .{ .elements = elements } };
                 },
 
                 .hash_literal => |*hash| bkl: {
-                    var elements = try evalHashExpression(allocator, &hash.elements, env);
-
+                    var elements = try env.evalHashExpression(&hash.elements);
                     break :bkl .{ .hash = .{ .elements = elements } };
                 },
 
                 .prefix_expression => |pre| blk: {
-                    const right = try eval(allocator, .{ .expression = pre.right.* }, env);
-                    break :blk evalPrefixExpression(pre.operator, right);
+                    const right = try env.eval(.{ .expression = pre.right.* });
+                    break :blk right.evalPrefixExpression(pre.operator);
                 },
+
                 .infix_expression => |pre| blk: {
-                    var left = try eval(allocator, .{ .expression = pre.left.* }, env);
-                    var right = try eval(allocator, .{ .expression = pre.right.* }, env);
-                    break :blk try evalInfixExpression(allocator, pre.operator, &left, &right, env);
+                    var left = try env.eval(.{ .expression = pre.left.* });
+                    var right = try env.eval(.{ .expression = pre.right.* });
+                    break :blk try env.evalInfixExpression(pre.operator, &left, &right);
                 },
-                .if_expression => |*if_exp| try evalIfExpression(allocator, if_exp, env),
 
-                .identifier => |iden| try evalIdentifier(&iden, env), //env.get(iden.value).?,
+                .if_expression => |*if_exp| try env.evalIfExpression(if_exp),
 
-                .assignment_expression => |ass| try evalAssignment(allocator, ass, env),
+                .identifier => |iden| try env.evalIdentifier(&iden), //env.get(iden.value).?,
+
+                .assignment_expression => |ass| try env.evalAssignment(ass),
 
                 .function_literal => |func| return .{
                     .function = .{
@@ -101,64 +186,65 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
                     },
                 },
 
-                .switch_expression => |*swi| try evalSwitchExpression(allocator, swi, env),
+                .switch_expression => |*swi| try env.evalSwitchExpression(swi),
 
                 .call_expression => |call| blk: {
-                    var func = try eval(allocator, .{ .expression = call.function.* }, env);
-                    var args = try evalExpression(allocator, call.arguments, env);
-                    break :blk applyFunction(allocator, func, args);
+                    var func = try env.eval(.{ .expression = call.function.* });
+                    var args = try env.evalExpression(call.arguments);
+                    break :blk func.applyFunction(args);
                 },
 
                 .index_expression => |idx| blk: {
-                    var left = try eval(allocator, .{ .expression = idx.left.* }, env);
-                    var index = try eval(allocator, .{ .expression = idx.index.* }, env);
-                    break :blk evalIndexExpression(&left, &index);
+                    var left = try env.eval(.{ .expression = idx.left.* });
+                    var index = try env.eval(.{ .expression = idx.index.* });
+                    break :blk left.evalIndexExpression(&index);
                 },
 
-                .forloop_expression => |*fl| try evalForLoopExpression(allocator, fl, env),
+                .forloop_expression => |*fl| try env.evalForLoopExpression(fl),
 
-                .forloop_range_expression => |*fl| try evalForLoopRangeExpression(allocator, fl, env),
+                .forloop_range_expression => |*fl| try env.evalForLoopRangeExpression(fl),
 
                 .method_expression => |met| b: {
-                    const left = try eval(allocator, .{ .expression = met.caller.* }, env);
+                    const left = try env.eval(.{ .expression = met.caller.* });
                     const ident = object.BuiltinMethod{ .method_name = met.method };
-                    break :b try applyMethod(&left, &ident);
+                    break :b try left.applyMethod(&ident);
                 },
             };
         },
 
         .statement => |stmt| {
             return switch (stmt) {
-                .program_statement => |program| try evalProgram(allocator, program.statements.items, env),
+                .program_statement => |program| try env.evalProgram(program.statements.items),
 
-                .block_statement => |block| try evalBlockStatement(allocator, block.statements, env),
+                .block_statement => |block| try env.evalBlockStatement(block.statements),
 
-                .expression_statement => |exp_stmt| eval(allocator, .{ .expression = exp_stmt.expression.* }, env),
+                .expression_statement => |exp_stmt| env.eval(.{ .expression = exp_stmt.expression.* }),
 
                 .var_block_statement => |vars| for (vars.vars_decl) |var_stmt| {
-                    var val = try eval(allocator, .{ .expression = var_stmt.value.? }, env);
+                    var val = try env.eval(.{ .expression = var_stmt.value.? });
                     _ = try env.set(var_stmt.name.value, val);
-                } else NULL,
+                } else object.NULL,
 
                 .const_block_statement => |consts| for (consts.const_decl) |const_stmt| {
-                    var val = try eval(allocator, .{ .expression = const_stmt.value.? }, env);
+                    var val = try env.eval(.{ .expression = const_stmt.value.? });
                     _ = try env.setConst(const_stmt.name.value, val);
-                } else NULL,
+                } else object.NULL,
 
                 .var_statement => |var_stmt| blk: {
-                    var val = try eval(allocator, .{ .expression = var_stmt.value.? }, env);
+                    var val = try env.eval(.{ .expression = var_stmt.value.? });
                     break :blk try env.set(var_stmt.name.value, val);
                 },
 
                 .const_statement => |const_stmt| blk: {
-                    var val = try eval(allocator, .{ .expression = const_stmt.value.? }, env);
+                    var val = try env.eval(.{ .expression = const_stmt.value.? });
                     break :blk try env.setConst(const_stmt.name.value, val);
                 },
 
                 .return_statement => |ret_stmt| blk: {
-                    const exp = if (ret_stmt.value) |exp| exp else return NULL;
+                    const exp = if (ret_stmt.value) |exp| exp else return object.NULL;
+                    var stmt_ = try env.eval(.{ .expression = exp });
                     break :blk .{
-                        .@"return" = .{ .value = &(try eval(allocator, .{ .expression = exp }, env)) },
+                        .@"return" = .{ .value = &stmt_ },
                     };
                 },
             };
@@ -166,64 +252,18 @@ pub fn eval(allocator: std.mem.Allocator, node: ast.Node, env: *object.Environme
     }
 }
 
-fn applyMethod(obj: *const object.Object, arg: *const object.BuiltinMethod) !object.Object {
-
-    // only string and lists (for now)
-    if (std.mem.eql(u8, arg.method_name.value, "len")) {
-        const len = switch (obj.objType()) {
-            .string => obj.string.value.len,
-            .array => obj.array.elements.len,
-            .hash => obj.hash.elements.count(),
-            else => return error.MethodLenNotDefined,
-        };
-        return .{ .integer = .{ .value = @as(i64, @intCast(len)) } };
-    }
-
-    return error.MethodNotDefined;
-}
-
-fn applyFunction(allocator: std.mem.Allocator, func: object.Object, args: []object.Object) !object.Object {
-    // TODO 147
-    return switch (func) {
-        .function => |f| b: {
-            var extended_env = try extendFunctionEnv(@constCast(&f), args);
-            defer extended_env.deinit();
-            var evaluated = try eval(allocator, .{ .statement = .{ .block_statement = f.body } }, &extended_env);
-            break :b unwrapReturnValue(evaluated);
-        },
-
-        .builtin => |b| b.func(args),
-
-        else => error.NotAFunction,
-    };
-}
-
-fn extendFunctionEnv(func: *object.Function, args: []object.Object) anyerror!object.Environment {
-    // TODO: sipa tem que alocar env
-    var enclose_env = object.Environment.newEncloseEnv(func.env);
-
-    for (func.parameters, args) |param, arg|
-        _ = try enclose_env.set(param.value, arg);
-
-    return enclose_env;
-}
-
-fn unwrapReturnValue(obj: object.Object) object.Object {
-    return if (obj == .@"return") obj.@"return".value.* else obj;
-}
-
 // sometimes i do not know how to write beautiful code ...
-fn evalAssignment(allocator: std.mem.Allocator, assig: ast.AssignmentExpression, env: *object.Environment) !object.Object {
+fn evalAssignment(env: *Environment, assig: ast.AssignmentExpression) !object.Object {
     switch (assig.name.*) {
         .identifier => |ident| {
-            var evaluated = try eval(allocator, .{ .expression = assig.value.* }, env);
+            var evaluated = try env.eval(.{ .expression = assig.value.* });
 
             switch (assig.token.type) {
                 .@"+=", .@"-=", .@"*=", .@"/=" => {
                     if (env.get(ident.value)) |*current| {
-                        var result = try evalInfixExpression(allocator, assig.operator, @constCast(current), &evaluated, env);
+                        var result = try env.evalInfixExpression(assig.operator, @constCast(current), &evaluated);
                         _ = try env.set(ident.value, result);
-                        return NULL;
+                        return object.NULL;
                     }
                     return error.VariableNotDeclared;
                 },
@@ -231,7 +271,7 @@ fn evalAssignment(allocator: std.mem.Allocator, assig: ast.AssignmentExpression,
                 .@"=" => {
                     if (env.get(ident.value)) |_| {
                         _ = try env.set(ident.value, evaluated);
-                        return NULL;
+                        return object.NULL;
                     }
                     return error.VariableNotDeclared;
                 },
@@ -241,50 +281,50 @@ fn evalAssignment(allocator: std.mem.Allocator, assig: ast.AssignmentExpression,
         },
 
         .index_expression => |exp| {
-            const index_obj = try eval(allocator, .{ .expression = exp.index.* }, env);
+            const index_obj = try env.eval(.{ .expression = exp.index.* });
             const index = index_obj.integer.value;
-            const evaluated = try eval(allocator, .{ .expression = assig.value.* }, env);
+            const evaluated = try env.eval(.{ .expression = assig.value.* });
             const var_name = exp.left.identifier.value;
+
             if (env.get(var_name)) |*current| {
                 const uindex = @as(usize, @intCast(index));
                 switch (current.array.elements[uindex]) {
                     .integer => {
                         var element = &current.array.elements[uindex];
                         switch (assig.token.type) {
-                            .@"=", .@"+=", .@"-=", .@"*=", .@"/=" => _ = try evalInfixExpression(allocator, assig.token.literal, element, @constCast(&evaluated), env),
+                            .@"=", .@"+=", .@"-=", .@"*=", .@"/=" => _ = try env.evalInfixExpression(assig.token.literal, element, @constCast(&evaluated)),
                             else => return error.UnknowOperator,
                         }
                     },
                     .string => {
                         var element = &current.array.elements[uindex];
                         switch (assig.token.type) {
-                            .@"=", .@"+=" => _ = try evalInfixExpression(allocator, assig.token.literal, element, @constCast(&evaluated), env),
+                            .@"=", .@"+=" => _ = try env.evalInfixExpression(assig.token.literal, element, @constCast(&evaluated)),
                             else => return error.UnknowOperator,
                         }
                     },
                     else => return error.NotSuportedOperation,
                 }
             }
-            return NULL;
+            return object.NULL;
         },
         else => return error.AssignmentExpressionNotDefined,
     }
 }
 
 fn evalHashExpression(
-    allocator: std.mem.Allocator,
+    env: *Environment,
     hash_exp: *const std.AutoHashMap(*ast.Expression, *ast.Expression),
-    env: *object.Environment,
 ) !std.AutoHashMap(*object.Object, *object.Object) {
-    var hash_obj = std.AutoHashMap(*object.Object, *object.Object).init(allocator);
+    var hash_obj = std.AutoHashMap(*object.Object, *object.Object).init(env.allocator);
     errdefer hash_obj.deinit();
 
     var iter0 = hash_exp.iterator();
 
     while (iter0.next()) |hash| {
-        var keyval = try allocator.alloc(object.Object, 2);
-        keyval[0] = try eval(allocator, .{ .expression = hash.key_ptr.*.* }, env);
-        keyval[1] = try eval(allocator, .{ .expression = hash.value_ptr.*.* }, env);
+        var keyval = try env.allocator.alloc(object.Object, 2);
+        keyval[0] = try env.eval(.{ .expression = hash.key_ptr.*.* });
+        keyval[1] = try env.eval(.{ .expression = hash.value_ptr.*.* });
 
         try env.allocated_obj.append(keyval);
         try hash_obj.put(&keyval[0], &keyval[1]);
@@ -295,24 +335,26 @@ fn evalHashExpression(
     return hash_obj;
 }
 
-fn evalExpression(allocator: std.mem.Allocator, exps: []ast.Expression, env: *object.Environment) ![]object.Object {
+fn evalExpression(env: *Environment, exps: []ast.Expression) ![]object.Object {
     // TODO 144
-    var result = std.ArrayList(object.Object).init(allocator);
+    var result = std.ArrayList(object.Object).init(env.allocator);
     errdefer result.deinit();
+
     for (exps) |e| {
-        var evaluated = try eval(allocator, .{ .expression = e }, env);
+        var evaluated = try env.eval(.{ .expression = e });
         try result.append(evaluated);
     }
+
     var result_owned = try result.toOwnedSlice();
     try env.allocated_obj.append(result_owned);
 
     return result_owned;
 }
 
-fn evalProgram(allocator: std.mem.Allocator, stmts: []ast.Statement, env: *object.Environment) anyerror!object.Object {
+fn evalProgram(env: *Environment, stmts: []ast.Statement) anyerror!object.Object {
     var result: object.Object = undefined;
     for (stmts) |statement| {
-        result = try eval(allocator, .{ .statement = statement }, env);
+        result = try env.eval(.{ .statement = statement });
         switch (result) {
             .@"return" => |ret| return ret.value.*,
             else => {},
@@ -321,10 +363,10 @@ fn evalProgram(allocator: std.mem.Allocator, stmts: []ast.Statement, env: *objec
     return result;
 }
 
-fn evalBlockStatement(allocator: std.mem.Allocator, stmts: []ast.Statement, env: *object.Environment) anyerror!object.Object {
+fn evalBlockStatement(env: *Environment, stmts: []ast.Statement) anyerror!object.Object {
     var result: object.Object = undefined;
     for (stmts) |statement| {
-        result = try eval(allocator, .{ .statement = statement }, env);
+        result = try env.eval(.{ .statement = statement });
         switch (result) {
             .@"return" => return result,
             else => {},
@@ -333,10 +375,10 @@ fn evalBlockStatement(allocator: std.mem.Allocator, stmts: []ast.Statement, env:
     return result;
 }
 
-fn evalStatement(allocator: std.mem.Allocator, stmts: []ast.Statement, env: *object.Environment) anyerror!object.Object {
+fn evalStatement(env: *Environment, stmts: []ast.Statement) anyerror!object.Object {
     var result: object.Object = undefined;
     for (stmts) |statement| {
-        result = try eval(allocator, .{ .statement = statement }, env);
+        result = try env.eval(.{ .statement = statement });
         switch (result) {
             .@"return" => |ret| return ret.value.*,
             else => {},
@@ -345,23 +387,23 @@ fn evalStatement(allocator: std.mem.Allocator, stmts: []ast.Statement, env: *obj
     return result;
 }
 
-fn evalIfExpression(allocator: std.mem.Allocator, ie: *const ast.IfExpression, env: *object.Environment) anyerror!object.Object {
-    const condition = try eval(allocator, .{ .expression = ie.condition.* }, env);
+fn evalIfExpression(env: *Environment, ie: *const ast.IfExpression) anyerror!object.Object {
+    const condition = try env.eval(.{ .expression = ie.condition.* });
 
-    if (condition != .boolean) return NULL;
+    if (condition != .boolean) return object.NULL;
 
     if (condition.boolean.value) {
         // { block statements if}
-        return try eval(allocator, .{ .statement = .{ .block_statement = ie.consequence } }, env);
+        return try env.eval(.{ .statement = .{ .block_statement = ie.consequence } });
     } else if (ie.alternative) |alternative| {
         // { block statement else }
-        return try eval(allocator, .{ .statement = .{ .block_statement = alternative } }, env);
+        return try env.eval(.{ .statement = .{ .block_statement = alternative } });
     }
 
-    return NULL;
+    return object.NULL;
 }
 
-fn evalInfixExpression(allocator: std.mem.Allocator, op: []const u8, left: *object.Object, right: *object.Object, env: *object.Environment) !object.Object {
+fn evalInfixExpression(env: *Environment, op: []const u8, left: *object.Object, right: *object.Object) !object.Object {
     // int init operation
     if (right.objType() == .integer and left.objType() == .integer) {
         return if (eql(u8, op, "+"))
@@ -395,7 +437,7 @@ fn evalInfixExpression(allocator: std.mem.Allocator, op: []const u8, left: *obje
         } else if (eql(u8, op, "/=")) b: {
             left.integer.value = @divFloor(left.integer.value, right.integer.value);
             break :b left.*;
-        } else NULL;
+        } else object.NULL;
     }
 
     // bool bool operation
@@ -405,133 +447,76 @@ fn evalInfixExpression(allocator: std.mem.Allocator, op: []const u8, left: *obje
         else if (eql(u8, op, "!="))
             .{ .boolean = .{ .value = left.boolean.value != right.boolean.value } }
         else
-            NULL;
+            object.NULL;
     }
 
     // string string op
     if (right.objType() == .string and left.objType() == .string) {
         return if (eql(u8, op, "+")) b: {
-            var new_string = try std.fmt.allocPrint(allocator, "{s}{s}", .{ left.string.value, right.string.value });
+            var new_string = try std.fmt.allocPrint(env.allocator, "{s}{s}", .{ left.string.value, right.string.value });
             try env.allocated_str.append(new_string);
             break :b .{ .string = .{ .value = new_string } };
         } else if (eql(u8, op, "+=")) b: {
-            var new_string = try std.fmt.allocPrint(allocator, "{s}{s}", .{ left.string.value, right.string.value });
+            var new_string = try std.fmt.allocPrint(env.allocator, "{s}{s}", .{ left.string.value, right.string.value });
             try env.allocated_str.append(new_string);
             left.string.value = new_string;
             break :b left.*;
-        } else NULL;
+        } else object.NULL;
     }
 
     if (right.objType() == .integer and left.objType() == .string) {
         return if (eql(u8, op, "+")) b: {
-            var new_string = try std.fmt.allocPrint(allocator, "{s}{any}", .{ left.string.value, right.integer.value });
+            var new_string = try std.fmt.allocPrint(env.allocator, "{s}{any}", .{ left.string.value, right.integer.value });
             try env.allocated_str.append(new_string);
             break :b .{ .string = .{ .value = new_string } };
         } else if (eql(u8, op, "+=")) b: {
-            var new_string = try std.fmt.allocPrint(allocator, "{s}{any}", .{ left.string.value, right.integer.value });
+            var new_string = try std.fmt.allocPrint(env.allocator, "{s}{any}", .{ left.string.value, right.integer.value });
             try env.allocated_str.append(new_string);
             left.string.value = new_string;
             break :b left.*;
-        } else NULL;
+        } else object.NULL;
     }
 
     if (right.objType() == .string and left.objType() == .integer) {
         return if (eql(u8, op, "+")) b: {
-            var new_string = try std.fmt.allocPrint(allocator, "{any}{s}", .{ left.integer.value, right.string.value });
+            var new_string = try std.fmt.allocPrint(env.allocator, "{any}{s}", .{ left.integer.value, right.string.value });
             try env.allocated_str.append(new_string);
             break :b .{ .string = .{ .value = new_string } };
         } else if (eql(u8, op, "+=")) b: {
-            var new_string = try std.fmt.allocPrint(allocator, "{any}{s}", .{ left.integer.value, right.string.value });
+            var new_string = try std.fmt.allocPrint(env.allocator, "{any}{s}", .{ left.integer.value, right.string.value });
             try env.allocated_str.append(new_string);
-            // left.string.value = new_string;
             left.* = .{ .string = .{ .value = new_string } };
             break :b left.*;
-        } else NULL;
+        } else object.NULL;
     }
 
-    return NULL;
+    return object.NULL;
 }
 
-fn evalPrefixExpression(op: []const u8, right: object.Object) object.Object {
-    // TODO: op deve ser um u8
-    if (right.objType() == .boolean and op[0] == '!') {
-        return .{ .boolean = .{ .value = !right.boolean.value } };
-    }
-
-    if (right.objType() == .integer and op[0] == '-') {
-        return .{ .integer = .{ .value = -right.integer.value } };
-    }
-
-    return NULL;
-}
-
-fn evalIndexExpression(left: *const object.Object, index: *const object.Object) !object.Object {
-    return if (left.objType() == .array and index.objType() == .integer)
-        evalArrayIndexExpression(left, index)
-    else if (left.objType() == .hash)
-        evalHashIndexExpression(left, index)
-    else
-        error.IndexOPNotSupported;
-}
-
-fn evalHashIndexExpression(hash: *const object.Object, key: *const object.Object) !object.Object {
-    const hash_obj = hash.hash;
-    var k = @constCast(key);
-
-    var iter = hash_obj.elements.iterator();
-
-    // TODO: implement a better logic
-    while (iter.next()) |h| {
-        if (h.key_ptr.*.* == .string and k.* == .string) {
-            if (std.mem.eql(u8, h.key_ptr.*.*.string.value, k.*.string.value)) return h.value_ptr.*.*;
-            return NULL;
-        }
-
-        if (std.meta.eql(h.key_ptr.*.*, k.*)) {
-            return h.value_ptr.*.*;
-        }
-    }
-    return NULL;
-}
-
-fn evalArrayIndexExpression(array: *const object.Object, index: *const object.Object) !object.Object {
-    const arr_obj = array.array;
-
-    const idx = @as(usize, @intCast(index.integer.value));
-
-    const max = arr_obj.elements.len - 1;
-
-    if (idx < 0 or idx > max) {
-        return NULL;
-    }
-
-    return arr_obj.elements[idx];
-}
-
-fn evalForLoopExpression(allocator: std.mem.Allocator, fl: *const ast.ForLoopExpression, env: *object.Environment) !object.Object {
+fn evalForLoopExpression(env: *Environment, fl: *const ast.ForLoopExpression) !object.Object {
     var rt = object.Boolean{ .value = true };
+
     while (true) {
-        var condition = try eval(allocator, .{ .expression = fl.condition.* }, env);
+        var condition = try env.eval(.{ .expression = fl.condition.* });
 
         if (condition != .boolean) condition = .{ .boolean = .{ .value = false } };
 
         if (condition.boolean.value) {
-            var rt2 = try eval(
-                allocator,
+            var rt2 = try env.eval(
                 .{ .statement = .{ .block_statement = fl.consequence } },
-                env,
             );
 
             if (rt2.objType() == .@"return") return rt2;
         } else break;
     }
+
     return .{ .boolean = rt };
 }
 
-fn evalForLoopRangeExpression(allocator: std.mem.Allocator, fl: *const ast.ForLoopRangeExpression, env: *object.Environment) !object.Object {
-    var iterabol = try eval(allocator, .{ .expression = fl.iterable.* }, env);
+fn evalForLoopRangeExpression(env: *Environment, fl: *const ast.ForLoopRangeExpression) !object.Object {
+    var iterabol = try env.eval(.{ .expression = fl.iterable.* });
 
-    var permit0 = std.ArrayList([]const u8).init(allocator);
+    var permit0 = std.ArrayList([]const u8).init(env.allocator);
     defer permit0.deinit();
 
     try permit0.append(fl.ident);
@@ -539,7 +524,7 @@ fn evalForLoopRangeExpression(allocator: std.mem.Allocator, fl: *const ast.ForLo
         try permit0.append(index);
 
     const permit = try permit0.toOwnedSlice();
-    defer allocator.free(permit);
+    defer env.allocator.free(permit);
 
     var info = try iterabol.next();
     var element = info.element;
@@ -552,7 +537,7 @@ fn evalForLoopRangeExpression(allocator: std.mem.Allocator, fl: *const ast.ForLo
         if (fl.index) |index|
             _ = try env.set(index, idx);
 
-        var block_eval = try eval(allocator, .{ .statement = .{ .block_statement = fl.body } }, env);
+        var block_eval = try env.eval(.{ .statement = .{ .block_statement = fl.body } });
 
         // drop the index and val
         env.dropScopeVar(fl.ident);
@@ -566,25 +551,25 @@ fn evalForLoopRangeExpression(allocator: std.mem.Allocator, fl: *const ast.ForLo
         element = info.element;
     }
 
-    return NULL;
+    return object.NULL;
 }
 
-fn evalSwitchExpression(allocator: std.mem.Allocator, sw: *const ast.SwitchExpression, env: *object.Environment) !object.Object {
-    var value = try eval(allocator, .{ .expression = sw.value.* }, env);
+fn evalSwitchExpression(env: *Environment, sw: *const ast.SwitchExpression) !object.Object {
+    var value = try env.eval(.{ .expression = sw.value.* });
 
     for (sw.choices) |ch| {
-        const block_eval = try eval(allocator, .{ .statement = .{ .block_statement = ch.block } }, env);
+        const block_eval = try env.eval(.{ .statement = .{ .block_statement = ch.block } });
 
         if (ch.exp.* == .identifier and ch.exp.identifier.token.type == .@"else") {
             return block_eval;
         }
 
-        const swi_value = try eval(allocator, .{ .expression = ch.exp.* }, env);
+        const swi_value = try env.eval(.{ .expression = ch.exp.* });
 
         if (std.meta.eql(value, swi_value)) {
             return block_eval;
         }
     }
 
-    return NULL;
+    return object.NULL;
 }
