@@ -281,9 +281,9 @@ pub const HashLiteral = struct {
 };
 
 pub const FunctionLiteral = struct {
-    token: Token,
     parameters: []Identifier,
     body: BlockStatement,
+    token: Token,
 
     pub fn tokenLiteral(self: *const FunctionLiteral) []const u8 {
         return self.token.literal;

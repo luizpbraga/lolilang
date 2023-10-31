@@ -80,12 +80,13 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Parser {
 
     try p.registerPrefix(.@"for", parseForLoop);
     try p.registerPrefix(.@"switch", parseSwitch);
+    try p.registerPrefix(.@"[", parseArrayLiteral);
 
     try p.registerPrefix(.@"else", parseIfExpression);
     try p.registerPrefix(.@"fn", parseFunctionLiteral);
     // try p.registerPrefix(.@"enum", parseEnumLiteral);
     try p.registerPrefix(.string, parseStringLiteral);
-    try p.registerPrefix(.@"{", parseArrayOrHashLiteral);
+    try p.registerPrefix(.@"{", parseHashLiteral);
     try p.registerInfix(.@"[", parseIndexExpression);
 
     try p.registerInfix(.@"+", parseInfixExpression);
@@ -135,7 +136,7 @@ fn peekTokenIs(self: *const Parser, token_type: Token.TokenType) bool {
     return self.peek_token.type == token_type;
 }
 
-/// eat the token if true
+/// match and eat the token (if true)
 fn expectPeek(self: *Parser, token_type: Token.TokenType) bool {
     if (self.peekTokenIs(token_type)) {
         self.nextToken();
@@ -751,118 +752,107 @@ pub fn parseStringLiteral(self: *Parser) anyerror!ast.Expression {
     };
 }
 
-pub fn parseArrayOrHashLiteral(self: *Parser) anyerror!ast.Expression {
+pub fn parseArrayLiteral(self: *Parser) anyerror!ast.Expression {
     const token = self.cur_token;
-    const allocator = self.arena.allocator();
-    var elements = std.ArrayList(ast.Expression).init(allocator);
-    errdefer elements.deinit();
 
-    if (self.peekTokenIs(.@"}")) {
+    if (self.peekTokenIs(.@"]")) {
         self.nextToken();
-        elements.deinit();
         return .{
             .array_literal = .{ .token = token, .elements = &.{} },
         };
     }
 
-    self.nextToken();
+    const allocator = self.arena.allocator();
+    var elements = std.ArrayList(ast.Expression).init(allocator);
+    errdefer elements.deinit();
 
+    self.nextToken();
     var element1 = try self.parseExpression(.lower);
     try elements.append(element1.*);
 
-    if (self.peekTokenIs(.@"}")) {
-        self.nextToken();
-        var elements_owned = try elements.toOwnedSlice();
-        // try self.gc.expressions.append(elements_owned);
-        return .{ .array_literal = .{ .token = token, .elements = elements_owned } };
+    while (self.peekTokenIs(.@",")) {
+        self.nextToken(); // ,
+        self.nextToken(); // next_element
+
+        var element_n = try self.parseExpression(.lower);
+        try elements.append(element_n.*);
     }
 
-    if (self.peekTokenIs(.@",")) {
-        self.nextToken();
-        self.nextToken(); // proxima expressao
-        elements.deinit();
+    if (!self.expectPeek(.@"]")) return error.UnexpectToken;
 
-        var elements_owned = try self.parseExpressionList(element1, .@"}");
-        return .{ .array_literal = .{ .token = token, .elements = elements_owned } };
-    }
-
-    if (self.peekTokenIs(.@":")) {
-        self.nextToken(); // :
-        self.nextToken(); // proxima expressao
-        elements.deinit();
-
-        var elements_owned = try self.parseHashLiteral(element1, .@"}");
-        return .{ .hash_literal = .{ .token = token, .elements = elements_owned } };
-    }
-
-    return error.UnrechableCodeMapHash;
+    return .{
+        .array_literal = .{ .token = token, .elements = try elements.toOwnedSlice() },
+    };
 }
 
 // var hash = {1:1, 2:2, 3:3}
-pub fn parseHashLiteral(
-    self: *Parser,
-    key1: *ast.Expression,
-    end: Token.TokenType,
-) anyerror!std.AutoHashMap(*ast.Expression, *ast.Expression) {
-    //
-
+pub fn parseHashLiteral(self: *Parser) anyerror!ast.Expression {
+    const token = self.cur_token;
     const allocator = self.arena.allocator();
+
     var hash = std.AutoHashMap(*ast.Expression, *ast.Expression).init(allocator);
     errdefer hash.deinit();
 
-    var val1 = try self.parseExpression(Precedence.lower);
+    while (!self.peekTokenIs(.@"}")) {
+        self.nextToken();
 
-    try hash.put(key1, val1);
+        var key = try self.parseExpression(.lower);
 
-    while (self.peekTokenIs(.@",")) {
+        if (!self.expectPeek(.@":")) {
+            std.log.warn("syntax error: expect ':'\n", .{});
+            return error.MissingValueInHash;
+        }
+
         self.nextToken();
-        self.nextToken();
-        var key = try self.parseExpression(Precedence.lower);
-        if (!self.expectPeek(.@":")) return error.MissingValueInHash;
-        self.nextToken();
-        var val = try self.parseExpression(Precedence.lower);
+
+        var val = try self.parseExpression(.lower);
+
         try hash.put(key, val);
+
+        if (!self.peekTokenIs(.@"}") and !self.expectPeek(.@",")) {
+            std.log.warn("syntax error: expect ',' or '}}'\n", .{});
+            return error.UnexpectToken;
+        }
     }
 
-    if (!self.expectPeek(end)) {
+    if (!self.expectPeek(.@"}")) {
+        std.log.warn("syntax error: expect '}}'\n", .{});
         return error.MissingRightBrace;
     }
 
-    // try self.gc.hash.append(hash);
-
-    return hash;
+    return .{ .hash_literal = .{ .token = token, .elements = hash } };
 }
 
 // (...)
-pub fn parseExpressionList(self: *Parser, exp1: *ast.Expression, end: Token.TokenType) anyerror![]ast.Expression {
-    const allocator = self.arena.allocator();
-    var list = std.ArrayList(ast.Expression).init(allocator);
-    errdefer list.deinit();
-
-    try list.append(exp1.*);
-
-    var exp = try self.parseExpression(Precedence.lower);
-    try list.append(exp.*);
-
-    while (self.peekTokenIs(.@",")) {
-        self.nextToken();
-        self.nextToken();
-        var exp2 = try self.parseExpression(Precedence.lower);
-        try list.append(exp2.*);
-    }
-
-    if (self.expectPeek(.@":"))
-        return error.NotAHash;
-
-    if (!self.expectPeek(end)) {
-        return error.MissingRightBrace;
-    }
-
-    var list_owned = try list.toOwnedSlice();
-    // try self.gc.expressions.append(list_owned);
-
-    return list_owned;
-}
+// pub fn parseExpressionList(self: *Parser, exp1: *ast.Expression, end: Token.TokenType) anyerror![]ast.Expression {
+//     const allocator = self.arena.allocator();
+//     var list = std.ArrayList(ast.Expression).init(allocator);
+//     errdefer list.deinit();
+//
+//     try list.append(exp1.*);
+//
+//     var exp = try self.parseExpression(Precedence.lower);
+//     try list.append(exp.*);
+//
+//     while (self.peekTokenIs(.@",")) {
+//         self.nextToken();
+//         self.nextToken();
+//         var exp2 = try self.parseExpression(Precedence.lower);
+//         try list.append(exp2.*);
+//     }
+//
+//     if (self.expectPeek(.@":"))
+//         return error.NotAHash;
+//
+//     if (!self.expectPeek(end)) {
+//         return error.MissingRightBrace;
+//     }
+//
+//     var list_owned = try list.toOwnedSlice();
+//     // try self.gc.expressions.append(list_owned);
+//
+//     return list_owned;
+// }
 
 // v[exp]
 pub fn parseIndexExpression(self: *Parser, left: *ast.Expression) anyerror!ast.Expression {
