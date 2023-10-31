@@ -83,7 +83,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Parser {
     try p.registerPrefix(.@"[", parseArrayLiteral);
 
     try p.registerPrefix(.@"else", parseIfExpression);
-    try p.registerPrefix(.@"fn", parseFunctionLiteral);
+    try p.registerPrefix(.func, parseFunctionLiteral);
     // try p.registerPrefix(.@"enum", parseEnumLiteral);
     try p.registerPrefix(.string, parseStringLiteral);
     try p.registerPrefix(.@"{", parseHashLiteral);

@@ -182,7 +182,7 @@ pub const Object = union(enum) {
                 var extended_env = try f.extendFunctionEnv(args);
                 defer extended_env.deinit();
                 var evaluated = try extended_env.eval(.{ .statement = .{ .block_statement = f.body } });
-                break :b unwrapReturnValue(&evaluated);
+                break :b evaluated.unwrapReturnValue();
             },
 
             .builtin => |b| b.func(args),
@@ -192,7 +192,10 @@ pub const Object = union(enum) {
     }
 
     pub fn unwrapReturnValue(obj: *const Object) Object {
-        return if (obj.* == .@"return") obj.@"return".value.* else obj.*;
+        if (obj.* == .@"return") {
+            return obj.@"return".value.*;
+        }
+        return obj.*;
     }
 
     pub fn evalPrefixExpression(right: Object, op: []const u8) Object {

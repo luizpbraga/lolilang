@@ -41,7 +41,7 @@ pub fn newTemporaryScope(outer: *Environment, keys: []const []const u8) Environm
     return env;
 }
 
-// TODO: remove this function
+/// this function deallocates ALL OBJECTS from a given Environment; return from this Environment sucks HAHAHAH
 pub fn deinit(self: *Environment) void {
     for (self.allocated_str.items) |item| {
         self.allocator.free(item);
@@ -114,6 +114,17 @@ fn printBuiltin(args: []const object.Object) object.Object {
 
                 std.debug.print(" }}\n", .{});
             },
+            .hash => |h| {
+                var iter = h.elements.iterator();
+                std.debug.print("{{ ", .{});
+                while (iter.next()) |entry| {
+                    pprint(entry.key_ptr.*);
+                    std.debug.print(":", .{});
+                    pprint(entry.value_ptr.*);
+                    std.debug.print(", ", .{});
+                }
+                std.debug.print("}}\n", .{});
+            },
             else => std.debug.print("not yet printable\n", .{}),
         }
     }
@@ -127,20 +138,19 @@ const buildins = std.ComptimeStringMap(object.Builtin, .{
 });
 
 fn evalIdentifier(env: *Environment, node: *const ast.Identifier) !object.Object {
-    return if (env.get(node.value)) |val|
-        val
-    else if (buildins.get(node.value)) |val|
-        .{ .builtin = val }
-    else err: {
-        std.log.warn("the identifier: {s}\n", .{node.value});
-        break :err error.IdentifierNotFound;
-    };
+    if (env.get(node.value)) |val| {
+        return val;
+    }
+
+    if (buildins.get(node.value)) |val| {
+        return .{ .builtin = val };
+    }
+
+    std.log.warn("the identifier: {s}\n", .{node.value});
+    return error.IdentifierNotFound;
 }
 
 pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
-    const allocator = env.allocator;
-    _ = allocator;
-
     switch (node) {
         .expression => |exp| {
             return switch (exp) {
@@ -240,12 +250,30 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
                     break :blk try env.setConst(const_stmt.name.value, val);
                 },
 
-                .return_statement => |ret_stmt| blk: {
+                .return_statement => |ret_stmt| ret_blk: {
                     const exp = if (ret_stmt.value) |exp| exp else return object.NULL;
                     var stmt_ = try env.eval(.{ .expression = exp });
-                    break :blk .{
-                        .@"return" = .{ .value = &stmt_ },
+
+                    // this approach sucks !!! I KNOW
+                    const value: object.Object = switch (stmt_) {
+                        else => stmt_,
+
+                        .string => |str| blk: {
+                            var copy_str = try env.outer.?.allocator.alloc(u8, str.value.len);
+                            @memcpy(copy_str, @constCast(str.value));
+                            try env.outer.?.allocated_str.append(copy_str);
+                            break :blk .{ .string = .{ .value = copy_str } };
+                        },
+
+                        .array => |arr| blk: {
+                            var copy_elemens = try env.outer.?.allocator.alloc(object.Object, arr.elements.len);
+                            @memcpy(copy_elemens, arr.elements);
+                            try env.outer.?.allocated_obj.append(copy_elemens);
+                            break :blk .{ .array = .{ .elements = copy_elemens } };
+                        },
                     };
+
+                    break :ret_blk .{ .@"return" = .{ .value = &value } };
                 },
             };
         },

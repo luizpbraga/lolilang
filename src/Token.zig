@@ -9,7 +9,7 @@ pub const keywords = std.ComptimeStringMap(TokenType, .{
     .{ "in", .in },
     .{ "continue", .@"continue" },
     .{ "in", .@"break" },
-    .{ "fn", .@"fn" },
+    .{ "func", .func },
     .{ "enum", .@"enum" },
     .{ "for", .@"for" },
     .{ "switch", .@"switch" },
@@ -72,7 +72,7 @@ pub const TokenType = enum {
     @"...",
 
     // keywords
-    @"fn",
+    func,
     @"enum",
     @"for",
     @"switch",
