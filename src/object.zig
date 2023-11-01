@@ -4,7 +4,12 @@ const Environment = @import("Environment.zig");
 
 pub const NULL = Object{ .null = Null{} };
 
-const LolliType = enum { integer, string, array, hash, boolean, null, @"return", err, function, builtin, builtin_method };
+const LolliType = enum { float, integer, string, array, hash, boolean, null, @"return", err, function, builtin, builtin_method };
+
+pub const Float = struct {
+    value: f64,
+    obj_type: LolliType = .float,
+};
 
 pub const Integer = struct {
     value: i64,
@@ -123,6 +128,7 @@ pub const Object = union(enum) {
     array: Array,
     string: String,
     integer: Integer,
+    float: Float,
     builtin: Builtin,
     boolean: Boolean,
     @"return": Return,

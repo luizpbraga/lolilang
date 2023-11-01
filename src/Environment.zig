@@ -90,6 +90,7 @@ pub fn setConst(self: *Environment, name: []const u8, obj: object.Object) !objec
 fn pprint(arg: *object.Object) void {
     switch (arg.*) {
         .null => |n| std.debug.print("{any}", .{n.value}),
+        .float => |n| std.debug.print("{d}", .{n.value}),
         .string => |n| std.debug.print("{s}", .{n.value}),
         .integer => |n| std.debug.print("{}", .{n.value}),
         .boolean => |n| std.debug.print("{}", .{n.value}),
@@ -101,6 +102,7 @@ fn printBuiltin(args: []const object.Object) object.Object {
     for (args) |arg| {
         switch (arg) {
             .null => |n| std.debug.print("{any} ", .{n.value}),
+            .float => |n| std.debug.print("{d} ", .{n.value}),
             .string => |n| std.debug.print("{s} ", .{n.value}),
             .integer => |n| std.debug.print("{} ", .{n.value}),
             .boolean => |n| std.debug.print("{} ", .{n.value}),
@@ -160,6 +162,8 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
                 .string_literal => |i| .{ .string = .{ .value = i.value } },
 
                 .integer_literal => |i| .{ .integer = .{ .value = i.value } },
+
+                .float_literal => |i| .{ .float = .{ .value = i.value } },
 
                 .array_literal => |array| bkl: {
                     var elements = try env.evalExpression(array.elements);
@@ -464,6 +468,111 @@ fn evalInfixExpression(env: *Environment, op: []const u8, left: *object.Object, 
             break :b left.*;
         } else if (eql(u8, op, "/=")) b: {
             left.integer.value = @divFloor(left.integer.value, right.integer.value);
+            break :b left.*;
+        } else object.NULL;
+    }
+
+    if (right.objType() == .float and left.objType() == .float) {
+        return if (eql(u8, op, "+"))
+            .{ .float = .{ .value = left.float.value + right.float.value } }
+        else if (eql(u8, op, "-"))
+            .{ .float = .{ .value = left.float.value - right.float.value } }
+        else if (eql(u8, op, "*"))
+            .{ .float = .{ .value = left.float.value * right.float.value } }
+        else if (eql(u8, op, "/"))
+            .{ .float = .{ .value = left.float.value / right.float.value } }
+        else if (eql(u8, op, ">"))
+            .{ .boolean = .{ .value = left.float.value > right.float.value } }
+        else if (eql(u8, op, "<"))
+            .{ .boolean = .{ .value = left.float.value < right.float.value } }
+        else if (eql(u8, op, "=="))
+            .{ .boolean = .{ .value = left.float.value == right.float.value } }
+        else if (eql(u8, op, "!="))
+            .{ .boolean = .{ .value = left.float.value != right.float.value } }
+        else if (eql(u8, op, "=")) b: {
+            left.float.value = right.float.value;
+            break :b left.*;
+        } else if (eql(u8, op, "+=")) b: {
+            left.float.value += right.float.value;
+            break :b left.*;
+        } else if (eql(u8, op, "-=")) b: {
+            left.float.value -= right.float.value;
+            break :b left.*;
+        } else if (eql(u8, op, "*=")) b: {
+            left.float.value *= right.float.value;
+            break :b left.*;
+        } else if (eql(u8, op, "/=")) b: {
+            left.float.value = left.float.value / right.float.value;
+            break :b left.*;
+        } else object.NULL;
+    }
+
+    if (right.objType() == .float and left.objType() == .integer) {
+        return if (eql(u8, op, "+"))
+            .{ .float = .{ .value = @as(f64, @floatFromInt(left.integer.value)) + right.float.value } }
+        else if (eql(u8, op, "-"))
+            .{ .float = .{ .value = @as(f64, @floatFromInt(left.integer.value)) - right.float.value } }
+        else if (eql(u8, op, "*"))
+            .{ .float = .{ .value = @as(f64, @floatFromInt(left.integer.value)) * right.float.value } }
+        else if (eql(u8, op, "/"))
+            .{ .float = .{ .value = @as(f64, @floatFromInt(left.integer.value)) / right.float.value } }
+        else if (eql(u8, op, ">"))
+            .{ .boolean = .{ .value = @as(f64, @floatFromInt(left.integer.value)) > right.float.value } }
+        else if (eql(u8, op, "<"))
+            .{ .boolean = .{ .value = @as(f64, @floatFromInt(left.integer.value)) < right.float.value } }
+        else if (eql(u8, op, "=="))
+            .{ .boolean = .{ .value = @as(f64, @floatFromInt(left.integer.value)) == right.float.value } }
+        else if (eql(u8, op, "!="))
+            .{ .boolean = .{ .value = @as(f64, @floatFromInt(left.integer.value)) != right.float.value } }
+        else if (eql(u8, op, "=")) b: {
+            left.integer.value = @intFromFloat(right.float.value);
+            break :b left.*;
+        } else if (eql(u8, op, "+=")) b: {
+            left.integer.value += @intFromFloat(right.float.value);
+            break :b left.*;
+        } else if (eql(u8, op, "-=")) b: {
+            left.integer.value -= @intFromFloat(right.float.value);
+            break :b left.*;
+        } else if (eql(u8, op, "*=")) b: {
+            left.integer.value *= @intFromFloat(right.float.value);
+            break :b left.*;
+        } else if (eql(u8, op, "/=")) b: {
+            left.integer.value = @intFromFloat(@divFloor(@as(f64, @floatFromInt(left.integer.value)), right.float.value));
+            break :b left.*;
+        } else object.NULL;
+    }
+
+    if (right.objType() == .integer and left.objType() == .float) {
+        return if (eql(u8, op, "+"))
+            .{ .float = .{ .value = @as(f64, @floatFromInt(right.integer.value)) + left.float.value } }
+        else if (eql(u8, op, "-"))
+            .{ .float = .{ .value = @as(f64, @floatFromInt(right.integer.value)) - left.float.value } }
+        else if (eql(u8, op, "*"))
+            .{ .float = .{ .value = @as(f64, @floatFromInt(right.integer.value)) * left.float.value } }
+        else if (eql(u8, op, "/"))
+            .{ .float = .{ .value = @as(f64, @floatFromInt(right.integer.value)) / left.float.value } }
+        else if (eql(u8, op, ">"))
+            .{ .boolean = .{ .value = @as(f64, @floatFromInt(right.integer.value)) > left.float.value } }
+        else if (eql(u8, op, "<"))
+            .{ .boolean = .{ .value = @as(f64, @floatFromInt(right.integer.value)) < left.float.value } }
+        else if (eql(u8, op, "=="))
+            .{ .boolean = .{ .value = @as(f64, @floatFromInt(right.integer.value)) == left.float.value } }
+        else if (eql(u8, op, "!="))
+            .{ .boolean = .{ .value = @as(f64, @floatFromInt(right.integer.value)) != left.float.value } }
+        else if (eql(u8, op, "=")) b: {
+            left.float.value = @floatFromInt(right.integer.value);
+            break :b left.*;
+        } else if (eql(u8, op, "+=")) b: {
+            left.float.value += @floatFromInt(right.integer.value);
+            break :b left.*;
+        } else if (eql(u8, op, "-=")) b: {
+            left.float.value -= @floatFromInt(right.integer.value);
+            break :b left.*;
+        } else if (eql(u8, op, "*=")) b: {
+            left.float.value *= @floatFromInt(right.integer.value);
+            break :b left.*;
+        } else if (eql(u8, op, "/=")) b: {
+            left.float.value = left.float.value / @as(f64, @floatFromInt(right.integer.value));
             break :b left.*;
         } else object.NULL;
     }

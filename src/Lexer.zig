@@ -17,7 +17,7 @@ pub fn init(input: []const u8) Self {
 
 fn readNumber(self: *Self) []const u8 {
     const position = self.position;
-    while (isDigit(self.ch)) self.readChar();
+    while (isDigit(self.ch) or self.ch == '.') self.readChar();
     return self.input[position..self.position];
 }
 
@@ -173,16 +173,21 @@ pub fn nextToken(self: *Self) Token {
         0 => newToken(.eof),
         // identifiers
         'a'...'z', 'A'...'Z', '_' => {
-            // TODO
-            // allow number in variables name (x1, x2, x2)
+            // TODO: handle error
             const literal = self.readIdentifier() catch unreachable;
             const token_type = Token.lookupIdentfier(literal);
             return Token{ .type = token_type, .literal = literal };
         },
 
         '0'...'9' => {
-            const token_type = TokenType.int;
             const literal = self.readNumber();
+
+            const n_dots = std.mem.count(u8, literal, ".");
+
+            // if (n_dots > 1) return error.InvelidFloatNumber;
+
+            const token_type: TokenType = if (n_dots == 0) .int else .float;
+
             return Token{ .type = token_type, .literal = literal };
         },
         else => newToken(.illegal),

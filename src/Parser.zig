@@ -71,6 +71,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Parser {
 
     try p.registerPrefix(.identifier, parseIdentifier);
     try p.registerPrefix(.int, parseIntegerLiteral);
+    try p.registerPrefix(.float, parseFloatLiteral);
     try p.registerPrefix(.true, parseBoolean);
     try p.registerPrefix(.false, parseBoolean);
     try p.registerPrefix(.@"!", parsePrefixExpression);
@@ -459,6 +460,17 @@ pub fn parseProgram(self: *Parser) !ast.Program {
     }
 
     return program;
+}
+fn parseFloatLiteral(self: *Parser) anyerror!ast.Expression {
+    return .{
+        .float_literal = ast.FloatLiteral{
+            .token = self.cur_token,
+            .value = std.fmt.parseFloat(f64, self.cur_token.literal) catch |err| {
+                std.log.err("Could not parse {s} as float", .{self.cur_token.literal});
+                return err;
+            },
+        },
+    };
 }
 
 fn parseIntegerLiteral(self: *Parser) anyerror!ast.Expression {

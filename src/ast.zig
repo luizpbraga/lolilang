@@ -44,6 +44,7 @@ pub const Statement = union(enum) {
 pub const Expression = union(enum) {
     void,
     boolean: Boolean,
+    float_literal: FloatLiteral,
     integer_literal: IntegerLiteral,
     string_literal: StringLiteral,
     array_literal: ArrayLiteral,
@@ -230,6 +231,17 @@ pub const BlockStatement = struct {
     }
 };
 // --------------------------------------------------------------------
+
+pub const FloatLiteral = struct {
+    token: Token,
+    value: f64,
+
+    pub fn expressionNode() void {}
+
+    pub fn tokenLiteral(self: *const FloatLiteral) []const u8 {
+        return self.token.literal;
+    }
+};
 
 pub const IntegerLiteral = struct {
     token: Token,
