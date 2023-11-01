@@ -337,13 +337,13 @@ pub const ForLoopRangeExpression = struct {
 
 pub const SwitchChoices = struct {
     token: Token, // =>
-    exp: *Expression,
+    exps: ?[]const Expression,
     block: BlockStatement,
 };
 
 pub const SwitchExpression = struct {
     token: Token,
-    value: *Expression,
+    value: *Expression, // swtich (value)
     choices: []SwitchChoices,
 
     pub fn tokenLiteral(self: *const SwitchExpression) []const u8 {

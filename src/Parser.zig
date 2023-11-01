@@ -20,7 +20,7 @@ const ast = @import("ast.zig");
 
 // TODO: better error
 const ParseError = error{
-    UnexpectToken,
+    UnexpectedToken,
 };
 
 pub const Precedence = enum {
@@ -79,7 +79,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Parser {
     try p.registerPrefix(.@"if", parseIfExpression);
 
     try p.registerPrefix(.@"for", parseForLoop);
-    try p.registerPrefix(.@"switch", parseSwitch);
+    try p.registerPrefix(.@"switch", parseSwitchExpression);
     try p.registerPrefix(.@"[", parseArrayLiteral);
 
     try p.registerPrefix(.@"else", parseIfExpression);
@@ -219,7 +219,7 @@ fn parseAssignmentExpression(self: *Parser, name: *ast.Expression) anyerror!ast.
         .@"-=" => "-=",
         .@"/=" => "/=",
         .@"*=" => "*=",
-        else => return error.UnexpectToken,
+        else => return error.UnexpectedToken,
     };
 
     stmt.value = try self.parseExpression(.lower);
@@ -235,7 +235,7 @@ fn parseConstStatement(self: *Parser) anyerror!ast.ConstStatement {
 
     if (!self.expectPeek(.identifier)) {
         std.log.err("Expect Identifier, found '{s}'", .{self.cur_token.literal});
-        return error.UnexpectToken;
+        return error.UnexpectedToken;
     }
 
     stmt.name = ast.Identifier{
@@ -245,7 +245,7 @@ fn parseConstStatement(self: *Parser) anyerror!ast.ConstStatement {
 
     if (!self.expectPeek(.@"=")) {
         std.log.err("Expect Assignment Token (=), found '{s}' (hint: U cannot use numbers in var names...)", .{self.cur_token.literal});
-        return error.UnexpectToken;
+        return error.UnexpectedToken;
     }
 
     self.nextToken();
@@ -358,7 +358,7 @@ fn parseVarStatement(self: *Parser) anyerror!ast.VarStatement {
 
     if (!self.expectPeek(.identifier)) {
         std.log.err("Expect Identifier, found '{s}'", .{self.cur_token.literal});
-        return error.UnexpectToken;
+        return error.UnexpectedToken;
     }
 
     stmt.name = ast.Identifier{
@@ -368,7 +368,7 @@ fn parseVarStatement(self: *Parser) anyerror!ast.VarStatement {
 
     if (!self.expectPeek(.@"=")) {
         std.log.err("Expect Assignment Token (=), found '{s}'", .{self.cur_token.literal});
-        return error.UnexpectToken;
+        return error.UnexpectedToken;
     }
 
     self.nextToken();
@@ -561,7 +561,7 @@ fn parseBlockStatement(self: *Parser) anyerror!ast.BlockStatement {
     errdefer stmts.deinit();
 
     var block = ast.BlockStatement{
-        .token = self.cur_token,
+        .token = self.cur_token, //{
         .statements = undefined,
     };
 
@@ -574,8 +574,6 @@ fn parseBlockStatement(self: *Parser) anyerror!ast.BlockStatement {
     }
 
     var stmts_owner = try stmts.toOwnedSlice();
-
-    // try self.gc.statements.append(stmts_owner);
 
     block.statements = stmts_owner;
 
@@ -778,7 +776,7 @@ pub fn parseArrayLiteral(self: *Parser) anyerror!ast.Expression {
         try elements.append(element_n.*);
     }
 
-    if (!self.expectPeek(.@"]")) return error.UnexpectToken;
+    if (!self.expectPeek(.@"]")) return error.UnexpectedToken;
 
     return .{
         .array_literal = .{ .token = token, .elements = try elements.toOwnedSlice() },
@@ -811,7 +809,7 @@ pub fn parseHashLiteral(self: *Parser) anyerror!ast.Expression {
 
         if (!self.peekTokenIs(.@"}") and !self.expectPeek(.@",")) {
             std.log.warn("syntax error: expect ',' or '}}'\n", .{});
-            return error.UnexpectToken;
+            return error.UnexpectedToken;
         }
     }
 
@@ -884,8 +882,8 @@ pub fn parseIndexExpression(self: *Parser, left: *ast.Expression) anyerror!ast.E
 //      exp2 => [block2, exp],
 //      else => [block3, exp],
 //}
-pub fn parseSwitch(self: *Parser) anyerror!ast.Expression {
-    var swi = ast.SwitchExpression{
+pub fn parseSwitchExpression(self: *Parser) anyerror!ast.Expression {
+    var switch_expression = ast.SwitchExpression{
         .token = self.cur_token,
         .value = undefined,
         .choices = undefined,
@@ -893,64 +891,80 @@ pub fn parseSwitch(self: *Parser) anyerror!ast.Expression {
 
     self.nextToken();
 
-    swi.value = try self.parseExpression(.lower);
+    switch_expression.value = try self.parseExpression(.lower);
+
+    if (!self.expectPeek(.@"{")) return error.MissingBrance;
+
+    self.nextToken();
 
     const allocator = self.arena.allocator();
 
     var choices = std.ArrayList(ast.SwitchChoices).init(allocator);
     errdefer choices.deinit();
 
-    if (!self.expectPeek(.@"{")) return error.MissingBrance;
+    while (!self.curTokenIs(.@"}")) {
+        if (self.curTokenIs(.eof)) return error.UnexpectedEOF;
 
-    self.nextToken();
+        var switch_choices: ast.SwitchChoices = undefined;
 
-    while (self.cur_token.type != .@"}") {
-        if (self.curTokenIs(.eof)) return error.Bruuuuuuuuuuuh;
+        // TODO: deixa o else ser feliz :: ele participa do vetor de exp e entra como
+        // um braco alternativo do switch la no evalSwitch
+        if (self.curTokenIs(.@"else")) {
+            switch_choices = .{
+                .token = self.cur_token, // .else
+                .exps = null, // else case
+                .block = undefined,
+            };
 
-        var stop = if (self.cur_token.type == .@"else") true else false;
+            self.nextToken();
+        } else {
+            if (self.curTokenIs(.@"}")) return error.SyntaxError;
 
-        var exp = if (stop) b: {
-            var v = try self.parseIdentifier();
-            var cpy = try allocator.create(ast.Expression);
-            errdefer allocator.destroy(cpy);
+            var exps = std.ArrayList(ast.Expression).init(allocator);
+            errdefer exps.deinit();
 
-            // try self.gc.expression.append(cpy);
-            cpy.* = v;
+            var exp1 = try self.parseExpression(.lower);
+            try exps.append(exp1.*);
 
-            break :b cpy;
-        } else try self.parseExpression(.lower);
+            self.nextToken();
 
-        if (!self.expectPeek(.@"=>")) return error.UnexpectToken;
+            // TODO: parse "..." range
+            while (self.curTokenIs(.@",")) {
+                self.nextToken();
+                var exp_n = try self.parseExpression(.lower);
+                try exps.append(exp_n.*);
+                self.nextToken();
+            }
 
-        var sc = ast.SwitchChoices{
-            .token = self.cur_token,
-            .exp = exp,
-            .block = undefined,
-        };
+            switch_choices = .{
+                .token = self.cur_token,
+                .exps = try exps.toOwnedSlice(),
+                .block = undefined,
+            };
+        }
 
-        if (!self.expectPeek(.@"{")) return error.MissingBlockBrace;
-
-        sc.block = try self.parseBlockStatement();
+        if (self.cur_token.type != .@"=>") {
+            return error.UnexpectedToken;
+        }
 
         self.nextToken();
 
-        if (!stop)
-            if (self.cur_token.type != .@",")
-                return error.MissingSemiColon;
+        if (self.cur_token.type != .@"{") {
+            return error.MissingBlockBrace;
+        }
 
-        if (!stop)
-            self.nextToken();
+        switch_choices.block = try self.parseBlockStatement();
 
-        try choices.append(sc);
+        self.nextToken(); // }
 
-        if (stop) break;
+        try choices.append(switch_choices);
     }
 
     var choice_owned = try choices.toOwnedSlice();
-    // try self.gc.choices.append(choice_owned);
-    swi.choices = choice_owned;
 
-    return .{ .switch_expression = swi };
+    switch_expression.choices = choice_owned;
+
+    return .{ .switch_expression = switch_expression };
 }
 
 // for true { } or for idx, val in list {}

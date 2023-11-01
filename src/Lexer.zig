@@ -71,7 +71,8 @@ fn newToken(token_type: TokenType) Token {
 pub fn nextToken(self: *Self) Token {
     self.skipWhiteSpace();
 
-    if (self.ch == '/' and self.peekChar() == '/') {
+    // if (self.ch == '/' and self.peekChar() == '/') {
+    if (self.ch == '#') {
         self.skipComments();
         return self.nextToken();
     }

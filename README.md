@@ -1,10 +1,15 @@
 Loli is an interpreter that sometimes does not know how to interpret.
 
->> loli gos brrr
+> > loli gos brrr
+
+##### Zig Version
+
+    zig-linux-x86_64-0.12.0-dev.1372+8457439a8
 
 ### code example
 
 #### Variable Declaration
+
 ```go
 // multi-line declaration
 const {
@@ -16,6 +21,7 @@ var t = 3
 ```
 
 #### Function
+
 ```go
 // functions (sometimes it does not work HEHE)
 var foo = fn(x, y) {
@@ -26,7 +32,8 @@ var foo = fn(x, y) {
 print( foo(1,2) )
 ```
 
-#### Builtin Methods 
+#### Builtin Methods
+
 ```go
 var my_name_is = "Eminem"
 var yoyo = {1, 2, 3, 4}
@@ -34,8 +41,8 @@ print( my_name_is.len != yoyo.len )
 
 ```
 
-
 #### Arrays
+
 ```go
 // we have arrays
 var v = { 1, true, "2" , false, 4 }
@@ -44,8 +51,9 @@ const v_size = v.len
 ```
 
 #### Hashmap
+
 ```go
-// hashmaps 
+// hashmaps
 const map = {
     1: "a",
     2: "b",
@@ -57,6 +65,7 @@ print( map["list"], map[true], map[1] )
 ```
 
 #### Loops
+
 ```go
 // loops
 var i = 0
@@ -73,8 +82,9 @@ for idx, item in list {
 ```
 
 #### Switch
+
 ```go
-// switch 
+// switch
 const y = 10
 var x = switch y {
     1 => { 0 },
@@ -84,6 +94,7 @@ var x = switch y {
 ```
 
 #### to implement:
+
     1. real numbers
     2. ranges
     4. enum
@@ -92,7 +103,7 @@ var x = switch y {
     7. erros KKKKK
 
 #### to fix:
-    1. return strings from function 
+
+    1. return strings from function
     2. hashmap sometimes returns null
     3. can't use global variables in for range loops
-

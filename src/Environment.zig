@@ -588,14 +588,17 @@ fn evalSwitchExpression(env: *Environment, sw: *const ast.SwitchExpression) !obj
     for (sw.choices) |ch| {
         const block_eval = try env.eval(.{ .statement = .{ .block_statement = ch.block } });
 
-        if (ch.exp.* == .identifier and ch.exp.identifier.token.type == .@"else") {
+        // if (ch.exp.* == .identifier and ch.exp.identifier.token.type == .@"else") {
+        const exps = ch.exps orelse {
             return block_eval;
-        }
+        };
 
-        const swi_value = try env.eval(.{ .expression = ch.exp.* });
+        for (exps) |exp| {
+            const swi_value = try env.eval(.{ .expression = exp });
 
-        if (std.meta.eql(value, swi_value)) {
-            return block_eval;
+            if (std.meta.eql(value, swi_value)) {
+                return block_eval;
+            }
         }
     }
 
