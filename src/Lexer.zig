@@ -46,9 +46,12 @@ fn skipComments(self: *Self) void {
     self.skipWhiteSpace();
 }
 
-fn readIdentifier(self: *Self) []const u8 {
+fn readIdentifier(self: *Self) ![]const u8 {
     var position = self.position;
-    while (isLetter(self.ch)) self.readChar();
+
+    if (isDigit(self.ch)) return error.InvelidDigitCharacterOnItendifierName;
+
+    while (isLetter(self.ch) or isDigit(self.ch)) self.readChar();
     return self.input[position..self.position];
 }
 
@@ -172,7 +175,7 @@ pub fn nextToken(self: *Self) Token {
         'a'...'z', 'A'...'Z', '_' => {
             // TODO
             // allow number in variables name (x1, x2, x2)
-            const literal = self.readIdentifier();
+            const literal = self.readIdentifier() catch unreachable;
             const token_type = Token.lookupIdentfier(literal);
             return Token{ .type = token_type, .literal = literal };
         },

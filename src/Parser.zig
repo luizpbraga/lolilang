@@ -273,7 +273,7 @@ fn parseVarBlockStatement(self: *Parser) anyerror!ast.VarBlockStatement {
 
     self.nextToken();
 
-    while (self.cur_token.type != .@"}") {
+    while (self.cur_token.type != .@")") {
         const ident = try self.parseIdentifier();
 
         if (ident != .identifier) return error.ExprectIdentifier;
@@ -318,7 +318,7 @@ fn parseConstBlockStatement(self: *Parser) anyerror!ast.ConstBlockStatement {
 
     self.nextToken();
 
-    while (self.cur_token.type != .@"}") {
+    while (self.cur_token.type != .@")") {
         const ident = try self.parseIdentifier();
 
         if (ident != .identifier) return error.ExprectIdentifier;
@@ -385,12 +385,12 @@ fn parseVarStatement(self: *Parser) anyerror!ast.VarStatement {
 
 fn parseStatement(self: *Parser) !ast.Statement {
     return switch (self.cur_token.type) {
-        .@"var" => if (!self.expectPeek(.@"{"))
+        .@"var" => if (!self.expectPeek(.@"("))
             .{ .var_statement = try self.parseVarStatement() }
         else
             .{ .var_block_statement = try self.parseVarBlockStatement() },
 
-        .@"const" => if (!self.expectPeek(.@"{"))
+        .@"const" => if (!self.expectPeek(.@"("))
             .{ .const_statement = try self.parseConstStatement() }
         else
             .{ .const_block_statement = try self.parseConstBlockStatement() },
