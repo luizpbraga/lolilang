@@ -583,13 +583,14 @@ fn evalForLoopRangeExpression(env: *Environment, fl: *const ast.ForLoopRangeExpr
 }
 
 fn evalSwitchExpression(env: *Environment, sw: *const ast.SwitchExpression) !object.Object {
+    // value to switch on
     var value = try env.eval(.{ .expression = sw.value.* });
 
     for (sw.choices) |ch| {
-        const block_eval = try env.eval(.{ .statement = .{ .block_statement = ch.block } });
 
         // if (ch.exp.* == .identifier and ch.exp.identifier.token.type == .@"else") {
         const exps = ch.exps orelse {
+            const block_eval = try env.eval(.{ .statement = .{ .block_statement = ch.block } });
             return block_eval;
         };
 
@@ -597,6 +598,7 @@ fn evalSwitchExpression(env: *Environment, sw: *const ast.SwitchExpression) !obj
             const swi_value = try env.eval(.{ .expression = exp });
 
             if (std.meta.eql(value, swi_value)) {
+                const block_eval = try env.eval(.{ .statement = .{ .block_statement = ch.block } });
                 return block_eval;
             }
         }
