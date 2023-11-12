@@ -157,6 +157,9 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
         .expression => |exp| {
             return switch (exp) {
                 .void => object.NULL,
+
+                .identifier => |iden| try env.evalIdentifier(&iden),
+
                 .boolean => |b| .{ .boolean = .{ .value = b.value } },
 
                 .string_literal => |i| .{ .string = .{ .value = i.value } },
@@ -165,15 +168,15 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
 
                 .float_literal => |i| .{ .float = .{ .value = i.value } },
 
-                .array_literal => |array| bkl: {
-                    var elements = try env.evalExpression(array.elements);
-                    break :bkl .{ .array = .{ .elements = elements } };
-                },
+                .array_literal => |array| .{ .array = .{ .elements = try env.evalExpression(array.elements) } },
 
-                .hash_literal => |*hash| bkl: {
-                    var elements = try env.evalHashExpression(&hash.elements);
-                    break :bkl .{ .hash = .{ .elements = elements } };
-                },
+                .hash_literal => |*hash| .{ .hash = .{ .elements = try env.evalHashExpression(&hash.elements) } },
+
+                .function_literal => |func| .{ .function = .{ .parameters = func.parameters, .body = func.body, .env = env } },
+
+                .assignment_expression => |ass| try env.evalAssignment(ass),
+
+                .switch_expression => |*swi| try env.evalSwitchExpression(swi),
 
                 .prefix_expression => |pre| blk: {
                     const right = try env.eval(.{ .expression = pre.right.* });
@@ -188,29 +191,15 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
 
                 .if_expression => |*if_exp| try env.evalIfExpression(if_exp),
 
-                .identifier => |iden| try env.evalIdentifier(&iden), //env.get(iden.value).?,
-
-                .assignment_expression => |ass| try env.evalAssignment(ass),
-
-                .function_literal => |func| return .{
-                    .function = .{
-                        .parameters = func.parameters,
-                        .body = func.body,
-                        .env = env,
-                    },
-                },
-
-                .switch_expression => |*swi| try env.evalSwitchExpression(swi),
-
                 .call_expression => |call| blk: {
                     var func = try env.eval(.{ .expression = call.function.* });
-                    var args = try env.evalExpression(call.arguments);
+                    const args = try env.evalExpression(call.arguments);
                     break :blk func.applyFunction(args);
                 },
 
                 .index_expression => |idx| blk: {
                     var left = try env.eval(.{ .expression = idx.left.* });
-                    var index = try env.eval(.{ .expression = idx.index.* });
+                    const index = try env.eval(.{ .expression = idx.index.* });
                     break :blk left.evalIndexExpression(&index);
                 },
 
@@ -235,28 +224,27 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
                 .expression_statement => |exp_stmt| env.eval(.{ .expression = exp_stmt.expression.* }),
 
                 .var_block_statement => |vars| for (vars.vars_decl) |var_stmt| {
-                    var val = try env.eval(.{ .expression = var_stmt.value.? });
+                    const val = try env.eval(.{ .expression = var_stmt.value });
                     _ = try env.set(var_stmt.name.value, val);
                 } else object.NULL,
 
                 .const_block_statement => |consts| for (consts.const_decl) |const_stmt| {
-                    var val = try env.eval(.{ .expression = const_stmt.value.? });
+                    const val = try env.eval(.{ .expression = const_stmt.value });
                     _ = try env.setConst(const_stmt.name.value, val);
                 } else object.NULL,
 
                 .var_statement => |var_stmt| blk: {
-                    var val = try env.eval(.{ .expression = var_stmt.value.? });
+                    const val = try env.eval(.{ .expression = var_stmt.value });
                     break :blk try env.set(var_stmt.name.value, val);
                 },
 
                 .const_statement => |const_stmt| blk: {
-                    var val = try env.eval(.{ .expression = const_stmt.value.? });
+                    const val = try env.eval(.{ .expression = const_stmt.value });
                     break :blk try env.setConst(const_stmt.name.value, val);
                 },
 
                 .return_statement => |ret_stmt| ret_blk: {
-                    const exp = if (ret_stmt.value) |exp| exp else return object.NULL;
-                    var stmt_ = try env.eval(.{ .expression = exp });
+                    var stmt_ = try env.eval(.{ .expression = ret_stmt.value });
 
                     // this approach sucks !!! I KNOW
                     const value: object.Object = switch (stmt_) {

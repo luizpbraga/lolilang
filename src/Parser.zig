@@ -166,6 +166,7 @@ fn parseIdentifier(self: *const Parser) anyerror!ast.Expression {
 fn parseReturnStatement(self: *Parser) anyerror!ast.ReturnStatement {
     var stmt = ast.ReturnStatement{
         .token = self.cur_token,
+        .value = undefined,
     };
 
     self.nextToken();
@@ -182,6 +183,7 @@ fn parseReturnStatement(self: *Parser) anyerror!ast.ReturnStatement {
 fn parseBreakStatement(self: *Parser) anyerror!ast.ReturnStatement {
     var stmt = ast.ReturnStatement{
         .token = self.cur_token,
+        .value = undefined,
     };
 
     self.nextToken();
@@ -225,6 +227,7 @@ fn parseConstStatement(self: *Parser) anyerror!ast.ConstStatement {
     var stmt = ast.ConstStatement{
         .token = self.cur_token,
         .name = undefined,
+        .value = undefined,
     };
 
     if (!self.expectPeek(.identifier)) {
@@ -347,6 +350,7 @@ fn parseVarStatement(self: *Parser) anyerror!ast.VarStatement {
     var stmt = ast.VarStatement{
         .token = self.cur_token,
         .name = undefined,
+        .value = undefined,
     };
 
     if (!self.expectPeek(.identifier)) {
