@@ -51,7 +51,7 @@ pub const Precedence = enum {
 pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Parser {
     var arena = std.heap.ArenaAllocator.init(child_alloc);
 
-    var p = Parser{
+    var parser = Parser{
         .arena = arena,
         .lexer = lexer,
         .cur_token = undefined,
@@ -61,54 +61,54 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Parser {
         .prefix_parse_fns = undefined,
     };
 
-    const allocator = p.arena.allocator();
+    const allocator = parser.arena.allocator();
 
-    p.infix_parse_fns = std.AutoHashMap(Token.TokenType, InfixParseFn).init(allocator);
-    p.prefix_parse_fns = std.AutoHashMap(Token.TokenType, PrefixParseFn).init(allocator);
+    parser.infix_parse_fns = std.AutoHashMap(Token.TokenType, InfixParseFn).init(allocator);
+    parser.prefix_parse_fns = std.AutoHashMap(Token.TokenType, PrefixParseFn).init(allocator);
 
-    p.nextToken();
-    p.nextToken();
+    parser.nextToken();
+    parser.nextToken();
 
-    try p.registerPrefix(.identifier, parseIdentifier);
-    try p.registerPrefix(.int, parseIntegerLiteral);
-    try p.registerPrefix(.float, parseFloatLiteral);
-    try p.registerPrefix(.true, parseBoolean);
-    try p.registerPrefix(.false, parseBoolean);
-    try p.registerPrefix(.@"!", parsePrefixExpression);
-    try p.registerPrefix(.@"-", parsePrefixExpression);
-    try p.registerPrefix(.@"(", parseGroupExpression);
-    try p.registerPrefix(.@"if", parseIfExpression);
+    try parser.registerPrefix(.identifier, parseIdentifier);
+    try parser.registerPrefix(.int, parseIntegerLiteral);
+    try parser.registerPrefix(.float, parseFloatLiteral);
+    try parser.registerPrefix(.true, parseBoolean);
+    try parser.registerPrefix(.false, parseBoolean);
+    try parser.registerPrefix(.@"!", parsePrefixExpression);
+    try parser.registerPrefix(.@"-", parsePrefixExpression);
+    try parser.registerPrefix(.@"(", parseGroupExpression);
+    try parser.registerPrefix(.@"if", parseIfExpression);
 
-    try p.registerPrefix(.@"for", parseForLoop);
-    try p.registerPrefix(.@"switch", parseSwitchExpression);
-    try p.registerPrefix(.@"[", parseArrayLiteral);
+    try parser.registerPrefix(.@"for", parseForLoop);
+    try parser.registerPrefix(.@"switch", parseSwitchExpression);
+    try parser.registerPrefix(.@"[", parseArrayLiteral);
 
-    try p.registerPrefix(.@"else", parseIfExpression);
-    try p.registerPrefix(.func, parseFunctionLiteral);
-    // try p.registerPrefix(.@"enum", parseEnumLiteral);
-    try p.registerPrefix(.string, parseStringLiteral);
-    try p.registerPrefix(.@"{", parseHashLiteral);
-    try p.registerInfix(.@"[", parseIndexExpression);
+    try parser.registerPrefix(.@"else", parseIfExpression);
+    try parser.registerPrefix(.func, parseFunctionLiteral);
+    // try parser.registerPrefix(.@"enum", parseEnumLiteral);
+    try parser.registerPrefix(.string, parseStringLiteral);
+    try parser.registerPrefix(.@"{", parseHashLiteral);
+    try parser.registerInfix(.@"[", parseIndexExpression);
 
-    try p.registerInfix(.@"+", parseInfixExpression);
-    try p.registerInfix(.@"-", parseInfixExpression);
-    try p.registerInfix(.@":", parseInfixExpression);
-    try p.registerInfix(.@"==", parseInfixExpression);
-    try p.registerInfix(.@"!=", parseInfixExpression);
-    try p.registerInfix(.@"*", parseInfixExpression);
-    try p.registerInfix(.@"/", parseInfixExpression);
-    try p.registerInfix(.@">", parseInfixExpression);
-    try p.registerInfix(.@"<", parseInfixExpression);
-    try p.registerInfix(.@"(", parseCallExpression);
-    try p.registerInfix(.@".", parseMethodExpression);
+    try parser.registerInfix(.@"+", parseInfixExpression);
+    try parser.registerInfix(.@"-", parseInfixExpression);
+    try parser.registerInfix(.@":", parseInfixExpression);
+    try parser.registerInfix(.@"==", parseInfixExpression);
+    try parser.registerInfix(.@"!=", parseInfixExpression);
+    try parser.registerInfix(.@"*", parseInfixExpression);
+    try parser.registerInfix(.@"/", parseInfixExpression);
+    try parser.registerInfix(.@">", parseInfixExpression);
+    try parser.registerInfix(.@"<", parseInfixExpression);
+    try parser.registerInfix(.@"(", parseCallExpression);
+    try parser.registerInfix(.@".", parseMethodExpression);
 
-    try p.registerInfix(.@"=", parseAssignmentExpression);
-    try p.registerInfix(.@"+=", parseAssignmentExpression);
-    try p.registerInfix(.@"-=", parseAssignmentExpression);
-    try p.registerInfix(.@"*=", parseAssignmentExpression);
-    try p.registerInfix(.@"/=", parseAssignmentExpression);
+    try parser.registerInfix(.@"=", parseAssignmentExpression);
+    try parser.registerInfix(.@"+=", parseAssignmentExpression);
+    try parser.registerInfix(.@"-=", parseAssignmentExpression);
+    try parser.registerInfix(.@"*=", parseAssignmentExpression);
+    try parser.registerInfix(.@"/=", parseAssignmentExpression);
 
-    return p;
+    return parser;
 }
 
 pub fn deinit(self: *Parser) void {
@@ -196,16 +196,9 @@ fn parseBreakStatement(self: *Parser) anyerror!ast.ReturnStatement {
 }
 
 fn parseAssignmentExpression(self: *Parser, name: *ast.Expression) anyerror!ast.Expression {
-    const allocator = self.arena.allocator();
-    var left_exp = try allocator.create(ast.Expression);
-    errdefer allocator.destroy(left_exp);
-
-    left_exp.* = name.*;
-    // try self.gc.expression.append(left_exp);
-
     var stmt = ast.AssignmentExpression{
         .token = self.cur_token,
-        .name = left_exp,
+        .name = name,
         .operator = undefined,
         .value = undefined,
     };
@@ -300,7 +293,6 @@ fn parseVarBlockStatement(self: *Parser) anyerror!ast.VarBlockStatement {
 
     var vars_owned = try vars.toOwnedSlice();
 
-    // try self.gc.vars_decl.append(vars_owned);
     stmt.vars_decl = vars_owned;
 
     return stmt;
@@ -397,6 +389,7 @@ fn parseStatement(self: *Parser) !ast.Statement {
             .{ .const_block_statement = try self.parseConstBlockStatement() },
 
         .@"return" => .{ .return_statement = try self.parseReturnStatement() },
+
         else => .{ .expression_statement = try self.parseExpressionStatement() },
     };
 }
@@ -404,7 +397,7 @@ fn parseStatement(self: *Parser) !ast.Statement {
 fn parseExpressionStatement(self: *Parser) anyerror!ast.ExpressionStatement {
     var stmt = ast.ExpressionStatement{
         .token = self.cur_token,
-        .expression = try self.parseExpression(Precedence.lower),
+        .expression = try self.parseExpression(.lower),
     };
 
     if (self.peekTokenIs(.@";")) {
@@ -415,7 +408,7 @@ fn parseExpressionStatement(self: *Parser) anyerror!ast.ExpressionStatement {
 }
 
 fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
-    const prefix_fn = self.prefix_parse_fns.get(self.cur_token.type) orelse {
+    const prefixFn = self.prefix_parse_fns.get(self.cur_token.type) orelse {
         std.log.warn("at token: {s}\n", .{self.cur_token.literal});
         return error.UnknowPrefixFn;
     };
@@ -425,20 +418,18 @@ fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
     var left_exp = try allocator.create(ast.Expression);
     errdefer allocator.destroy(left_exp);
 
-    left_exp.* = try prefix_fn(self);
-    // try self.gc.expression.append(left_exp);
+    left_exp.* = try prefixFn(self);
 
     while (@intFromEnum(precedence) < @intFromEnum(self.peekPrecedence())) {
-        const infix_fn = self.infix_parse_fns.get(self.peek_token.type) orelse return left_exp;
+        const infixFn = self.infix_parse_fns.get(self.peek_token.type) orelse return left_exp;
         self.nextToken();
 
-        var new_left_exp = try allocator.create(ast.Expression);
-        errdefer allocator.destroy(new_left_exp);
+        var old_left_exp = try allocator.create(ast.Expression);
+        errdefer allocator.destroy(old_left_exp);
 
-        new_left_exp.* = try infix_fn(self, left_exp);
-        // try self.gc.expression.append(new_left_exp);
+        old_left_exp.* = left_exp.*;
 
-        left_exp.* = new_left_exp.*;
+        left_exp.* = try infixFn(self, old_left_exp);
     }
 
     return left_exp;
@@ -461,9 +452,10 @@ pub fn parseProgram(self: *Parser) !ast.Program {
 
     return program;
 }
+
 fn parseFloatLiteral(self: *Parser) anyerror!ast.Expression {
     return .{
-        .float_literal = ast.FloatLiteral{
+        .float_literal = .{
             .token = self.cur_token,
             .value = std.fmt.parseFloat(f64, self.cur_token.literal) catch |err| {
                 std.log.err("Could not parse {s} as float", .{self.cur_token.literal});
@@ -475,7 +467,7 @@ fn parseFloatLiteral(self: *Parser) anyerror!ast.Expression {
 
 fn parseIntegerLiteral(self: *Parser) anyerror!ast.Expression {
     return .{
-        .integer_literal = ast.IntegerLiteral{
+        .integer_literal = .{
             .token = self.cur_token,
             .value = std.fmt.parseInt(i64, self.cur_token.literal, 10) catch |err| {
                 std.log.err("Could not parse {s} as integer", .{self.cur_token.literal});
@@ -493,7 +485,7 @@ fn parseBoolean(self: *Parser) anyerror!ast.Expression {
 fn parseGroupExpression(self: *Parser) anyerror!ast.Expression {
     self.nextToken();
 
-    var exp = try self.parseExpression(Precedence.lower);
+    const exp = try self.parseExpression(Precedence.lower);
 
     if (!self.expectPeek(.@")")) return error.MissingParentese;
 
@@ -509,28 +501,20 @@ fn parsePrefixExpression(self: *Parser) anyerror!ast.Expression {
 
     self.nextToken();
 
-    expression.right = try self.parseExpression(Precedence.prefix);
+    expression.right = try self.parseExpression(.prefix);
 
     return .{ .prefix_expression = expression };
 }
 
 fn parseInfixExpression(self: *Parser, left: *ast.Expression) anyerror!ast.Expression {
-    const allocator = self.arena.allocator();
-
-    var new_left = try allocator.create(ast.Expression);
-    errdefer allocator.destroy(new_left);
-
-    // try self.gc.expression.append(new_left);
-    new_left.* = left.*;
-
     var expression = ast.InfixExpression{
         .token = self.cur_token,
         .operator = self.cur_token.literal,
-        .left = new_left,
+        .left = left,
         .right = undefined,
     };
 
-    var precedence = self.currentPrecedence();
+    const precedence = self.currentPrecedence();
 
     self.nextToken();
 
@@ -546,13 +530,10 @@ fn parseIfExpression(self: *Parser) anyerror!ast.Expression {
         .consequence = undefined,
     };
 
-    // if (!self.expectPeek(.@"(")) return error.MissingParentese;
-
     self.nextToken();
 
     expression.condition = try self.parseExpression(Precedence.lower);
 
-    // if (!self.expectPeek(.@")")) return error.MissingParentese;
     if (!self.expectPeek(.@"{")) return error.MissingBrance;
 
     expression.consequence = try self.parseBlockStatement();
@@ -585,35 +566,35 @@ fn parseBlockStatement(self: *Parser) anyerror!ast.BlockStatement {
         self.nextToken();
     }
 
-    var stmts_owner = try stmts.toOwnedSlice();
+    const stmts_owner = try stmts.toOwnedSlice();
 
     block.statements = stmts_owner;
 
     return block;
 }
 
-// fn parseEnumLiteral(self: *Self) anyerror!ast.Expression {
-//     var enu = ast.EnumLiteral{
-//         .token = ast.cur_token,
-//         .fields = undefined, // hash(ident, value)
-//     };
+fn parseEnumLiteral(self: *Parser) anyerror!ast.Expression {
+    var enu = ast.EnumLiteral{
+        .token = ast.cur_token,
+        .fields = undefined, // hash(ident, value)
+    };
 
-//     if (!self.expectPeek(.@"{")) return error.MissingBrance;
+    if (!self.expectPeek(.@"{")) return error.MissingBrance;
 
-//     var i: usize = 0;
-//     while (!self.expectPeek(.@"}")) {
-//         var ident_exp = try self.parseIdentifier();
+    var i: usize = 0;
+    while (!self.expectPeek(.@"}")) {
+        const ident_exp = try self.parseIdentifier();
 
-//         if (ident_exp != .identifier) return error.NotAIdent;
+        if (ident_exp != .identifier) return error.NotAIdent;
 
-//         try enu.fields.put(ident_exp.identifier, i);
-//         i += 1;
+        try enu.fields.put(ident_exp.identifier, i);
+        i += 1;
 
-//         self.nextToken();
-//     }
+        self.nextToken();
+    }
 
-//     return .{ .enum_literal = enu };
-// }
+    return .{ .enum_literal = enu };
+}
 
 fn parseFunctionLiteral(self: *Parser) anyerror!ast.Expression {
     var lit = ast.FunctionLiteral{
@@ -668,21 +649,12 @@ fn parseFunctionParameters(self: *Parser) anyerror![]ast.Identifier {
     if (!self.expectPeek(.@")"))
         return error.MissingParentese;
 
-    var ident_owner = try indentifiers.toOwnedSlice();
-
-    // try self.gc.identifiers.append(ident_owner);
+    const ident_owner = try indentifiers.toOwnedSlice();
 
     return ident_owner;
 }
 
-fn parseMethodExpression(self: *Parser, exp: *ast.Expression) anyerror!ast.Expression {
-    const allocator = self.arena.allocator();
-
-    // TODO: parse the Expression
-    var caller = try allocator.create(ast.Expression);
-    caller.* = exp.*;
-    // try self.gc.expression.append(caller);
-
+fn parseMethodExpression(self: *Parser, caller: *ast.Expression) anyerror!ast.Expression {
     var method_exp = ast.MethodExpression{
         .token = self.cur_token,
         .caller = caller,
@@ -691,34 +663,24 @@ fn parseMethodExpression(self: *Parser, exp: *ast.Expression) anyerror!ast.Expre
 
     self.nextToken();
 
-    var exp_mathod = try self.parseIdentifier();
+    const exp_mathod = try self.parseIdentifier();
 
     if (exp_mathod != .identifier) return error.ExpectIdentifier;
 
     method_exp.method = exp_mathod.identifier;
 
-    // self.nextToken();
-
     return .{ .method_expression = method_exp };
 }
 
 fn parseCallExpression(self: *Parser, func: *ast.Expression) anyerror!ast.Expression {
-    const allocator = self.arena.allocator();
-    var func_ = try allocator.create(ast.Expression);
-
-    func_.* = func.*;
-    // try self.gc.expression.append(func_);
-
-    var call = .{
+    return .{
         .call_expression = .{
             .token = self.cur_token,
-            .function = func_,
+            .function = func,
             // TODO: use self.parseExpressionList(.@")")
             .arguments = try self.parseCallArguments(),
         },
     };
-
-    return call;
 }
 
 fn parseCallArguments(self: *Parser) anyerror![]ast.Expression {
@@ -728,27 +690,25 @@ fn parseCallArguments(self: *Parser) anyerror![]ast.Expression {
 
     if (self.peekTokenIs(.@")")) {
         self.nextToken();
-        // TODO: possible segfault
         return try args.toOwnedSlice();
     }
 
     self.nextToken();
-    var exp = try self.parseExpression(Precedence.lower);
-    var exp_ = exp.*;
-    try args.append(exp_);
+
+    const exp = try self.parseExpression(.lower);
+    try args.append(exp.*);
 
     while (self.peekTokenIs(.@",")) {
         self.nextToken();
         self.nextToken();
 
-        var exp2 = try self.parseExpression(Precedence.lower);
-        var exp2_ = exp2.*;
-        try args.append(exp2_);
+        const exp2 = try self.parseExpression(.lower);
+        try args.append(exp2.*);
     }
 
     if (!self.expectPeek(.@")")) return error.MissingRightParenteses;
 
-    var args_owned = try args.toOwnedSlice();
+    const args_owned = try args.toOwnedSlice();
 
     return args_owned;
 }
@@ -777,14 +737,13 @@ pub fn parseArrayLiteral(self: *Parser) anyerror!ast.Expression {
     errdefer elements.deinit();
 
     self.nextToken();
-    var element1 = try self.parseExpression(.lower);
+    const element1 = try self.parseExpression(.lower);
     try elements.append(element1.*);
 
-    while (self.peekTokenIs(.@",")) {
-        self.nextToken(); // ,
+    while (self.expectPeek(.@",")) {
         self.nextToken(); // next_element
 
-        var element_n = try self.parseExpression(.lower);
+        const element_n = try self.parseExpression(.lower);
         try elements.append(element_n.*);
     }
 
@@ -866,16 +825,9 @@ pub fn parseHashLiteral(self: *Parser) anyerror!ast.Expression {
 
 // v[exp]
 pub fn parseIndexExpression(self: *Parser, left: *ast.Expression) anyerror!ast.Expression {
-    const allocator = self.arena.allocator();
-    var new_left = try allocator.create(ast.Expression);
-    errdefer allocator.destroy(new_left);
-
-    // try self.gc.expression.append(new_left);
-    new_left.* = left.*;
-
     var exp = ast.IndexExpression{
         .token = self.cur_token,
-        .left = new_left,
+        .left = left,
         .index = undefined,
     };
 
@@ -883,17 +835,11 @@ pub fn parseIndexExpression(self: *Parser, left: *ast.Expression) anyerror!ast.E
 
     exp.index = try self.parseExpression(Precedence.lower);
 
-    if (!self.expectPeek(.@"]"))
-        return error.MissingRightBracket;
+    if (!self.expectPeek(.@"]")) return error.MissingRightBracket;
 
     return .{ .index_expression = exp };
 }
 
-// var y = switch {
-//      exp1 => [block1, exp],
-//      exp2 => [block2, exp],
-//      else => [block3, exp],
-//}
 pub fn parseSwitchExpression(self: *Parser) anyerror!ast.Expression {
     var switch_expression = ast.SwitchExpression{
         .token = self.cur_token,
@@ -914,9 +860,7 @@ pub fn parseSwitchExpression(self: *Parser) anyerror!ast.Expression {
     var choices = std.ArrayList(ast.SwitchChoices).init(allocator);
     errdefer choices.deinit();
 
-    while (!self.curTokenIs(.@"}")) {
-        if (self.curTokenIs(.eof)) return error.UnexpectedEOF;
-
+    while (!self.curTokenIs(.@"}") and !self.curTokenIs(.eof)) {
         var switch_choices: ast.SwitchChoices = undefined;
 
         // TODO: deixa o else ser feliz :: ele participa do vetor de exp e entra como
@@ -935,15 +879,14 @@ pub fn parseSwitchExpression(self: *Parser) anyerror!ast.Expression {
             var exps = std.ArrayList(ast.Expression).init(allocator);
             errdefer exps.deinit();
 
-            var exp1 = try self.parseExpression(.lower);
+            const exp1 = try self.parseExpression(.lower);
             try exps.append(exp1.*);
 
             self.nextToken();
 
             // TODO: parse "..." range
-            while (self.curTokenIs(.@",")) {
-                self.nextToken();
-                var exp_n = try self.parseExpression(.lower);
+            while (self.expectPeek(.@",")) {
+                const exp_n = try self.parseExpression(.lower);
                 try exps.append(exp_n.*);
                 self.nextToken();
             }
@@ -972,7 +915,7 @@ pub fn parseSwitchExpression(self: *Parser) anyerror!ast.Expression {
         try choices.append(switch_choices);
     }
 
-    var choice_owned = try choices.toOwnedSlice();
+    const choice_owned = try choices.toOwnedSlice();
 
     switch_expression.choices = choice_owned;
 
@@ -1005,23 +948,26 @@ pub fn parseForLoop(self: *Parser) anyerror!ast.Expression {
             .iterable = undefined,
         };
 
-        if (self.cur_token.type == .in) {
-            self.nextToken();
-            var exp = try self.parseExpression(.lower);
+        if (self.expectPeek(.in)) {
+            const exp = try self.parseExpression(.lower);
             flr.iterable = exp;
-        } else if (self.cur_token.type == .@",") {
-            self.nextToken();
-            var index = try self.parseIdentifier();
+        }
+
+        if (self.expectPeek(.@",")) {
+            const index = try self.parseIdentifier();
             flr.index = index.identifier.value;
+
             if (self.expectPeek(.in)) {
                 self.nextToken();
-                var exp = try self.parseExpression(.lower);
+                const exp = try self.parseExpression(.lower);
                 flr.iterable = exp;
             }
         }
 
         if (!self.expectPeek(.@"{")) return error.MissingBrance;
+
         flr.body = try self.parseBlockStatement();
+
         return .{ .forloop_range_expression = flr };
     }
 
