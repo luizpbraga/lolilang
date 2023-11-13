@@ -24,9 +24,9 @@ fn readNumber(self: *Self) struct { []const u8, bool } {
 
     if (self.ch != '.') return .{ self.input[position..self.position], false };
 
-    self.readChar(); // first .
-
     if (self.peekChar() == '.') return .{ self.input[position..self.position], false };
+
+    self.readChar();
 
     while (isDigit(self.ch)) self.readChar();
 
