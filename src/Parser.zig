@@ -41,7 +41,7 @@ pub const Precedence = enum {
             .@"+", .@"-" => .sum,
             .@"/", .@"*" => .product,
             .@"(" => .call,
-            .@"[", .@"." => .index,
+            .@"[", .@".", .@".." => .index,
             .@"=", .@"+=", .@"-=", .@"*=", .@"/=" => .assigne,
             else => .lower,
         };
@@ -85,10 +85,11 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Parser {
 
     try parser.registerPrefix(.@"else", parseIfExpression);
     try parser.registerPrefix(.func, parseFunctionLiteral);
-    // try parser.registerPrefix(.@"enum", parseEnumLiteral);
+
     try parser.registerPrefix(.string, parseStringLiteral);
     try parser.registerPrefix(.@"{", parseHashLiteral);
     try parser.registerInfix(.@"[", parseIndexExpression);
+    try parser.registerInfix(.@"..", parseRangeExpression);
 
     try parser.registerInfix(.@"+", parseInfixExpression);
     try parser.registerInfix(.@"-", parseInfixExpression);
@@ -163,21 +164,21 @@ fn parseIdentifier(self: *const Parser) anyerror!ast.Expression {
     } };
 }
 
-fn parseReturnStatement(self: *Parser) anyerror!ast.ReturnStatement {
-    var stmt = ast.ReturnStatement{
+fn parseReturnStatement(self: *Parser) anyerror!ast.Statement {
+    var return_stmt = ast.ReturnStatement{
         .token = self.cur_token,
         .value = undefined,
     };
 
     self.nextToken();
 
-    stmt.value = (try self.parseExpression(Precedence.lower)).*;
+    return_stmt.value = (try self.parseExpression(Precedence.lower)).*;
 
     if (self.peekTokenIs(.@";")) {
         self.nextToken();
     }
 
-    return stmt;
+    return .{ .return_statement = return_stmt };
 }
 
 fn parseBreakStatement(self: *Parser) anyerror!ast.ReturnStatement {
@@ -223,8 +224,8 @@ fn parseAssignmentExpression(self: *Parser, name: *ast.Expression) anyerror!ast.
     return .{ .assignment_expression = stmt };
 }
 
-fn parseConstStatement(self: *Parser) anyerror!ast.ConstStatement {
-    var stmt = ast.ConstStatement{
+fn parseConstStatement(self: *Parser) anyerror!ast.Statement {
+    var const_stmt = ast.ConstStatement{
         .token = self.cur_token,
         .name = undefined,
         .value = undefined,
@@ -235,7 +236,7 @@ fn parseConstStatement(self: *Parser) anyerror!ast.ConstStatement {
         return error.UnexpectedToken;
     }
 
-    stmt.name = ast.Identifier{
+    const_stmt.name = ast.Identifier{
         .token = self.cur_token,
         .value = self.cur_token.literal,
     };
@@ -248,13 +249,13 @@ fn parseConstStatement(self: *Parser) anyerror!ast.ConstStatement {
     self.nextToken();
 
     // TODO: pointer?
-    stmt.value = (try self.parseExpression(Precedence.lower)).*;
+    const_stmt.value = (try self.parseExpression(Precedence.lower)).*;
 
     if (self.peekTokenIs(.@";")) {
         self.nextToken();
     }
 
-    return stmt;
+    return .{ .const_statement = const_stmt };
 }
 
 fn parseVarBlockStatement(self: *Parser) anyerror!ast.VarBlockStatement {
@@ -346,8 +347,8 @@ fn parseConstBlockStatement(self: *Parser) anyerror!ast.ConstBlockStatement {
     return stmt;
 }
 
-fn parseVarStatement(self: *Parser) anyerror!ast.VarStatement {
-    var stmt = ast.VarStatement{
+fn parseVarStatement(self: *Parser) anyerror!ast.Statement {
+    var var_stmt = ast.VarStatement{
         .token = self.cur_token,
         .name = undefined,
         .value = undefined,
@@ -358,7 +359,7 @@ fn parseVarStatement(self: *Parser) anyerror!ast.VarStatement {
         return error.UnexpectedToken;
     }
 
-    stmt.name = ast.Identifier{
+    var_stmt.name = ast.Identifier{
         .token = self.cur_token,
         .value = self.cur_token.literal,
     };
@@ -371,35 +372,31 @@ fn parseVarStatement(self: *Parser) anyerror!ast.VarStatement {
     self.nextToken();
 
     // TODO: pointer?
-    stmt.value = (try self.parseExpression(Precedence.lower)).*;
+    var_stmt.value = (try self.parseExpression(Precedence.lower)).*;
 
     if (self.peekTokenIs(.@";")) {
         self.nextToken();
     }
 
-    return stmt;
+    return .{ .var_statement = var_stmt };
 }
 
 fn parseStatement(self: *Parser) !ast.Statement {
     return switch (self.cur_token.type) {
-        .@"var" => if (!self.expectPeek(.@"("))
-            .{ .var_statement = try self.parseVarStatement() }
-        else
-            .{ .var_block_statement = try self.parseVarBlockStatement() },
+        .@"var" => try self.parseVarStatement(),
 
-        .@"const" => if (!self.expectPeek(.@"("))
-            .{ .const_statement = try self.parseConstStatement() }
-        else
-            .{ .const_block_statement = try self.parseConstBlockStatement() },
+        .@"const" => try self.parseConstStatement(),
 
-        .@"return" => .{ .return_statement = try self.parseReturnStatement() },
+        .@"return" => try self.parseReturnStatement(),
 
-        else => .{ .expression_statement = try self.parseExpressionStatement() },
+        .func => try self.parseFunctionStatement(),
+
+        else => try self.parseExpressionStatement(),
     };
 }
 
-fn parseExpressionStatement(self: *Parser) anyerror!ast.ExpressionStatement {
-    var stmt = ast.ExpressionStatement{
+fn parseExpressionStatement(self: *Parser) anyerror!ast.Statement {
+    var exp_stmt = ast.ExpressionStatement{
         .token = self.cur_token,
         .expression = try self.parseExpression(.lower),
     };
@@ -408,7 +405,7 @@ fn parseExpressionStatement(self: *Parser) anyerror!ast.ExpressionStatement {
         self.nextToken();
     }
 
-    return stmt;
+    return .{ .expression_statement = exp_stmt };
 }
 
 fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
@@ -598,6 +595,28 @@ fn parseEnumLiteral(self: *Parser) anyerror!ast.Expression {
     }
 
     return .{ .enum_literal = enu };
+}
+
+fn parseFunctionStatement(self: *Parser) anyerror!ast.Statement {
+    var func_stmt = ast.FunctionStatement{
+        .token = self.cur_token,
+        .func = undefined,
+        .name = undefined,
+    };
+
+    if (!self.expectPeek(.identifier)) {
+        std.log.err("Expect Identifier, found '{s}'", .{self.cur_token.literal});
+        return error.UnexpectedToken;
+    }
+
+    func_stmt.name = ast.Identifier{
+        .token = self.cur_token,
+        .value = self.cur_token.literal,
+    };
+
+    func_stmt.func = try self.parseFunctionLiteral();
+
+    return .{ .function_statement = func_stmt };
 }
 
 fn parseFunctionLiteral(self: *Parser) anyerror!ast.Expression {
@@ -926,54 +945,55 @@ pub fn parseSwitchExpression(self: *Parser) anyerror!ast.Expression {
     return .{ .switch_expression = switch_expression };
 }
 
-// for true { } or for idx, val in list {}
-pub fn parseForLoop(self: *Parser) anyerror!ast.Expression {
-    var fl = ast.ForLoopExpression{
+pub fn parseRangeExpression(self: *Parser, left: *ast.Expression) anyerror!ast.Expression {
+    var range = ast.RangeExpression{
         .token = self.cur_token,
-        .condition = undefined,
-        .consequence = undefined,
+        .start = left,
+        .end = undefined,
     };
 
-    if (self.expectPeek(.@"{")) {
-        fl.consequence = try self.parseBlockStatement();
-        return .{ .forloop_expression = fl };
+    self.nextToken();
+
+    range.end = try self.parseExpression(.lower);
+
+    return .{ .range = range };
+}
+
+pub fn parseForLoopRange(self: *Parser, tk: Token, ident: *ast.Expression) anyerror!ast.Expression {
+    var flr = ast.ForLoopRangeExpression{
+        .token = tk,
+        .ident = ident.identifier.value, // for <ident>[, <idx>] in <range> {
+        .body = undefined,
+        .iterable = undefined,
+    };
+
+    if (self.expectPeek(.@",")) {
+        self.nextToken();
+        const index = try self.parseIdentifier();
+        flr.index = index.identifier.value;
+    }
+
+    if (!self.expectPeek(.in)) {
+        return error.ExpectTheInIdentifier;
     }
 
     self.nextToken();
 
-    fl.condition = try self.parseExpression(.lower);
+    flr.iterable = try self.parseExpression(.lower);
 
-    // for range expression paeser: make it  a function
-    if (fl.condition.* == .identifier and (self.expectPeek(.in) or self.expectPeek(.@","))) {
-        var flr = ast.ForLoopRangeExpression{
-            .token = fl.token,
-            .ident = fl.condition.identifier.value,
-            .body = undefined,
-            .iterable = undefined,
-        };
+    if (!self.expectPeek(.@"{")) return error.MissingBrance1;
 
-        if (self.expectPeek(.in)) {
-            const exp = try self.parseExpression(.lower);
-            flr.iterable = exp;
-        }
+    flr.body = try self.parseBlockStatement();
 
-        if (self.expectPeek(.@",")) {
-            const index = try self.parseIdentifier();
-            flr.index = index.identifier.value;
+    return .{ .forloop_range_expression = flr };
+}
 
-            if (self.expectPeek(.in)) {
-                self.nextToken();
-                const exp = try self.parseExpression(.lower);
-                flr.iterable = exp;
-            }
-        }
-
-        if (!self.expectPeek(.@"{")) return error.MissingBrance;
-
-        flr.body = try self.parseBlockStatement();
-
-        return .{ .forloop_range_expression = flr };
-    }
+pub fn parseForLoopCondition(self: *Parser, tk: Token, cond: *ast.Expression) anyerror!ast.Expression {
+    var fl = ast.ForLoopExpression{
+        .token = tk,
+        .condition = cond,
+        .consequence = undefined,
+    };
 
     if (!self.expectPeek(.@"{")) return error.MissingBrance;
 
@@ -981,3 +1001,64 @@ pub fn parseForLoop(self: *Parser) anyerror!ast.Expression {
 
     return .{ .forloop_expression = fl };
 }
+
+/// for true { } or for idx, val in list {}
+pub fn parseForLoop(self: *Parser) anyerror!ast.Expression {
+    const token = self.cur_token;
+
+    if (self.expectPeek(.@"{")) {
+        return error.ExpectSomeConditionOrIdentifier;
+    }
+
+    self.nextToken();
+
+    const condition_or_ident = try self.parseExpression(.lower);
+
+    if (condition_or_ident.* == .identifier) {
+        return self.parseForLoopRange(token, condition_or_ident);
+    }
+
+    return self.parseForLoopCondition(token, condition_or_ident);
+}
+
+// // for range expression paeser: make it  a function
+// if (fl.condition.* == .identifier and (self.expectPeek(.in) or self.expectPeek(.@","))) {
+//     var flr = ast.ForLoopRangeExpression{
+//         .token = fl.token,
+//         .ident = fl.condition.identifier.value,
+//         .body = undefined,
+//         .iterable = undefined,
+//     };
+//
+//     std.debug.print("{s}\n", .{self.cur_token.literal});
+//     if (self.expectPeek(.in)) {
+//         std.debug.print("ok\n", .{});
+//         const exp = try self.parseExpression(.lower);
+//         flr.iterable = exp;
+//         self.nextToken();
+//     }
+//
+//     if (self.expectPeek(.@",")) {
+//         const index = try self.parseIdentifier();
+//         flr.index = index.identifier.value;
+//
+//         if (self.cur_token.type == .in) {
+//             self.nextToken();
+//             const exp = try self.parseExpression(.lower);
+//             flr.iterable = exp;
+//         }
+//     }
+//
+//     std.debug.print("{s}\n", .{self.cur_token.literal});
+//     if (!self.expectPeek(.@"{")) return error.MissingBrance1;
+//
+//     flr.body = try self.parseBlockStatement();
+//
+//     return .{ .forloop_range_expression = flr };
+// }
+//
+// if (!self.expectPeek(.@"{")) return error.MissingBrance2;
+//
+// fl.consequence = try self.parseBlockStatement();
+//
+// return .{ .forloop_expression = fl };

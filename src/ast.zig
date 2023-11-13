@@ -22,6 +22,7 @@ pub const Statement = union(enum) {
     const_statement: ConstStatement,
     const_block_statement: ConstBlockStatement,
     return_statement: ReturnStatement,
+    function_statement: FunctionStatement,
     expression_statement: ExpressionStatement,
     block_statement: BlockStatement,
     program_statement: Program,
@@ -48,6 +49,7 @@ pub const Expression = union(enum) {
     integer_literal: IntegerLiteral,
     string_literal: StringLiteral,
     array_literal: ArrayLiteral,
+    range: RangeExpression,
     hash_literal: HashLiteral,
     identifier: Identifier,
     forloop_expression: ForLoopExpression,
@@ -81,7 +83,7 @@ pub const IfExpression = struct {
     consequence: BlockStatement,
     alternative: ?BlockStatement = null,
 
-    pub fn tokenLiteral(self: *const IfExpression) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -93,7 +95,7 @@ pub const PrefixExpression = struct {
 
     pub fn expressionNode() void {}
 
-    pub fn tokenLiteral(self: *const PrefixExpression) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -104,7 +106,7 @@ pub const InfixExpression = struct {
     operator: []const u8,
     right: *Expression,
 
-    pub fn tokenLiteral(self: *const InfixExpression) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -114,7 +116,7 @@ pub const IndexExpression = struct {
     left: *Expression,
     index: *Expression,
 
-    pub fn tokenLiteral(self: *const IndexExpression) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -125,10 +127,10 @@ pub const Identifier = struct {
     token: Token, //= .identifier,
     value: []const u8,
 
-    pub fn expressionNode(self: *const Identifier) void {
+    pub fn expressionNode(self: *const @This()) void {
         _ = self;
     }
-    pub fn tokenLiteral(self: *const Identifier) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -136,7 +138,7 @@ pub const Identifier = struct {
 pub const Program = struct {
     statements: std.ArrayList(Statement),
 
-    pub fn tokenLiteral(self: *const Program) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return if (self.statements.items.len > 0) self.statements.items[0].tokenLiteral() else "";
     }
 };
@@ -145,13 +147,13 @@ pub const Program = struct {
 pub const ConstStatement = struct {
     token: Token, //= .@"var",
     name: Identifier,
-    value: ?Expression = null,
+    value: Expression,
 
-    pub fn statementNode(self: *const ConstStatement) void {
+    pub fn statementNode(self: *const @This()) void {
         _ = self;
     }
 
-    pub fn tokenLiteral(self: *const ConstStatement) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -160,6 +162,7 @@ pub const VarBlockStatement = struct {
     token: Token, //= .@"var",
     vars_decl: []VarStatement,
 };
+
 pub const ConstBlockStatement = struct {
     token: Token, //= .@"var",
     const_decl: []ConstStatement,
@@ -168,26 +171,26 @@ pub const ConstBlockStatement = struct {
 pub const VarStatement = struct {
     token: Token, //= .@"var",
     name: Identifier,
-    value: ?Expression = null,
+    value: Expression,
 
-    pub fn statementNode(self: *const VarStatement) void {
+    pub fn statementNode(self: *const @This()) void {
         _ = self;
     }
 
-    pub fn tokenLiteral(self: *const VarStatement) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
 
 pub const ReturnStatement = struct {
     token: Token,
-    value: ?Expression = null,
+    value: Expression,
 
-    pub fn statementNode(self: *const ReturnStatement) void {
+    pub fn statementNode(self: *const @This()) void {
         _ = self;
     }
 
-    pub fn tokenLiteral(self: *const ReturnStatement) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -200,11 +203,11 @@ pub const AssignmentExpression = struct {
     operator: []const u8,
     value: *Expression,
 
-    pub fn statementNode(self: *const AssignmentExpression) void {
+    pub fn statementNode(self: *const @This()) void {
         _ = self;
     }
 
-    pub fn tokenLiteral(self: *const AssignmentExpression) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -213,11 +216,11 @@ pub const ExpressionStatement = struct {
     token: Token, // fist token only
     expression: *Expression,
 
-    pub fn statementNode(self: *const ExpressionStatement) void {
+    pub fn statementNode(self: *const @This()) void {
         _ = self;
     }
 
-    pub fn tokenLiteral(self: *const ExpressionStatement) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -226,7 +229,7 @@ pub const BlockStatement = struct {
     token: Token,
     statements: []Statement,
 
-    pub fn tokenLiteral(self: *const BlockStatement) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -238,7 +241,7 @@ pub const FloatLiteral = struct {
 
     pub fn expressionNode() void {}
 
-    pub fn tokenLiteral(self: *const FloatLiteral) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -249,7 +252,7 @@ pub const IntegerLiteral = struct {
 
     pub fn expressionNode() void {}
 
-    pub fn tokenLiteral(self: *const IntegerLiteral) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -260,7 +263,7 @@ pub const StringLiteral = struct {
 
     pub fn expressionNode() void {}
 
-    pub fn tokenLiteral(self: *const StringLiteral) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -269,7 +272,7 @@ pub const Boolean = struct {
     token: Token,
     value: bool,
 
-    pub fn tokenLiteral(self: *const Boolean) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -278,7 +281,17 @@ pub const ArrayLiteral = struct {
     token: Token,
     elements: []Expression,
 
-    pub fn tokenLiteral(self: *const ArrayLiteral) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const RangeExpression = struct {
+    token: Token,
+    start: *Expression,
+    end: *Expression,
+
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -287,7 +300,17 @@ pub const HashLiteral = struct {
     token: Token,
     elements: std.AutoHashMap(*Expression, *Expression),
 
-    pub fn tokenLiteral(self: *const HashLiteral) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const FunctionStatement = struct {
+    token: Token,
+    name: Identifier,
+    func: Expression,
+
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -297,7 +320,7 @@ pub const FunctionLiteral = struct {
     body: BlockStatement,
     token: Token,
 
-    pub fn tokenLiteral(self: *const FunctionLiteral) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };

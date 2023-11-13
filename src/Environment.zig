@@ -94,27 +94,35 @@ fn pprint(arg: *object.Object) void {
         .string => |n| std.debug.print("{s}", .{n.value}),
         .integer => |n| std.debug.print("{}", .{n.value}),
         .boolean => |n| std.debug.print("{}", .{n.value}),
-        else => std.debug.print("not yet printable\n", .{}),
+        else => std.debug.print("Not yet printable\n", .{}),
     }
 }
 
 fn printBuiltin(args: []const object.Object) object.Object {
+    return _printBuiltin(args, ' ');
+}
+
+fn printlnBuiltin(args: []const object.Object) object.Object {
+    return _printBuiltin(args, '\n');
+}
+
+fn _printBuiltin(args: []const object.Object, ch: u8) object.Object {
     for (args) |arg| {
         switch (arg) {
-            .null => |n| std.debug.print("{any} ", .{n.value}),
-            .float => |n| std.debug.print("{d} ", .{n.value}),
-            .string => |n| std.debug.print("{s} ", .{n.value}),
-            .integer => |n| std.debug.print("{} ", .{n.value}),
-            .boolean => |n| std.debug.print("{} ", .{n.value}),
+            .null => |n| std.debug.print("{any}{c}", .{ n.value, ch }),
+            .float => |n| std.debug.print("{d}{c}", .{ n.value, ch }),
+            .string => |n| std.debug.print("{s}{c}", .{ n.value, ch }),
+            .integer => |n| std.debug.print("{}{c}", .{ n.value, ch }),
+            .boolean => |n| std.debug.print("{}{c}", .{ n.value, ch }),
             .array => |n| {
-                std.debug.print("{{ ", .{});
+                std.debug.print("[ ", .{});
 
                 for (n.elements, 0..) |*el, i| {
                     pprint(el);
                     if (i < n.elements.len - 1) std.debug.print(", ", .{});
                 }
 
-                std.debug.print(" }}\n", .{});
+                std.debug.print(" ]{c}", .{ch});
             },
             .hash => |h| {
                 var iter = h.elements.iterator();
@@ -125,9 +133,9 @@ fn printBuiltin(args: []const object.Object) object.Object {
                     pprint(entry.value_ptr.*);
                     std.debug.print(", ", .{});
                 }
-                std.debug.print("}}\n", .{});
+                std.debug.print("}}{c}", .{ch});
             },
-            else => std.debug.print("not yet printable\n", .{}),
+            else => std.debug.print("Not yet printable\n", .{}),
         }
     }
     if (args.len > 1) std.debug.print("\n", .{});
@@ -137,6 +145,7 @@ fn printBuiltin(args: []const object.Object) object.Object {
 
 const buildins = std.ComptimeStringMap(object.Builtin, .{
     .{ "print", .{ .func = printBuiltin } },
+    .{ "println", .{ .func = printlnBuiltin } },
 });
 
 fn evalIdentifier(env: *Environment, node: *const ast.Identifier) !object.Object {
@@ -157,6 +166,8 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
         .expression => |exp| {
             return switch (exp) {
                 .void => object.NULL,
+
+                .range => |*range| try env.evalRange(range),
 
                 .identifier => |iden| try env.evalIdentifier(&iden),
 
@@ -198,14 +209,14 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
                 },
 
                 .index_expression => |idx| blk: {
-                    var left = try env.eval(.{ .expression = idx.left.* });
+                    const left = try env.eval(.{ .expression = idx.left.* });
                     const index = try env.eval(.{ .expression = idx.index.* });
                     break :blk left.evalIndexExpression(&index);
                 },
 
                 .forloop_expression => |*fl| try env.evalForLoopExpression(fl),
 
-                .forloop_range_expression => |*fl| try env.evalForLoopRangeExpression(fl),
+                .forloop_range_expression => |*flr| try env.evalForLoopRangeExpression(flr),
 
                 .method_expression => |met| b: {
                     const left = try env.eval(.{ .expression = met.caller.* });
@@ -243,8 +254,13 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
                     break :blk try env.setConst(const_stmt.name.value, val);
                 },
 
+                .function_statement => |func_stmt| blk: {
+                    const val = try env.eval(.{ .expression = func_stmt.func });
+                    break :blk try env.setConst(func_stmt.name.value, val);
+                },
+
                 .return_statement => |ret_stmt| ret_blk: {
-                    var stmt_ = try env.eval(.{ .expression = ret_stmt.value });
+                    const stmt_ = try env.eval(.{ .expression = ret_stmt.value });
 
                     // this approach sucks !!! I KNOW
                     const value: object.Object = switch (stmt_) {
@@ -353,6 +369,38 @@ fn evalHashExpression(
     try env.allocated_hash.append(hash_obj);
 
     return hash_obj;
+}
+
+fn evalRange(env: *Environment, range: *const ast.RangeExpression) !object.Object {
+    var result = std.ArrayList(object.Object).init(env.allocator);
+    errdefer result.deinit();
+
+    const start = try env.eval(.{ .expression = range.start.* });
+    if (start.objType() != .integer) return error.RangeStartIndexMustBeAnInteger;
+
+    const end = try env.eval(.{ .expression = range.end.* });
+    if (end.objType() != .integer) return error.RangeEndIndexMustBeAnInteger;
+
+    const s: usize = @intCast(start.integer.value);
+    const e: usize = @intCast(end.integer.value);
+
+    if (s < 0 or e < 0) {
+        return error.RangeMustBePositive;
+    }
+
+    if (s > e) {
+        return error.InvalidIndexRange;
+    }
+
+    for (s..e) |i| {
+        try result.append(.{ .integer = .{ .value = @intCast(i) } });
+    }
+
+    const result_owned = try result.toOwnedSlice();
+
+    try env.allocated_obj.append(result_owned);
+
+    return .{ .array = .{ .elements = result_owned } };
 }
 
 fn evalExpression(env: *Environment, exps: []ast.Expression) ![]object.Object {

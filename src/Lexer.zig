@@ -15,10 +15,22 @@ pub fn init(input: []const u8) Self {
     return lexer;
 }
 
-fn readNumber(self: *Self) []const u8 {
-    const position = self.position;
-    while (isDigit(self.ch) or self.ch == '.') self.readChar();
-    return self.input[position..self.position];
+fn readNumber(self: *Self) struct { []const u8, bool } {
+    var position = self.position;
+
+    while (isDigit(self.ch)) {
+        self.readChar();
+    }
+
+    if (self.ch != '.') return .{ self.input[position..self.position], false };
+
+    self.readChar(); // first .
+
+    if (self.peekChar() == '.') return .{ self.input[position..self.position], false };
+
+    while (isDigit(self.ch)) self.readChar();
+
+    return .{ self.input[position..self.position], true };
 }
 
 fn readChar(self: *Self) void {
@@ -180,15 +192,8 @@ pub fn nextToken(self: *Self) Token {
         },
 
         '0'...'9' => {
-            const literal = self.readNumber();
-
-            const n_dots = std.mem.count(u8, literal, ".");
-
-            // if (n_dots > 1) return error.InvelidFloatNumber;
-
-            const token_type: TokenType = if (n_dots == 0) .int else .float;
-
-            return Token{ .type = token_type, .literal = literal };
+            const literal, const is_float = self.readNumber();
+            return Token{ .type = if (is_float) .float else .int, .literal = literal };
         },
         else => newToken(.illegal),
     };
