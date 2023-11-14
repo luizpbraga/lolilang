@@ -318,6 +318,11 @@ fn evalAssignment(env: *Environment, assig: ast.AssignmentExpression) !object.Ob
                     return error.VariableNotDeclared;
                 },
 
+                .@":=" => {
+                    _ = try env.setConst(ident.value, evaluated);
+                    return object.NULL;
+                },
+
                 else => return error.UnknowOperator,
             }
         },

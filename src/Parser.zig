@@ -42,7 +42,7 @@ pub const Precedence = enum {
             .@"/", .@"*" => .product,
             .@"(" => .call,
             .@"[", .@".", .@".." => .index,
-            .@"=", .@"+=", .@"-=", .@"*=", .@"/=" => .assigne,
+            .@"=", .@":=", .@"+=", .@"-=", .@"*=", .@"/=" => .assigne,
             else => .lower,
         };
     }
@@ -74,23 +74,22 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Parser {
     try parser.registerPrefix(.float, parseFloatLiteral);
     try parser.registerPrefix(.true, parseBoolean);
     try parser.registerPrefix(.false, parseBoolean);
+    try parser.registerPrefix(.@"[", parseArrayLiteral);
+    try parser.registerPrefix(.@"{", parseHashLiteral);
+    try parser.registerPrefix(.func, parseFunctionLiteral);
+    try parser.registerPrefix(.string, parseStringLiteral);
+    try parser.registerPrefix(.@"if", parseIfExpression);
+    try parser.registerPrefix(.@"for", parseForLoop);
+    try parser.registerPrefix(.@"switch", parseSwitchExpression);
+    try parser.registerPrefix(.@"else", parseIfExpression);
     try parser.registerPrefix(.@"!", parsePrefixExpression);
     try parser.registerPrefix(.@"-", parsePrefixExpression);
     try parser.registerPrefix(.@"(", parseGroupExpression);
-    try parser.registerPrefix(.@"if", parseIfExpression);
 
-    try parser.registerPrefix(.@"for", parseForLoop);
-    try parser.registerPrefix(.@"switch", parseSwitchExpression);
-    try parser.registerPrefix(.@"[", parseArrayLiteral);
-
-    try parser.registerPrefix(.@"else", parseIfExpression);
-    try parser.registerPrefix(.func, parseFunctionLiteral);
-
-    try parser.registerPrefix(.string, parseStringLiteral);
-    try parser.registerPrefix(.@"{", parseHashLiteral);
     try parser.registerInfix(.@"[", parseIndexExpression);
     try parser.registerInfix(.@"..", parseRangeExpression);
-
+    try parser.registerInfix(.@".", parseMethodExpression);
+    try parser.registerInfix(.@"(", parseCallExpression);
     try parser.registerInfix(.@"+", parseInfixExpression);
     try parser.registerInfix(.@"-", parseInfixExpression);
     try parser.registerInfix(.@":", parseInfixExpression);
@@ -100,10 +99,8 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Parser {
     try parser.registerInfix(.@"/", parseInfixExpression);
     try parser.registerInfix(.@">", parseInfixExpression);
     try parser.registerInfix(.@"<", parseInfixExpression);
-    try parser.registerInfix(.@"(", parseCallExpression);
-    try parser.registerInfix(.@".", parseMethodExpression);
-
     try parser.registerInfix(.@"=", parseAssignmentExpression);
+    try parser.registerInfix(.@":=", parseAssignmentExpression);
     try parser.registerInfix(.@"+=", parseAssignmentExpression);
     try parser.registerInfix(.@"-=", parseAssignmentExpression);
     try parser.registerInfix(.@"*=", parseAssignmentExpression);
@@ -212,6 +209,7 @@ fn parseAssignmentExpression(self: *Parser, name: *ast.Expression) anyerror!ast.
 
     stmt.operator = switch (op.type) {
         .@"=" => "=",
+        .@":=" => ":=",
         .@"+=" => "+=",
         .@"-=" => "-=",
         .@"/=" => "/=",
