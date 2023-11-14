@@ -85,6 +85,12 @@ pub const Hash = struct {
                     break :str .{ .value = value };
                 },
                 .integer => |i| .{ .value = @intCast(i.value) },
+
+                .builtin_method => |s| str: {
+                    var value: usize = 0;
+                    for (s.method_name.value) |ch| value += @intCast(ch);
+                    break :str .{ .value = value };
+                },
                 else => error.ObjectCanNotBeAHashKey,
             };
         }
@@ -105,6 +111,7 @@ pub const Enum = struct {
         obj_type: LolliType = .enum_tag,
         name: []const u8,
         value: *const Object,
+        enum_name: ?[]const u8 = undefined,
     };
 };
 
@@ -286,10 +293,10 @@ pub const Object = union(enum) {
         return arr_obj.elements[idx];
     }
 
-    pub fn evalEnumIndexExpression(hash_obj: *const Object, key_obj: *const Object) Object {
-        const tag_name = key_obj.builtin_method.method_name.value;
+    pub fn evalEnumIndexExpression(enum_obj: *const Object, tag_obj: *const Object) Object {
+        const tag_name = tag_obj.builtin_method.method_name.value;
         // tag
-        const tag = hash_obj.enumerator.tags.get(tag_name) orelse return NULL;
+        const tag = enum_obj.enumerator.tags.get(tag_name) orelse return NULL;
 
         return .{ .enum_tag = tag };
     }
