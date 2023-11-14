@@ -15,6 +15,7 @@ is_const: std.StringHashMap(bool),
 allocated_str: std.ArrayList([]u8),
 store: std.StringHashMap(object.Object),
 allocated_obj: std.ArrayList([]object.Object),
+allocated_enum: std.ArrayList(std.StringHashMap(object.Enum.Tag)),
 allocated_hash: std.ArrayList(std.AutoHashMap(object.Hash.Key, object.Hash.Pair)),
 
 pub fn init(allocator: std.mem.Allocator) Environment {
@@ -24,6 +25,7 @@ pub fn init(allocator: std.mem.Allocator) Environment {
         .is_const = std.StringHashMap(bool).init(allocator),
         .allocated_obj = std.ArrayList([]object.Object).init(allocator),
         .allocated_str = std.ArrayList([]u8).init(allocator),
+        .allocated_enum = std.ArrayList(std.StringHashMap(object.Enum.Tag)).init(allocator),
         .allocated_hash = std.ArrayList(std.AutoHashMap(object.Hash.Key, object.Hash.Pair)).init(allocator),
     };
 }
@@ -60,6 +62,7 @@ pub fn deinit(self: *Environment) void {
     self.allocated_str.deinit();
     self.allocated_obj.deinit();
     self.allocated_hash.deinit();
+    self.allocated_enum.deinit();
 }
 
 pub fn get(self: *Environment, name: []const u8) ?object.Object {
@@ -115,6 +118,7 @@ fn printlnBuiltin(args: []const object.Object) object.Object {
 fn _printBuiltin(args: []const object.Object, ch: u8) object.Object {
     for (args) |arg| {
         switch (arg) {
+            .enum_tag => |n| std.debug.print(".{s}{c}", .{ n.name, ch }),
             .null => |n| std.debug.print("{any}{c}", .{ n.value, ch }),
             .float => |n| std.debug.print("{d}{c}", .{ n.value, ch }),
             .string => |n| std.debug.print("{s}{c}", .{ n.value, ch }),
@@ -171,6 +175,11 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
     switch (node) {
         .expression => |exp| {
             return switch (exp) {
+                .enum_tag => |et| tag: {
+                    const value = try env.evalIdentifier(&et.value);
+                    break :tag .{ .enum_tag = .{ .value = &value, .name = et.value.value } };
+                },
+
                 .void => object.NULL,
 
                 .range => |*range| try env.evalRange(range),
@@ -188,6 +197,8 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
                 .array_literal => |array| .{ .array = .{ .elements = try env.evalExpression(array.elements) } },
 
                 .hash_literal => |*hash| .{ .hash = .{ .pairs = try env.evalHashExpression(hash) } },
+
+                .enum_literal => |*enu| .{ .enumerator = .{ .tags = try env.evalEnumExpression(enu) } },
 
                 .function_literal => |func| .{ .function = .{ .parameters = func.parameters, .body = func.body, .env = env } },
 
@@ -369,6 +380,26 @@ fn evalAssignment(env: *Environment, assig: ast.AssignmentExpression) !object.Ob
 }
 
 /// NOJENTO!!!!
+fn evalEnumExpression(
+    env: *Environment,
+    enum_obj: *const ast.EnumLiteral,
+) !std.StringHashMap(object.Enum.Tag) {
+    var tags = std.StringHashMap(object.Enum.Tag).init(env.allocator);
+    errdefer tags.deinit();
+
+    var enum_iterator = enum_obj.tags.iterator();
+    while (enum_iterator.next()) |enu| {
+        const tag_name = enu.key_ptr.*;
+        const tag_value = try env.eval(.{ .expression = enu.value_ptr.*.* });
+        const tag = object.Enum.Tag{ .name = tag_name, .value = &tag_value };
+        try tags.put(tag_name, tag);
+    }
+
+    try env.allocated_enum.append(tags);
+
+    return tags;
+}
+
 fn evalHashExpression(
     env: *Environment,
     hash_obj: *const ast.HashLiteral,
@@ -687,6 +718,38 @@ fn evalInfixExpression(env: *Environment, op: []const u8, left: *object.Object, 
             var new_string = try std.fmt.allocPrint(env.allocator, "{any}{s}", .{ left.integer.value, right.string.value });
             try env.allocated_str.append(new_string);
             left.* = .{ .string = .{ .value = new_string } };
+            break :b left.*;
+        } else object.NULL;
+    }
+
+    if (left.objType() == .array and right.objType() == .array) {
+        return if (eql(u8, op, "+")) b: {
+            const l_arr = left.array.elements;
+            const r_arr = right.array.elements;
+            var array = try std.ArrayList(object.Object).initCapacity(env.allocator, l_arr.len + r_arr.len);
+            errdefer array.deinit();
+
+            try array.appendSlice(l_arr);
+            try array.appendSlice(r_arr);
+
+            const x = try array.toOwnedSlice();
+            try env.allocated_obj.append(x);
+
+            break :b .{ .array = .{ .elements = x } };
+        } else if (eql(u8, op, "+=")) b: {
+            const l_arr = left.array.elements;
+            const r_arr = right.array.elements;
+            var array = try std.ArrayList(object.Object).initCapacity(env.allocator, l_arr.len + r_arr.len);
+            errdefer array.deinit();
+
+            try array.appendSlice(l_arr);
+            try array.appendSlice(r_arr);
+
+            const x = try array.toOwnedSlice();
+            try env.allocated_obj.append(x);
+
+            left.array.elements = x;
+
             break :b left.*;
         } else object.NULL;
     }

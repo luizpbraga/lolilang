@@ -4,7 +4,7 @@ const Environment = @import("Environment.zig");
 
 pub const NULL = Object{ .null = Null{} };
 
-const LolliType = enum { float, integer, string, array, hash, hash_key, hash_pair, boolean, null, @"return", err, function, builtin, builtin_method };
+const LolliType = enum { @"enum", enum_tag, enum_pair, float, integer, string, array, hash, hash_key, hash_pair, boolean, null, @"return", err, function, builtin, builtin_method };
 
 pub const Float = struct {
     value: f64,
@@ -97,6 +97,17 @@ pub const Hash = struct {
     };
 };
 
+pub const Enum = struct {
+    obj_type: LolliType = .@"enum",
+    tags: std.StringHashMap(Tag),
+
+    pub const Tag = struct {
+        obj_type: LolliType = .enum_tag,
+        name: []const u8,
+        value: *const Object,
+    };
+};
+
 pub const Null = struct {
     // NOTE: this fix the error "union depend on itself" (something like that)
     comptime value: @TypeOf(null) = null,
@@ -157,6 +168,8 @@ pub const Object = union(enum) {
     boolean: Boolean,
     @"return": Return,
     function: Function,
+    enumerator: Enum,
+    enum_tag: Enum.Tag,
     builtin_method: BuiltinMethod,
 
     pub fn objType(self: *const Object) LolliType {
@@ -194,6 +207,10 @@ pub const Object = union(enum) {
         // TODO:
         if (obj.objType() == .hash) {
             return evalHashIndexExpression(obj, &.{ .builtin_method = arg.* });
+        }
+
+        if (obj.objType() == .@"enum") {
+            return evalEnumIndexExpression(obj, &.{ .builtin_method = arg.* });
         }
 
         // only string and lists (for now)
@@ -267,6 +284,14 @@ pub const Object = union(enum) {
         }
 
         return arr_obj.elements[idx];
+    }
+
+    pub fn evalEnumIndexExpression(hash_obj: *const Object, key_obj: *const Object) Object {
+        const tag_name = key_obj.builtin_method.method_name.value;
+        // tag
+        const tag = hash_obj.enumerator.tags.get(tag_name) orelse return NULL;
+
+        return .{ .enum_tag = tag };
     }
 
     pub fn evalHashIndexExpression(hash_obj: *const Object, key_obj: *const Object) !Object {

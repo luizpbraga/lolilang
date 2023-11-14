@@ -70,6 +70,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Parser {
     parser.nextToken();
 
     try parser.registerPrefix(.identifier, parseIdentifier);
+    // try parser.registerPrefix(.@".", parseEnumTag);
     try parser.registerPrefix(.int, parseIntegerLiteral);
     try parser.registerPrefix(.float, parseFloatLiteral);
     try parser.registerPrefix(.true, parseBoolean);
@@ -81,6 +82,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Parser {
     try parser.registerPrefix(.@"if", parseIfExpression);
     try parser.registerPrefix(.@"for", parseForLoop);
     try parser.registerPrefix(.@"switch", parseSwitchExpression);
+    try parser.registerPrefix(.@"enum", parseEnumLiteral);
     try parser.registerPrefix(.@"else", parseIfExpression);
     try parser.registerPrefix(.@"!", parsePrefixExpression);
     try parser.registerPrefix(.@"-", parsePrefixExpression);
@@ -155,10 +157,12 @@ fn currentPrecedence(self: *const Parser) Precedence {
 
 // parsers fn -----------------------------------------------------------
 fn parseIdentifier(self: *const Parser) anyerror!ast.Expression {
-    return .{ .identifier = ast.Identifier{
-        .token = self.cur_token,
-        .value = self.cur_token.literal,
-    } };
+    return .{
+        .identifier = .{
+            .token = self.cur_token,
+            .value = self.cur_token.literal,
+        },
+    };
 }
 
 fn parseReturnStatement(self: *Parser) anyerror!ast.Statement {
@@ -581,23 +585,42 @@ fn parseBlockStatement(self: *Parser) anyerror!ast.BlockStatement {
 
 fn parseEnumLiteral(self: *Parser) anyerror!ast.Expression {
     var enu = ast.EnumLiteral{
-        .token = ast.cur_token,
-        .fields = undefined, // hash(ident, value)
+        .token = self.cur_token,
+        .tags = undefined, // hash(ident, value)
     };
 
     if (!self.expectPeek(.@"{")) return error.MissingBrance;
+
+    const allocator = self.arena.allocator();
+
+    var tags = std.StringHashMap(*ast.Expression).init(allocator);
+    errdefer tags.deinit();
 
     var i: usize = 0;
     while (!self.expectPeek(.@"}")) {
         const ident_exp = try self.parseIdentifier();
 
-        if (ident_exp != .identifier) return error.NotAIdent;
+        const gop = try tags.getOrPut(ident_exp.identifier.value);
 
-        try enu.fields.put(ident_exp.identifier, i);
+        if (gop.found_existing) return error.DuplicatedTag;
+
+        var int = try allocator.create(ast.Expression);
+
+        int.* = .{
+            .integer_literal = .{
+                .value = @intCast(i),
+                .token = .{ .type = .int, .literal = try std.fmt.allocPrint(allocator, "{d}", .{i}) },
+            },
+        };
+
+        try tags.put(ident_exp.identifier.value, int);
+
         i += 1;
 
         self.nextToken();
     }
+
+    enu.tags = tags;
 
     return .{ .enum_literal = enu };
 }

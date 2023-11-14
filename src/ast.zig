@@ -51,6 +51,8 @@ pub const Expression = union(enum) {
     array_literal: ArrayLiteral,
     range: RangeExpression,
     hash_literal: HashLiteral,
+    enum_literal: EnumLiteral,
+    enum_tag: EnumTag,
     identifier: Identifier,
     forloop_expression: ForLoopExpression,
     forloop_range_expression: ForLoopRangeExpression,
@@ -299,6 +301,24 @@ pub const RangeExpression = struct {
 pub const HashLiteral = struct {
     token: Token,
     pairs: std.AutoHashMap(*const Expression, *Expression),
+
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const EnumLiteral = struct {
+    token: Token,
+    tags: std.StringHashMap(*Expression),
+
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const EnumTag = struct {
+    token: Token,
+    value: Identifier,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;

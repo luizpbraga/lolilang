@@ -8,7 +8,7 @@ const std = @import("std");
 pub const keywords = std.ComptimeStringMap(TokenType, .{
     .{ "in", .in },
     .{ "continue", .@"continue" },
-    .{ "in", .@"break" },
+    .{ "break", .@"break" },
     .{ "func", .func },
     .{ "enum", .@"enum" },
     .{ "for", .@"for" },
