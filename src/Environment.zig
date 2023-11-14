@@ -15,7 +15,7 @@ is_const: std.StringHashMap(bool),
 allocated_str: std.ArrayList([]u8),
 store: std.StringHashMap(object.Object),
 allocated_obj: std.ArrayList([]object.Object),
-allocated_hash: std.ArrayList(std.AutoHashMap(*object.Object, *object.Object)),
+allocated_hash: std.ArrayList(std.AutoHashMap(object.Hash.Key, object.Hash.Pair)),
 
 pub fn init(allocator: std.mem.Allocator) Environment {
     return .{
@@ -24,7 +24,7 @@ pub fn init(allocator: std.mem.Allocator) Environment {
         .is_const = std.StringHashMap(bool).init(allocator),
         .allocated_obj = std.ArrayList([]object.Object).init(allocator),
         .allocated_str = std.ArrayList([]u8).init(allocator),
-        .allocated_hash = std.ArrayList(std.AutoHashMap(*object.Object, *object.Object)).init(allocator),
+        .allocated_hash = std.ArrayList(std.AutoHashMap(object.Hash.Key, object.Hash.Pair)).init(allocator),
     };
 }
 
@@ -51,9 +51,9 @@ pub fn deinit(self: *Environment) void {
         self.allocator.free(item);
     }
 
-    for (self.allocated_hash.items) |*item| {
-        item.deinit();
-    }
+    // for (self.allocated_hash.items) |*item| {
+    //     item.deinit();
+    // }
 
     self.store.deinit();
     self.is_const.deinit();
@@ -64,6 +64,10 @@ pub fn deinit(self: *Environment) void {
 
 pub fn get(self: *Environment, name: []const u8) ?object.Object {
     return self.store.get(name);
+}
+
+pub fn getPtr(self: *Environment, name: []const u8) ?*object.Object {
+    return self.store.getPtr(name);
 }
 
 pub fn set(self: *Environment, name: []const u8, obj: object.Object) !object.Object {
@@ -87,7 +91,7 @@ pub fn setConst(self: *Environment, name: []const u8, obj: object.Object) !objec
     return obj;
 }
 
-fn pprint(arg: *object.Object) void {
+fn pprint(arg: *const object.Object) void {
     switch (arg.*) {
         .null => |n| std.debug.print("{any}", .{n.value}),
         .float => |n| std.debug.print("{d}", .{n.value}),
@@ -99,7 +103,9 @@ fn pprint(arg: *object.Object) void {
 }
 
 fn printBuiltin(args: []const object.Object) object.Object {
-    return _printBuiltin(args, ' ');
+    const x = _printBuiltin(args, ' ');
+    std.debug.print("\n", .{});
+    return x;
 }
 
 fn printlnBuiltin(args: []const object.Object) object.Object {
@@ -124,17 +130,17 @@ fn _printBuiltin(args: []const object.Object, ch: u8) object.Object {
 
                 std.debug.print(" ]{c}", .{ch});
             },
-            .hash => |h| {
-                var iter = h.elements.iterator();
-                std.debug.print("{{ ", .{});
-                while (iter.next()) |entry| {
-                    pprint(entry.key_ptr.*);
-                    std.debug.print(":", .{});
-                    pprint(entry.value_ptr.*);
-                    std.debug.print(", ", .{});
-                }
-                std.debug.print("}}{c}", .{ch});
-            },
+            // .hash => |h| {
+            //     var iter = h.pairs.iterator();
+            //     std.debug.print("{{ ", .{});
+            //     while (iter.next()) |entry| {
+            //         pprint(entry.key_ptr);
+            //         std.debug.print(":", .{});
+            //         pprint(entry.value_ptr.*);
+            //         std.debug.print(", ", .{});
+            //     }
+            //     std.debug.print("}}{c}", .{ch});
+            // },
             else => std.debug.print("Not yet printable\n", .{}),
         }
     }
@@ -181,13 +187,19 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
 
                 .array_literal => |array| .{ .array = .{ .elements = try env.evalExpression(array.elements) } },
 
-                .hash_literal => |*hash| .{ .hash = .{ .elements = try env.evalHashExpression(&hash.elements) } },
+                .hash_literal => |*hash| .{ .hash = .{ .pairs = try env.evalHashExpression(hash) } },
 
                 .function_literal => |func| .{ .function = .{ .parameters = func.parameters, .body = func.body, .env = env } },
 
                 .assignment_expression => |ass| try env.evalAssignment(ass),
 
                 .switch_expression => |*swi| try env.evalSwitchExpression(swi),
+
+                .if_expression => |*if_exp| try env.evalIfExpression(if_exp),
+
+                .forloop_expression => |*fl| try env.evalForLoopExpression(fl),
+
+                .forloop_range_expression => |*flr| try env.evalForLoopRangeExpression(flr),
 
                 .prefix_expression => |pre| blk: {
                     const right = try env.eval(.{ .expression = pre.right.* });
@@ -200,8 +212,6 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
                     break :blk try env.evalInfixExpression(pre.operator, &left, &right);
                 },
 
-                .if_expression => |*if_exp| try env.evalIfExpression(if_exp),
-
                 .call_expression => |call| blk: {
                     var func = try env.eval(.{ .expression = call.function.* });
                     const args = try env.evalExpression(call.arguments);
@@ -213,10 +223,6 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
                     const index = try env.eval(.{ .expression = idx.index.* });
                     break :blk left.evalIndexExpression(&index);
                 },
-
-                .forloop_expression => |*fl| try env.evalForLoopExpression(fl),
-
-                .forloop_range_expression => |*flr| try env.evalForLoopRangeExpression(flr),
 
                 .method_expression => |met| b: {
                     const left = try env.eval(.{ .expression = met.caller.* });
@@ -318,28 +324,37 @@ fn evalAssignment(env: *Environment, assig: ast.AssignmentExpression) !object.Ob
 
         .index_expression => |exp| {
             const index_obj = try env.eval(.{ .expression = exp.index.* });
-            const index = index_obj.integer.value;
             const evaluated = try env.eval(.{ .expression = assig.value.* });
             const var_name = exp.left.identifier.value;
 
             if (env.get(var_name)) |*current| {
-                const uindex = @as(usize, @intCast(index));
-                switch (current.array.elements[uindex]) {
-                    .integer => {
-                        var element = &current.array.elements[uindex];
-                        switch (assig.token.type) {
-                            .@"=", .@"+=", .@"-=", .@"*=", .@"/=" => _ = try env.evalInfixExpression(assig.token.literal, element, @constCast(&evaluated)),
-                            else => return error.UnknowOperator,
-                        }
-                    },
-                    .string => {
-                        var element = &current.array.elements[uindex];
-                        switch (assig.token.type) {
-                            .@"=", .@"+=" => _ = try env.evalInfixExpression(assig.token.literal, element, @constCast(&evaluated)),
-                            else => return error.UnknowOperator,
-                        }
-                    },
-                    else => return error.NotSuportedOperation,
+                if (current.objType() == .array) {
+                    const int_index = index_obj.integer.value;
+                    const uindex = @as(usize, @intCast(int_index));
+                    switch (current.array.elements[uindex]) {
+                        .integer => {
+                            var element = &current.array.elements[uindex];
+                            switch (assig.token.type) {
+                                .@"=", .@"+=", .@"-=", .@"*=", .@"/=" => _ = try env.evalInfixExpression(assig.token.literal, element, @constCast(&evaluated)),
+                                else => return error.UnknowOperator,
+                            }
+                        },
+                        .string => {
+                            var element = &current.array.elements[uindex];
+                            switch (assig.token.type) {
+                                .@"=", .@"+=" => _ = try env.evalInfixExpression(assig.token.literal, element, @constCast(&evaluated)),
+                                else => return error.UnknowOperator,
+                            }
+                        },
+                        else => return error.NotSuportedOperation,
+                    }
+                }
+
+                if (current.objType() == .hash) {
+                    const key = try object.Hash.Key.init(&index_obj);
+                    const pair = object.Hash.Pair{ .key = index_obj, .value = evaluated };
+                    var ptr = env.getPtr(var_name).?;
+                    try ptr.hash.pairs.put(key, pair);
                 }
             }
             return object.NULL;
@@ -348,27 +363,35 @@ fn evalAssignment(env: *Environment, assig: ast.AssignmentExpression) !object.Ob
     }
 }
 
+/// NOJENTO!!!!
 fn evalHashExpression(
     env: *Environment,
-    hash_exp: *const std.AutoHashMap(*ast.Expression, *ast.Expression),
-) !std.AutoHashMap(*object.Object, *object.Object) {
-    var hash_obj = std.AutoHashMap(*object.Object, *object.Object).init(env.allocator);
-    errdefer hash_obj.deinit();
+    hash_obj: *const ast.HashLiteral,
+) !std.AutoHashMap(object.Hash.Key, object.Hash.Pair) {
+    var pairs = std.AutoHashMap(object.Hash.Key, object.Hash.Pair).init(env.allocator);
+    errdefer pairs.deinit();
 
-    var iter0 = hash_exp.iterator();
+    var hash_iterator = hash_obj.pairs.iterator();
+    while (hash_iterator.next()) |hash| {
+        var key_value = try env.allocator.alloc(object.Object, 2);
+        errdefer env.allocator.free(key_value);
 
-    while (iter0.next()) |hash| {
-        var keyval = try env.allocator.alloc(object.Object, 2);
-        keyval[0] = try env.eval(.{ .expression = hash.key_ptr.*.* });
-        keyval[1] = try env.eval(.{ .expression = hash.value_ptr.*.* });
+        key_value[0] = try env.eval(.{ .expression = hash.key_ptr.*.* });
+        key_value[1] = try env.eval(.{ .expression = hash.value_ptr.*.* });
 
-        try env.allocated_obj.append(keyval);
-        try hash_obj.put(&keyval[0], &keyval[1]);
+        var key = key_value[0];
+        var val = key_value[1];
+
+        const hash_key = try object.Hash.Key.init(&key);
+        const hash_pair: object.Hash.Pair = .{ .key = key, .value = val };
+
+        try pairs.put(hash_key, hash_pair);
+        try env.allocated_obj.append(key_value);
     }
 
-    try env.allocated_hash.append(hash_obj);
+    try env.allocated_hash.append(pairs);
 
-    return hash_obj;
+    return pairs;
 }
 
 fn evalRange(env: *Environment, range: *const ast.RangeExpression) !object.Object {

@@ -4,7 +4,7 @@ const Environment = @import("Environment.zig");
 
 pub const NULL = Object{ .null = Null{} };
 
-const LolliType = enum { float, integer, string, array, hash, boolean, null, @"return", err, function, builtin, builtin_method };
+const LolliType = enum { float, integer, string, array, hash, hash_key, hash_pair, boolean, null, @"return", err, function, builtin, builtin_method };
 
 pub const Float = struct {
     value: f64,
@@ -70,7 +70,31 @@ pub const Array = struct {
 
 pub const Hash = struct {
     obj_type: LolliType = .hash,
-    elements: std.AutoHashMap(*Object, *Object),
+    pairs: std.AutoHashMap(Key, Pair),
+
+    pub const Key = struct {
+        obj_type: LolliType = .hash_key,
+        value: usize,
+
+        pub fn init(obj: *const Object) !Key {
+            return switch (obj.*) {
+                .boolean => |b| .{ .value = if (b.value) 1 else 0 },
+                .string => |s| str: {
+                    var value: usize = 0;
+                    for (s.value) |ch| value += @intCast(ch);
+                    break :str .{ .value = value };
+                },
+                .integer => |i| .{ .value = @intCast(i.value) },
+                else => error.ObjectCanNotBeAHashKey,
+            };
+        }
+    };
+
+    pub const Pair = struct {
+        obj_type: LolliType = .hash_pair,
+        key: Object,
+        value: Object,
+    };
 };
 
 pub const Null = struct {
@@ -156,6 +180,7 @@ pub const Object = union(enum) {
             else => error.NotIterable,
         };
     }
+
     pub fn inspect(self: *const Object) ![]const u8 {
         var buff: [50]u8 = undefined;
         return switch (self.*) {
@@ -166,13 +191,17 @@ pub const Object = union(enum) {
     }
 
     pub fn applyMethod(obj: *const Object, arg: *const BuiltinMethod) !Object {
+        // TODO:
+        if (obj.objType() == .hash) {
+            return evalHashIndexExpression(obj, &.{ .builtin_method = arg.* });
+        }
 
         // only string and lists (for now)
         if (std.mem.eql(u8, arg.method_name.value, "len")) {
             const len = switch (obj.objType()) {
                 .string => obj.string.value.len,
                 .array => obj.array.elements.len,
-                .hash => obj.hash.elements.count(),
+                .hash => obj.hash.pairs.count(),
                 else => return error.MethodLenNotDefined,
             };
             return .{ .integer = .{ .value = @intCast(len) } };
@@ -240,23 +269,13 @@ pub const Object = union(enum) {
         return arr_obj.elements[idx];
     }
 
-    pub fn evalHashIndexExpression(hash: *const Object, key: *const Object) !Object {
-        const hash_obj = hash.hash;
-        var k = @constCast(key);
+    pub fn evalHashIndexExpression(hash_obj: *const Object, key_obj: *const Object) !Object {
+        const hash = hash_obj.hash;
 
-        var iter = hash_obj.elements.iterator();
+        const key = try Hash.Key.init(key_obj);
 
-        // TODO: implement a better logic
-        while (iter.next()) |h| {
-            if (h.key_ptr.*.* == .string and k.* == .string) {
-                if (std.mem.eql(u8, h.key_ptr.*.*.string.value, k.*.string.value)) return h.value_ptr.*.*;
-                return NULL;
-            }
+        const pair = hash.pairs.get(key) orelse return NULL;
 
-            if (std.meta.eql(h.key_ptr.*.*, k.*)) {
-                return h.value_ptr.*.*;
-            }
-        }
-        return NULL;
+        return pair.value;
     }
 };

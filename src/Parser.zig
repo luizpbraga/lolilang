@@ -225,8 +225,12 @@ fn parseAssignmentExpression(self: *Parser, name: *ast.Expression) anyerror!ast.
 }
 
 fn parseConstStatement(self: *Parser) anyerror!ast.Statement {
+    const tk = self.cur_token;
+
+    if (self.expectPeek(.@"(")) return .{ .const_block_statement = try self.parseConstBlockStatement(tk) };
+
     var const_stmt = ast.ConstStatement{
-        .token = self.cur_token,
+        .token = tk,
         .name = undefined,
         .value = undefined,
     };
@@ -258,9 +262,9 @@ fn parseConstStatement(self: *Parser) anyerror!ast.Statement {
     return .{ .const_statement = const_stmt };
 }
 
-fn parseVarBlockStatement(self: *Parser) anyerror!ast.VarBlockStatement {
+fn parseVarBlockStatement(self: *Parser, tk: Token) anyerror!ast.VarBlockStatement {
     var stmt = ast.VarBlockStatement{
-        .token = self.last_token,
+        .token = tk,
         .vars_decl = undefined,
     };
 
@@ -302,9 +306,9 @@ fn parseVarBlockStatement(self: *Parser) anyerror!ast.VarBlockStatement {
     return stmt;
 }
 
-fn parseConstBlockStatement(self: *Parser) anyerror!ast.ConstBlockStatement {
+fn parseConstBlockStatement(self: *Parser, tk: Token) anyerror!ast.ConstBlockStatement {
     var stmt = ast.ConstBlockStatement{
-        .token = self.last_token,
+        .token = tk,
         .const_decl = undefined,
     };
 
@@ -328,7 +332,7 @@ fn parseConstBlockStatement(self: *Parser) anyerror!ast.ConstBlockStatement {
 
         const exp = try self.parseExpression(.lower);
 
-        var var_stmt = ast.ConstStatement{
+        const var_stmt = ast.ConstStatement{
             .token = stmt.token,
             .name = ident.identifier,
             .value = exp.*,
@@ -339,17 +343,20 @@ fn parseConstBlockStatement(self: *Parser) anyerror!ast.ConstBlockStatement {
         self.nextToken();
     }
 
-    var vars_owned = try vars.toOwnedSlice();
+    const vars_owned = try vars.toOwnedSlice();
 
-    // try self.gc.const_decl.append(vars_owned);
     stmt.const_decl = vars_owned;
 
     return stmt;
 }
 
 fn parseVarStatement(self: *Parser) anyerror!ast.Statement {
+    const tk = self.cur_token;
+
+    if (self.expectPeek(.@"(")) return .{ .var_block_statement = try self.parseVarBlockStatement(tk) };
+
     var var_stmt = ast.VarStatement{
-        .token = self.cur_token,
+        .token = tk,
         .name = undefined,
         .value = undefined,
     };
@@ -782,13 +789,13 @@ pub fn parseHashLiteral(self: *Parser) anyerror!ast.Expression {
     const token = self.cur_token;
     const allocator = self.arena.allocator();
 
-    var hash = std.AutoHashMap(*ast.Expression, *ast.Expression).init(allocator);
+    var hash = std.AutoHashMap(*const ast.Expression, *ast.Expression).init(allocator);
     errdefer hash.deinit();
 
     while (!self.peekTokenIs(.@"}")) {
         self.nextToken();
 
-        var key = try self.parseExpression(.lower);
+        const key = try self.parseExpression(.lower);
 
         if (!self.expectPeek(.@":")) {
             std.log.warn("syntax error: expect ':'\n", .{});
@@ -799,6 +806,7 @@ pub fn parseHashLiteral(self: *Parser) anyerror!ast.Expression {
 
         var val = try self.parseExpression(.lower);
 
+        // BUG: memory leak
         try hash.put(key, val);
 
         if (!self.peekTokenIs(.@"}") and !self.expectPeek(.@",")) {
@@ -812,7 +820,7 @@ pub fn parseHashLiteral(self: *Parser) anyerror!ast.Expression {
         return error.MissingRightBrace;
     }
 
-    return .{ .hash_literal = .{ .token = token, .elements = hash } };
+    return .{ .hash_literal = .{ .token = token, .pairs = hash } };
 }
 
 // (...)

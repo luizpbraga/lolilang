@@ -298,7 +298,7 @@ pub const RangeExpression = struct {
 
 pub const HashLiteral = struct {
     token: Token,
-    elements: std.AutoHashMap(*Expression, *Expression),
+    pairs: std.AutoHashMap(*const Expression, *Expression),
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
