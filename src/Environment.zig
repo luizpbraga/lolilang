@@ -1,6 +1,8 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 const object = @import("./object.zig");
+const buildins = @import("./buildins.zig").buildins;
+
 const eql = std.mem.eql;
 
 const Environment = @This();
@@ -94,73 +96,14 @@ pub fn setConst(self: *Environment, name: []const u8, obj: object.Object) !objec
     return obj;
 }
 
-fn pprint(arg: *const object.Object) void {
-    switch (arg.*) {
-        .null => |n| std.debug.print("{any}", .{n.value}),
-        .float => |n| std.debug.print("{d}", .{n.value}),
-        .string => |n| std.debug.print("{s}", .{n.value}),
-        .integer => |n| std.debug.print("{}", .{n.value}),
-        .boolean => |n| std.debug.print("{}", .{n.value}),
-        else => std.debug.print("Not yet printable\n", .{}),
-    }
-}
-
-fn printBuiltin(args: []const object.Object) object.Object {
-    const x = _printBuiltin(args, ' ');
-    std.debug.print("\n", .{});
-    return x;
-}
-
-fn printlnBuiltin(args: []const object.Object) object.Object {
-    return _printBuiltin(args, '\n');
-}
-
-fn _printBuiltin(args: []const object.Object, ch: u8) object.Object {
-    for (args) |arg| {
-        switch (arg) {
-            .enum_tag => |n| std.debug.print(".{s}{c}", .{ n.name, ch }),
-            .null => |n| std.debug.print("{any}{c}", .{ n.value, ch }),
-            .float => |n| std.debug.print("{d}{c}", .{ n.value, ch }),
-            .string => |n| std.debug.print("{s}{c}", .{ n.value, ch }),
-            .integer => |n| std.debug.print("{}{c}", .{ n.value, ch }),
-            .boolean => |n| std.debug.print("{}{c}", .{ n.value, ch }),
-            .array => |n| {
-                std.debug.print("[ ", .{});
-
-                for (n.elements, 0..) |*el, i| {
-                    pprint(el);
-                    if (i < n.elements.len - 1) std.debug.print(", ", .{});
-                }
-
-                std.debug.print(" ]{c}", .{ch});
-            },
-            // .hash => |h| {
-            //     var iter = h.pairs.iterator();
-            //     std.debug.print("{{ ", .{});
-            //     while (iter.next()) |entry| {
-            //         pprint(entry.key_ptr);
-            //         std.debug.print(":", .{});
-            //         pprint(entry.value_ptr.*);
-            //         std.debug.print(", ", .{});
-            //     }
-            //     std.debug.print("}}{c}", .{ch});
-            // },
-            else => std.debug.print("Not yet printable\n", .{}),
-        }
-    }
-    if (args.len > 1) std.debug.print("\n", .{});
-
-    return object.NULL;
-}
-
-const buildins = std.ComptimeStringMap(object.Builtin, .{
-    .{ "print", .{ .func = printBuiltin } },
-    .{ "println", .{ .func = printlnBuiltin } },
-});
-
 fn evalIdentifier(env: *Environment, node: *const ast.Identifier) !object.Object {
     if (env.get(node.value)) |val| {
         return val;
+    }
+
+    if (env.outer) |outer_env| {
+        if (outer_env.get(node.value)) |val|
+            return val;
     }
 
     if (buildins.get(node.value)) |val| {
@@ -411,7 +354,12 @@ fn evalHashExpression(
         var key_value = try env.allocator.alloc(object.Object, 2);
         errdefer env.allocator.free(key_value);
 
-        key_value[0] = try env.eval(.{ .expression = hash.key_ptr.*.* });
+        key_value[0] = env.eval(.{ .expression = hash.key_ptr.*.* }) catch |err| switch (err) {
+            // teste
+            // TODO: m.x onde x é um hash_tag, e não um identifier (ou algo assim)
+            error.IdentifierNotFound => .{ .builtin_method = .{ .method_name = hash.key_ptr.*.*.identifier } },
+            else => return err,
+        };
         key_value[1] = try env.eval(.{ .expression = hash.value_ptr.*.* });
 
         var key = key_value[0];
@@ -838,8 +786,6 @@ fn evalSwitchExpression(env: *Environment, sw: *const ast.SwitchExpression) !obj
     const value = try env.eval(.{ .expression = sw.value.* });
 
     for (sw.choices) |ch| {
-
-        // if (ch.exp.* == .identifier and ch.exp.identifier.token.type == .@"else") {
         const exps = ch.exps orelse {
             const block_eval = try env.eval(.{ .statement = .{ .block_statement = ch.block } });
             return block_eval;
