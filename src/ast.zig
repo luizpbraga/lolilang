@@ -22,6 +22,8 @@ pub const Statement = union(enum) {
     const_statement: ConstStatement,
     const_block_statement: ConstBlockStatement,
     return_statement: ReturnStatement,
+    break_statement: BreakStatement,
+    defer_statement: DeferStatement,
     function_statement: FunctionStatement,
     expression_statement: ExpressionStatement,
     block_statement: BlockStatement,
@@ -197,6 +199,19 @@ pub const ReturnStatement = struct {
     }
 };
 
+pub const BreakStatement = struct {
+    token: Token,
+    value: Expression,
+
+    pub fn statementNode(self: *const @This()) void {
+        _ = self;
+    }
+
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
+        return self.token.literal;
+    }
+};
+
 // identifier = expression
 //  = , +=, -=, *=, /=,
 pub const AssignmentExpression = struct {
@@ -329,6 +344,15 @@ pub const FunctionStatement = struct {
     token: Token,
     name: Identifier,
     func: Expression,
+
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const DeferStatement = struct {
+    token: Token,
+    body: BlockStatement,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;

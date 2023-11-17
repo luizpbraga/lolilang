@@ -38,20 +38,14 @@ fn pprint(arg: *const object.Object) void {
 }
 
 fn printBuiltin(args: []const object.Object) object.Object {
-    const x = _printBuiltin(args, ' ');
-    std.debug.print("\n", .{});
-    return x;
-}
-
-fn _printBuiltin(args: []const object.Object, ch: u8) object.Object {
     for (args) |arg| {
         switch (arg) {
-            .enum_tag => |n| std.debug.print(".{s}{c}", .{ n.name, ch }),
-            .null => |n| std.debug.print("{any}{c}", .{ n.value, ch }),
-            .float => |n| std.debug.print("{d}{c}", .{ n.value, ch }),
-            .string => |n| std.debug.print("{s}{c}", .{ n.value, ch }),
-            .integer => |n| std.debug.print("{}{c}", .{ n.value, ch }),
-            .boolean => |n| std.debug.print("{}{c}", .{ n.value, ch }),
+            .enum_tag => |n| std.debug.print(".{s} ", .{n.name}),
+            .null => |n| std.debug.print("{any} ", .{n.value}),
+            .float => |n| std.debug.print("{d} ", .{n.value}),
+            .string => |n| std.debug.print("{s} ", .{n.value}),
+            .integer => |n| std.debug.print("{} ", .{n.value}),
+            .boolean => |n| std.debug.print("{} ", .{n.value}),
             .array => |n| {
                 std.debug.print("[ ", .{});
 
@@ -60,7 +54,7 @@ fn _printBuiltin(args: []const object.Object, ch: u8) object.Object {
                     if (i < n.elements.len - 1) std.debug.print(", ", .{});
                 }
 
-                std.debug.print(" ]{c}", .{ch});
+                std.debug.print(" ]", .{});
             },
             // .hash => |h| {
             //     var iter = h.pairs.iterator();
@@ -73,10 +67,10 @@ fn _printBuiltin(args: []const object.Object, ch: u8) object.Object {
             //     }
             //     std.debug.print("}}{c}", .{ch});
             // },
-            else => std.debug.print("Not yet printable\n", .{}),
+            else => std.debug.print("Not printable yet", .{}),
         }
     }
-    if (args.len > 1) std.debug.print("\n", .{});
+    std.debug.print("\n", .{});
 
     return object.NULL;
 }

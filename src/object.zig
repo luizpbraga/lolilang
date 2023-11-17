@@ -18,6 +18,7 @@ const LolliType = enum {
     boolean,
     null,
     @"return",
+    @"break",
     err,
     function,
     builtin,
@@ -187,6 +188,14 @@ pub const Null = struct {
     }
 };
 
+pub const Break = struct {
+    value: *const Object,
+
+    pub fn objType(_: *const @This()) LolliType {
+        return .@"break";
+    }
+};
+
 pub const Return = struct {
     value: *const Object,
 
@@ -197,7 +206,8 @@ pub const Return = struct {
 
 /// TODO
 pub const Error = struct {
-    message: []const u8,
+    name: []const u8,
+    payload: ?*Object = null,
 
     pub fn objType(_: *const @This()) LolliType {
         return .err;
@@ -255,6 +265,7 @@ pub const Object = union(enum) {
     builtin: Builtin,
     boolean: Boolean,
     @"return": Return,
+    @"break": Break,
     function: Function,
     enum_tag: Enum.Tag,
     builtin_method: BuiltinMethod,

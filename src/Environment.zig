@@ -19,6 +19,7 @@ store: std.StringHashMap(object.Object),
 allocated_obj: std.ArrayList([]object.Object),
 allocated_enum: std.ArrayList(std.StringHashMap(object.Enum.Tag)),
 allocated_hash: std.ArrayList(std.AutoHashMap(object.Hash.Key, object.Hash.Pair)),
+to_defer: std.ArrayList([]ast.Statement),
 
 pub fn init(allocator: std.mem.Allocator) Environment {
     return .{
@@ -29,6 +30,7 @@ pub fn init(allocator: std.mem.Allocator) Environment {
         .allocated_str = std.ArrayList([]u8).init(allocator),
         .allocated_enum = std.ArrayList(std.StringHashMap(object.Enum.Tag)).init(allocator),
         .allocated_hash = std.ArrayList(std.AutoHashMap(object.Hash.Key, object.Hash.Pair)).init(allocator),
+        .to_defer = std.ArrayList([]ast.Statement).init(allocator),
     };
 }
 
@@ -47,6 +49,10 @@ pub fn newTemporaryScope(outer: *Environment, keys: []const []const u8) Environm
 
 /// this function deallocates ALL OBJECTS from a given Environment; return from this Environment sucks HAHAHAH
 pub fn deinit(self: *Environment) void {
+    for (self.to_defer.items) |stmtx| {
+        _ = self.evalBlockStatement(stmtx) catch null;
+    }
+
     for (self.allocated_str.items) |item| {
         self.allocator.free(item);
     }
@@ -59,6 +65,7 @@ pub fn deinit(self: *Environment) void {
     //     item.deinit();
     // }
 
+    self.to_defer.deinit();
     self.store.deinit();
     self.is_const.deinit();
     self.allocated_str.deinit();
@@ -68,17 +75,30 @@ pub fn deinit(self: *Environment) void {
 }
 
 pub fn get(self: *Environment, name: []const u8) ?object.Object {
-    return self.store.get(name);
+    // return self.store.get(name);
+    return self.store.get(name) orelse if (self.outer) |outer| outer.get(name) else null;
 }
 
 pub fn getPtr(self: *Environment, name: []const u8) ?*object.Object {
-    return self.store.getPtr(name);
+    // return self.store.getPtr(name);
+    return self.store.getPtr(name) orelse if (self.outer) |outer| outer.getPtr(name) else null;
+}
+
+// BUG: var i = 0 var i = 2 nao deveria ser valido
+pub fn setCheck(self: *Environment, name: []const u8) !void {
+    // verifica se o env outer possui var com valor const
+    if (self.outer) |outer_env| {
+        const is_const = outer_env.is_const.get(name) orelse false;
+        if (is_const) return error.CanNotReassingConstVariables;
+        try outer_env.setCheck(name);
+    }
+
+    const is_const = self.is_const.get(name) orelse false;
+    if (is_const) return error.CanNotReassingConstVariables;
 }
 
 pub fn set(self: *Environment, name: []const u8, obj: object.Object) !object.Object {
-    if (self.is_const.get(name)) |is_const| {
-        if (is_const) return error.CanNotReassingConstVariables;
-    }
+    try self.setCheck(name);
     try self.store.put(name, obj);
     try self.is_const.put(name, false);
     return obj;
@@ -90,7 +110,7 @@ pub fn dropScopeVar(self: *Environment, name: []const u8) void {
 }
 
 pub fn setConst(self: *Environment, name: []const u8, obj: object.Object) !object.Object {
-    if (self.is_const.get(name)) |_| return error.CanNotReassingConstVariables;
+    try self.setCheck(name);
     try self.store.put(name, obj);
     try self.is_const.put(name, true);
     return obj;
@@ -188,6 +208,11 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
 
         .statement => |stmt| {
             return switch (stmt) {
+                .defer_statement => |defer_stmt| blk: {
+                    try env.to_defer.append(defer_stmt.body.statements);
+                    break :blk object.NULL;
+                },
+
                 .program_statement => |program| try env.evalProgram(program.statements.items),
 
                 .block_statement => |block| try env.evalBlockStatement(block.statements),
@@ -219,66 +244,92 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
                     break :blk try env.setConst(func_stmt.name.value, val);
                 },
 
-                .return_statement => |ret_stmt| ret_blk: {
-                    const stmt_ = try env.eval(.{ .expression = ret_stmt.value });
+                .return_statement => |*ret_stmt| try env.evalReturn(ret_stmt),
 
-                    // this approach sucks !!! I KNOW
-                    const value: object.Object = switch (stmt_) {
-                        else => stmt_,
-
-                        .string => |str| blk: {
-                            var copy_str = try env.outer.?.allocator.alloc(u8, str.value.len);
-                            @memcpy(copy_str, @constCast(str.value));
-                            try env.outer.?.allocated_str.append(copy_str);
-                            break :blk .{ .string = .{ .value = copy_str } };
-                        },
-
-                        .array => |arr| blk: {
-                            var copy_elemens = try env.outer.?.allocator.alloc(object.Object, arr.elements.len);
-                            @memcpy(copy_elemens, arr.elements);
-                            try env.outer.?.allocated_obj.append(copy_elemens);
-                            break :blk .{ .array = .{ .elements = copy_elemens } };
-                        },
-                    };
-
-                    break :ret_blk .{ .@"return" = .{ .value = &value } };
-                },
+                .break_statement => |*break_stmt| try env.evalBreak(break_stmt),
             };
         },
     }
+}
+
+fn evalReturn(env: *Environment, ret_stmt: *const ast.ReturnStatement) !object.Object {
+    const stmt_ = try env.eval(.{ .expression = ret_stmt.value });
+
+    // this approach sucks !!! I KNOW
+    const value: object.Object = switch (stmt_) {
+        else => stmt_,
+
+        .string => |str| blk: {
+            var copy_str = try env.outer.?.allocator.alloc(u8, str.value.len);
+            @memcpy(copy_str, @constCast(str.value));
+            try env.outer.?.allocated_str.append(copy_str);
+            break :blk .{ .string = .{ .value = copy_str } };
+        },
+
+        .array => |arr| blk: {
+            var copy_elemens = try env.outer.?.allocator.alloc(object.Object, arr.elements.len);
+            @memcpy(copy_elemens, arr.elements);
+            try env.outer.?.allocated_obj.append(copy_elemens);
+            break :blk .{ .array = .{ .elements = copy_elemens } };
+        },
+    };
+
+    return .{ .@"return" = .{ .value = &value } };
+}
+
+fn evalBreak(env: *Environment, ret_stmt: *const ast.BreakStatement) !object.Object {
+    const stmt_ = try env.eval(.{ .expression = ret_stmt.value });
+
+    // this approach sucks !!! I KNOW
+    const value: object.Object = switch (stmt_) {
+        else => stmt_,
+
+        .string => |str| blk: {
+            var copy_str = try env.outer.?.allocator.alloc(u8, str.value.len);
+            @memcpy(copy_str, @constCast(str.value));
+            try env.outer.?.allocated_str.append(copy_str);
+            break :blk .{ .string = .{ .value = copy_str } };
+        },
+
+        .array => |arr| blk: {
+            var copy_elemens = try env.outer.?.allocator.alloc(object.Object, arr.elements.len);
+            @memcpy(copy_elemens, arr.elements);
+            try env.outer.?.allocated_obj.append(copy_elemens);
+            break :blk .{ .array = .{ .elements = copy_elemens } };
+        },
+    };
+
+    return .{ .@"break" = .{ .value = &value } };
 }
 
 // sometimes i do not know how to write beautiful code ...
 fn evalAssignment(env: *Environment, assig: ast.AssignmentExpression) !object.Object {
     switch (assig.name.*) {
         .identifier => |ident| {
+            // const is_const = env.is_const.get(ident.value) orelse false;
+            // if (is_const) return error.CanNotReassingConstVariables;
+
+            var current = env.getPtr(ident.value) orelse return error.VariableNotDeclaredERR;
             var evaluated = try env.eval(.{ .expression = assig.value.* });
 
             switch (assig.token.type) {
                 .@"+=", .@"-=", .@"*=", .@"/=" => {
-                    if (env.get(ident.value)) |*current| {
-                        var result = try env.evalInfixExpression(assig.operator, @constCast(current), &evaluated);
-                        _ = try env.set(ident.value, result);
-                        return object.NULL;
-                    }
-                    return error.VariableNotDeclared;
+                    var result = try env.evalInfixExpression(assig.operator, current, &evaluated);
+                    _ = try env.set(ident.value, result);
                 },
 
                 .@"=" => {
-                    if (env.get(ident.value)) |_| {
-                        _ = try env.set(ident.value, evaluated);
-                        return object.NULL;
-                    }
-                    return error.VariableNotDeclared;
+                    _ = try env.set(ident.value, evaluated);
                 },
 
-                .@":=" => {
-                    _ = try env.setConst(ident.value, evaluated);
-                    return object.NULL;
-                },
+                // .@":=" => {
+                //     _ = try env.setConst(ident.value, evaluated);
+                // },
 
                 else => return error.UnknowOperator,
             }
+
+            return object.NULL;
         },
 
         .index_expression => |exp| {
@@ -439,10 +490,15 @@ fn evalProgram(env: *Environment, stmts: []ast.Statement) anyerror!object.Object
 
 fn evalBlockStatement(env: *Environment, stmts: []ast.Statement) anyerror!object.Object {
     var result: object.Object = undefined;
+
+    var new_env = env.newEncloseEnv();
+    defer new_env.deinit();
+
     for (stmts) |statement| {
-        result = try env.eval(.{ .statement = statement });
+        result = try new_env.eval(.{ .statement = statement });
         if (result == .@"return") return result;
     }
+
     return result;
 }
 
@@ -635,8 +691,21 @@ fn evalInfixExpression(env: *Environment, op: []const u8, left: *object.Object, 
     if (right.objType() == .boolean and left.objType() == .boolean) {
         return if (eql(u8, op, "=="))
             .{ .boolean = .{ .value = left.boolean.value == right.boolean.value } }
+        else if (eql(u8, op, "or"))
+            .{ .boolean = .{ .value = left.boolean.value or right.boolean.value } }
+        else if (eql(u8, op, "and"))
+            .{ .boolean = .{ .value = left.boolean.value and right.boolean.value } }
         else if (eql(u8, op, "!="))
             .{ .boolean = .{ .value = left.boolean.value != right.boolean.value } }
+        else
+            object.NULL;
+    }
+
+    if (right.objType() == .null or left.objType() == .null) {
+        return if (eql(u8, op, "=="))
+            .{ .boolean = .{ .value = left.objType() == right.objType() } }
+        else if (eql(u8, op, "!="))
+            .{ .boolean = .{ .value = left.objType() != right.objType() } }
         else
             object.NULL;
     }
@@ -717,23 +786,14 @@ fn evalInfixExpression(env: *Environment, op: []const u8, left: *object.Object, 
 }
 
 fn evalForLoopExpression(env: *Environment, fl: *const ast.ForLoopExpression) !object.Object {
-    const rt = object.Boolean{ .value = true };
-
     while (true) {
         var condition = try env.eval(.{ .expression = fl.condition.* });
+        if (condition != .boolean) return object.NULL;
+        if (!condition.boolean.value) return object.NULL;
 
-        if (condition != .boolean) condition = .{ .boolean = .{ .value = false } };
-
-        if (condition.boolean.value) {
-            var rt2 = try env.eval(
-                .{ .statement = .{ .block_statement = fl.consequence } },
-            );
-
-            if (rt2.objType() == .@"return") return rt2;
-        } else break;
+        var rt2 = try env.evalBlockStatement(fl.consequence.statements);
+        if (rt2.objType() == .@"return") return rt2;
     }
-
-    return .{ .boolean = rt };
 }
 
 fn evalForLoopRangeExpression(env: *Environment, fl: *const ast.ForLoopRangeExpression) !object.Object {
@@ -757,18 +817,29 @@ fn evalForLoopRangeExpression(env: *Environment, fl: *const ast.ForLoopRangeExpr
     var ok = info.ok;
 
     while (ok) {
-        if (!(fl.ident.len == 1 and fl.ident[0] == '_'))
-            _ = try env.set(fl.ident, element);
+        var new_env = env.newEncloseEnv();
+
+        if (!(fl.ident.len == 1 and fl.ident[0] == '_')) {
+            if (env.get(fl.ident)) |_| {
+                return error.LoopIndexInAmbiguous;
+            }
+            _ = try new_env.setConst(fl.ident, element);
+        }
 
         if (fl.index) |index| if (!(index.len == 1 and index[0] == '_')) {
-            _ = try env.set(index, idx);
+            if (env.get(index)) |_| {
+                return error.LoopIndexInAmbiguous;
+            }
+            _ = try new_env.setConst(index, idx);
         };
 
-        var block_eval = try env.eval(.{ .statement = .{ .block_statement = fl.body } });
+        // var block_eval = try env.eval(.{ .statement = .{ .block_statement = fl.body } });
+        var block_eval = try new_env.evalBlockStatement(fl.body.statements);
 
         // drop the index and val
-        env.dropScopeVar(fl.ident);
-        if (fl.index) |index| env.dropScopeVar(index);
+        // new_env.dropScopeVar(fl.ident);
+        // if (fl.index) |index| new_env.dropScopeVar(index);
+        new_env.deinit();
 
         if (block_eval.objType() == .@"return") return block_eval;
 

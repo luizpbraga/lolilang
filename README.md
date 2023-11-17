@@ -22,7 +22,7 @@ var t = 3
 
 #### Function
 
-```go
+```js
 // functions (sometimes it does not work HEHE)
 var foo = fn(x, y) {
     var hello = "Hello Loli"
@@ -34,25 +34,24 @@ print( foo(1,2) )
 
 #### Builtin Methods
 
-```go
+```js
 var my_name_is = "Eminem"
 var yoyo = {1, 2, 3, 4}
-print( my_name_is.len != yoyo.len )
-
+println( my_name_is.len != yoyo.len )
 ```
 
 #### Arrays
 
-```go
+```js
 // we have arrays
-var v = { 1, true, "2" , false, 4 }
-v[0] += 1
-const v_size = v.len
+var v = [1, true, "2", false, 4];
+v[0] += 1;
+const v_size = v.len;
 ```
 
 #### Hashmap
 
-```go
+```js
 // hashmaps
 const map = {
     1: "a",
@@ -66,15 +65,15 @@ print( map["list"], map[true], map[1] )
 
 #### Loops
 
-```go
+```js
 // loops
 var i = 0
 for i < 100 {
-    print(i)
+    println(i)
     i+=1
 }
 
-const list = {1,2,3,4}
+const list = 1..5
 for idx, item in list {
     const str = idx + " " + item
     print(str)
@@ -83,27 +82,27 @@ for idx, item in list {
 
 #### Switch
 
-```go
+```js
 // switch
 const y = 10
 var x = switch y {
-    1 => { 0 },
-    2 => { 1 },
+    1 => { 0 }
+
+    2 => { 1 }
+
     else => { -1 }
 }
 ```
 
 #### to implement:
 
-    1. real numbers
-    2. ranges
-    4. enum
-    5. struct
-    6. scopes ({ ... })
-    7. erros KKKKK
+    1. enum
+    2. struct
+    3. scopes ({ ... })
+    4. erros KKKKK
 
 #### to fix:
 
     1. return strings from function
     2. hashmap sometimes returns null
-    3. can't use global variables in for range loops
+    3. can't use global variables inside local blocks loops

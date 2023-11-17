@@ -7,6 +7,7 @@ const std = @import("std");
 
 pub const keywords = std.ComptimeStringMap(TokenType, .{
     .{ "in", .in },
+    .{ "defer", .@"defer" },
     .{ "continue", .@"continue" },
     .{ "break", .@"break" },
     .{ "func", .func },
@@ -14,14 +15,15 @@ pub const keywords = std.ComptimeStringMap(TokenType, .{
     .{ "for", .@"for" },
     .{ "switch", .@"switch" },
     .{ "if", .@"if" },
-    .{ "or", .@"or" },
     .{ "true", .true },
-    .{ "and", .@"and" },
-    .{ "var", .@"var" },
     .{ "false", .false },
     .{ "else", .@"else" },
+    .{ "and", .@"and" },
+    .{ "or", .@"or" },
+    .{ "var", .@"var" },
     .{ "const", .@"const" },
     .{ "return", .@"return" },
+    .{ "null", .null },
 });
 
 pub const TokenType = enum {
@@ -33,6 +35,7 @@ pub const TokenType = enum {
     float,
     int, // 123678
     string, // "fuck u"
+    null,
 
     // operators
     @"=",
@@ -90,6 +93,7 @@ pub const TokenType = enum {
     @"and",
     @"continue",
     @"break",
+    @"defer",
 };
 
 pub fn lookupIdentfier(ident: []const u8) TokenType {

@@ -9,6 +9,10 @@ arena: std.heap.ArenaAllocator,
 infix_parse_fns: std.AutoHashMap(Token.TokenType, InfixParseFn),
 prefix_parse_fns: std.AutoHashMap(Token.TokenType, PrefixParseFn),
 
+const ParsinError = struct {
+    error_msg: []const u8,
+};
+
 // TODO: remove null and implement parsing error msg
 const PrefixParseFn = *const fn (*Parser) anyerror!ast.Expression;
 const InfixParseFn = *const fn (*Parser, *ast.Expression) anyerror!ast.Expression;
@@ -25,6 +29,7 @@ const ParseError = error{
 
 pub const Precedence = enum {
     lower,
+    cond,
     assigne,
     equals,
     lessgreater,
@@ -36,11 +41,13 @@ pub const Precedence = enum {
 
     pub fn peek(token_type: Token.TokenType) Precedence {
         return switch (token_type) {
+            .@"or", .@"and" => .cond,
             .@"==", .@"!=" => .equals,
             .@">", .@"<" => .lessgreater,
             .@"+", .@"-" => .sum,
             .@"/", .@"*" => .product,
             .@"(" => .call,
+            .@"!" => .prefix,
             .@"[", .@".", .@".." => .index,
             .@"=", .@":=", .@"+=", .@"-=", .@"*=", .@"/=" => .assigne,
             else => .lower,
@@ -75,6 +82,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Parser {
     try parser.registerPrefix(.float, parseFloatLiteral);
     try parser.registerPrefix(.true, parseBoolean);
     try parser.registerPrefix(.false, parseBoolean);
+    try parser.registerPrefix(.null, parseNull);
     try parser.registerPrefix(.@"[", parseArrayLiteral);
     try parser.registerPrefix(.@"{", parseHashLiteral);
     try parser.registerPrefix(.func, parseFunctionLiteral);
@@ -98,6 +106,8 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Parser {
     try parser.registerInfix(.@"==", parseInfixExpression);
     try parser.registerInfix(.@"!=", parseInfixExpression);
     try parser.registerInfix(.@"*", parseInfixExpression);
+    try parser.registerInfix(.@"or", parseInfixExpression);
+    try parser.registerInfix(.@"and", parseInfixExpression);
     try parser.registerInfix(.@"/", parseInfixExpression);
     try parser.registerInfix(.@">", parseInfixExpression);
     try parser.registerInfix(.@"<", parseInfixExpression);
@@ -173,7 +183,7 @@ fn parseReturnStatement(self: *Parser) anyerror!ast.Statement {
 
     self.nextToken();
 
-    return_stmt.value = (try self.parseExpression(Precedence.lower)).*;
+    return_stmt.value = (try self.parseExpression(.lower)).*;
 
     if (self.peekTokenIs(.@";")) {
         self.nextToken();
@@ -182,21 +192,21 @@ fn parseReturnStatement(self: *Parser) anyerror!ast.Statement {
     return .{ .return_statement = return_stmt };
 }
 
-fn parseBreakStatement(self: *Parser) anyerror!ast.ReturnStatement {
-    var stmt = ast.ReturnStatement{
+fn parseBreakStatement(self: *Parser) anyerror!ast.Statement {
+    var break_stmt = ast.BreakStatement{
         .token = self.cur_token,
         .value = undefined,
     };
 
     self.nextToken();
 
-    stmt.value = (try self.parseExpression(Precedence.lower)).*;
+    break_stmt.value = (try self.parseExpression(.lower)).*;
 
     if (self.peekTokenIs(.@";")) {
         self.nextToken();
     }
 
-    return stmt;
+    return .{ .break_statement = break_stmt };
 }
 
 fn parseAssignmentExpression(self: *Parser, name: *ast.Expression) anyerror!ast.Expression {
@@ -224,6 +234,21 @@ fn parseAssignmentExpression(self: *Parser, name: *ast.Expression) anyerror!ast.
     stmt.value = try self.parseExpression(.lower);
 
     return .{ .assignment_expression = stmt };
+}
+
+pub fn parseDeferStatement(self: *Parser) anyerror!ast.Statement {
+    var defer_stmt = ast.DeferStatement{
+        .token = self.cur_token,
+        .body = undefined,
+    };
+
+    if (!self.expectPeek(.@"{")) {
+        return error.ExpectSomeConditionOrIdentifier;
+    }
+
+    defer_stmt.body = try self.parseBlockStatement();
+
+    return .{ .defer_statement = defer_stmt };
 }
 
 fn parseConstStatement(self: *Parser) anyerror!ast.Statement {
@@ -398,7 +423,11 @@ fn parseStatement(self: *Parser) !ast.Statement {
 
         .@"return" => try self.parseReturnStatement(),
 
+        .@"break" => try self.parseBreakStatement(),
+
         .func => try self.parseFunctionStatement(),
+
+        .@"defer" => try self.parseDeferStatement(),
 
         else => try self.parseExpressionStatement(),
     };
@@ -489,6 +518,10 @@ fn parseIntegerLiteral(self: *Parser) anyerror!ast.Expression {
 
 fn parseBoolean(self: *Parser) anyerror!ast.Expression {
     return .{ .boolean = .{ .token = self.cur_token, .value = self.curTokenIs(.true) } };
+}
+
+fn parseNull(_: *Parser) anyerror!ast.Expression {
+    return .void;
 }
 
 //  BUG
@@ -1049,45 +1082,3 @@ pub fn parseForLoop(self: *Parser) anyerror!ast.Expression {
 
     return self.parseForLoopCondition(token, condition_or_ident);
 }
-
-// // for range expression paeser: make it  a function
-// if (fl.condition.* == .identifier and (self.expectPeek(.in) or self.expectPeek(.@","))) {
-//     var flr = ast.ForLoopRangeExpression{
-//         .token = fl.token,
-//         .ident = fl.condition.identifier.value,
-//         .body = undefined,
-//         .iterable = undefined,
-//     };
-//
-//     std.debug.print("{s}\n", .{self.cur_token.literal});
-//     if (self.expectPeek(.in)) {
-//         std.debug.print("ok\n", .{});
-//         const exp = try self.parseExpression(.lower);
-//         flr.iterable = exp;
-//         self.nextToken();
-//     }
-//
-//     if (self.expectPeek(.@",")) {
-//         const index = try self.parseIdentifier();
-//         flr.index = index.identifier.value;
-//
-//         if (self.cur_token.type == .in) {
-//             self.nextToken();
-//             const exp = try self.parseExpression(.lower);
-//             flr.iterable = exp;
-//         }
-//     }
-//
-//     std.debug.print("{s}\n", .{self.cur_token.literal});
-//     if (!self.expectPeek(.@"{")) return error.MissingBrance1;
-//
-//     flr.body = try self.parseBlockStatement();
-//
-//     return .{ .forloop_range_expression = flr };
-// }
-//
-// if (!self.expectPeek(.@"{")) return error.MissingBrance2;
-//
-// fl.consequence = try self.parseBlockStatement();
-//
-// return .{ .forloop_expression = fl };
