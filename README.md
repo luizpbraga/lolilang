@@ -28,7 +28,7 @@ const PI = 3.14
 
 func readFileExample(file_path) {
     const txt = readFile(file_path)
-    defer { fileClose(txt) }
+    defer { closeFile(txt) }
 
     var sum = 0
     for ch, idx in txt {
