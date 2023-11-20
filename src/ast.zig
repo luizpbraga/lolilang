@@ -58,6 +58,7 @@ pub const Expression = union(enum) {
     identifier: Identifier,
     forloop_expression: ForLoopExpression,
     forloop_range_expression: ForLoopRangeExpression,
+    multi_forloop_range_expression: MultiForLoopRangeExpression,
     switch_expression: SwitchExpression,
     function_literal: FunctionLiteral,
     assignment_expression: AssignmentExpression,
@@ -374,7 +375,7 @@ pub const CallExpression = struct {
     function: *Expression, // Identifier or FunctionLiteral
     arguments: []Expression,
 
-    pub fn tokenLiteral(self: *const CallExpression) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -384,7 +385,7 @@ pub const MethodExpression = struct {
     caller: *Expression, //
     method: Identifier,
 
-    pub fn tokenLiteral(self: *const MethodExpression) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -397,7 +398,23 @@ pub const ForLoopExpression = struct {
     consequence: BlockStatement,
     mode: ForLoopMode = .infinity,
 
-    pub fn tokenLiteral(self: *const ForLoopExpression) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const MultiForLoopRangeExpression = struct {
+    pub const LoopVars = struct {
+        ident: []const u8,
+        index: ?[]const u8 = null,
+        iterable: *Expression,
+    };
+
+    loops: []LoopVars,
+    body: BlockStatement,
+    token: Token,
+
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -409,7 +426,7 @@ pub const ForLoopRangeExpression = struct {
     iterable: *Expression,
     body: BlockStatement,
 
-    pub fn tokenLiteral(self: *const ForLoopRangeExpression) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
@@ -425,7 +442,7 @@ pub const SwitchExpression = struct {
     value: *Expression, // swtich (value)
     choices: []SwitchChoices,
 
-    pub fn tokenLiteral(self: *const SwitchExpression) []const u8 {
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };

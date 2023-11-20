@@ -175,6 +175,8 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
 
                 .forloop_range_expression => |*flr| try env.evalForLoopRangeExpression(flr),
 
+                .multi_forloop_range_expression => @panic(""),
+
                 .prefix_expression => |pre| blk: {
                     const right = try env.eval(.{ .expression = pre.right.* });
                     break :blk right.evalPrefixExpression(pre.operator);
@@ -260,14 +262,14 @@ fn evalReturn(env: *Environment, ret_stmt: *const ast.ReturnStatement) !object.O
         else => stmt_,
 
         .string => |str| blk: {
-            var copy_str = try env.outer.?.allocator.alloc(u8, str.value.len);
+            const copy_str = try env.outer.?.allocator.alloc(u8, str.value.len);
             @memcpy(copy_str, @constCast(str.value));
             try env.outer.?.allocated_str.append(copy_str);
             break :blk .{ .string = .{ .value = copy_str } };
         },
 
         .array => |arr| blk: {
-            var copy_elemens = try env.outer.?.allocator.alloc(object.Object, arr.elements.len);
+            const copy_elemens = try env.outer.?.allocator.alloc(object.Object, arr.elements.len);
             @memcpy(copy_elemens, arr.elements);
             try env.outer.?.allocated_obj.append(copy_elemens);
             break :blk .{ .array = .{ .elements = copy_elemens } };
@@ -285,14 +287,14 @@ fn evalBreak(env: *Environment, ret_stmt: *const ast.BreakStatement) !object.Obj
         else => stmt_,
 
         .string => |str| blk: {
-            var copy_str = try env.outer.?.allocator.alloc(u8, str.value.len);
+            const copy_str = try env.outer.?.allocator.alloc(u8, str.value.len);
             @memcpy(copy_str, @constCast(str.value));
             try env.outer.?.allocated_str.append(copy_str);
             break :blk .{ .string = .{ .value = copy_str } };
         },
 
         .array => |arr| blk: {
-            var copy_elemens = try env.outer.?.allocator.alloc(object.Object, arr.elements.len);
+            const copy_elemens = try env.outer.?.allocator.alloc(object.Object, arr.elements.len);
             @memcpy(copy_elemens, arr.elements);
             try env.outer.?.allocated_obj.append(copy_elemens);
             break :blk .{ .array = .{ .elements = copy_elemens } };
@@ -309,12 +311,12 @@ fn evalAssignment(env: *Environment, assig: ast.AssignmentExpression) !object.Ob
             // const is_const = env.is_const.get(ident.value) orelse false;
             // if (is_const) return error.CanNotReassingConstVariables;
 
-            var current = env.getPtr(ident.value) orelse return error.VariableNotDeclaredERR;
+            const current = env.getPtr(ident.value) orelse return error.VariableNotDeclaredERR;
             var evaluated = try env.eval(.{ .expression = assig.value.* });
 
             switch (assig.token.type) {
                 .@"+=", .@"-=", .@"*=", .@"/=" => {
-                    var result = try env.evalInfixExpression(assig.operator, current, &evaluated);
+                    const result = try env.evalInfixExpression(assig.operator, current, &evaluated);
                     _ = try env.set(ident.value, result);
                 },
 
@@ -343,14 +345,14 @@ fn evalAssignment(env: *Environment, assig: ast.AssignmentExpression) !object.Ob
                     const uindex = @as(usize, @intCast(int_index));
                     switch (current.array.elements[uindex]) {
                         .integer => {
-                            var element = &current.array.elements[uindex];
+                            const element = &current.array.elements[uindex];
                             switch (assig.token.type) {
                                 .@"=", .@"+=", .@"-=", .@"*=", .@"/=" => _ = try env.evalInfixExpression(assig.token.literal, element, @constCast(&evaluated)),
                                 else => return error.UnknowOperator,
                             }
                         },
                         .string => {
-                            var element = &current.array.elements[uindex];
+                            const element = &current.array.elements[uindex];
                             switch (assig.token.type) {
                                 .@"=", .@"+=" => _ = try env.evalInfixExpression(assig.token.literal, element, @constCast(&evaluated)),
                                 else => return error.UnknowOperator,
@@ -414,7 +416,7 @@ fn evalHashExpression(
         key_value[1] = try env.eval(.{ .expression = hash.value_ptr.*.* });
 
         var key = key_value[0];
-        var val = key_value[1];
+        const val = key_value[1];
 
         const hash_key = try object.Hash.Key.init(&key);
         const hash_pair: object.Hash.Pair = .{ .key = key, .value = val };
@@ -466,11 +468,11 @@ fn evalExpression(env: *Environment, exps: []ast.Expression) ![]object.Object {
     errdefer result.deinit();
 
     for (exps) |e| {
-        var evaluated = try env.eval(.{ .expression = e });
+        const evaluated = try env.eval(.{ .expression = e });
         try result.append(evaluated);
     }
 
-    var result_owned = try result.toOwnedSlice();
+    const result_owned = try result.toOwnedSlice();
     try env.allocated_obj.append(result_owned);
 
     return result_owned;
@@ -713,11 +715,11 @@ fn evalInfixExpression(env: *Environment, op: []const u8, left: *object.Object, 
     // string string op
     if (right.objType() == .string and left.objType() == .string) {
         return if (eql(u8, op, "+")) b: {
-            var new_string = try std.fmt.allocPrint(env.allocator, "{s}{s}", .{ left.string.value, right.string.value });
+            const new_string = try std.fmt.allocPrint(env.allocator, "{s}{s}", .{ left.string.value, right.string.value });
             try env.allocated_str.append(new_string);
             break :b .{ .string = .{ .value = new_string } };
         } else if (eql(u8, op, "+=")) b: {
-            var new_string = try std.fmt.allocPrint(env.allocator, "{s}{s}", .{ left.string.value, right.string.value });
+            const new_string = try std.fmt.allocPrint(env.allocator, "{s}{s}", .{ left.string.value, right.string.value });
             try env.allocated_str.append(new_string);
             left.string.value = new_string;
             break :b left.*;
@@ -726,11 +728,11 @@ fn evalInfixExpression(env: *Environment, op: []const u8, left: *object.Object, 
 
     if (right.objType() == .integer and left.objType() == .string) {
         return if (eql(u8, op, "+")) b: {
-            var new_string = try std.fmt.allocPrint(env.allocator, "{s}{any}", .{ left.string.value, right.integer.value });
+            const new_string = try std.fmt.allocPrint(env.allocator, "{s}{any}", .{ left.string.value, right.integer.value });
             try env.allocated_str.append(new_string);
             break :b .{ .string = .{ .value = new_string } };
         } else if (eql(u8, op, "+=")) b: {
-            var new_string = try std.fmt.allocPrint(env.allocator, "{s}{any}", .{ left.string.value, right.integer.value });
+            const new_string = try std.fmt.allocPrint(env.allocator, "{s}{any}", .{ left.string.value, right.integer.value });
             try env.allocated_str.append(new_string);
             left.string.value = new_string;
             break :b left.*;
@@ -739,11 +741,11 @@ fn evalInfixExpression(env: *Environment, op: []const u8, left: *object.Object, 
 
     if (right.objType() == .string and left.objType() == .integer) {
         return if (eql(u8, op, "+")) b: {
-            var new_string = try std.fmt.allocPrint(env.allocator, "{any}{s}", .{ left.integer.value, right.string.value });
+            const new_string = try std.fmt.allocPrint(env.allocator, "{any}{s}", .{ left.integer.value, right.string.value });
             try env.allocated_str.append(new_string);
             break :b .{ .string = .{ .value = new_string } };
         } else if (eql(u8, op, "+=")) b: {
-            var new_string = try std.fmt.allocPrint(env.allocator, "{any}{s}", .{ left.integer.value, right.string.value });
+            const new_string = try std.fmt.allocPrint(env.allocator, "{any}{s}", .{ left.integer.value, right.string.value });
             try env.allocated_str.append(new_string);
             left.* = .{ .string = .{ .value = new_string } };
             break :b left.*;
@@ -787,7 +789,7 @@ fn evalInfixExpression(env: *Environment, op: []const u8, left: *object.Object, 
 
 fn evalForLoopExpression(env: *Environment, fl: *const ast.ForLoopExpression) !object.Object {
     while (true) {
-        var condition = try env.eval(.{ .expression = fl.condition.* });
+        const condition = try env.eval(.{ .expression = fl.condition.* });
         if (condition != .boolean) return object.NULL;
         if (!condition.boolean.value) return object.NULL;
 

@@ -56,7 +56,7 @@ pub const Precedence = enum {
 };
 
 pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Parser {
-    var arena = std.heap.ArenaAllocator.init(child_alloc);
+    const arena = std.heap.ArenaAllocator.init(child_alloc);
 
     var parser = Parser{
         .arena = arena,
@@ -315,7 +315,7 @@ fn parseVarBlockStatement(self: *Parser, tk: Token) anyerror!ast.VarBlockStateme
 
         const exp = try self.parseExpression(.lower);
 
-        var var_stmt = ast.VarStatement{
+        const var_stmt = ast.VarStatement{
             .token = stmt.token,
             .name = ident.identifier,
             .value = exp.*,
@@ -326,7 +326,7 @@ fn parseVarBlockStatement(self: *Parser, tk: Token) anyerror!ast.VarBlockStateme
         self.nextToken();
     }
 
-    var vars_owned = try vars.toOwnedSlice();
+    const vars_owned = try vars.toOwnedSlice();
 
     stmt.vars_decl = vars_owned;
 
@@ -434,7 +434,7 @@ fn parseStatement(self: *Parser) !ast.Statement {
 }
 
 fn parseExpressionStatement(self: *Parser) anyerror!ast.Statement {
-    var exp_stmt = ast.ExpressionStatement{
+    const exp_stmt = ast.ExpressionStatement{
         .token = self.cur_token,
         .expression = try self.parseExpression(.lower),
     };
@@ -454,7 +454,7 @@ fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
 
     const allocator = self.arena.allocator();
 
-    var left_exp = try allocator.create(ast.Expression);
+    const left_exp = try allocator.create(ast.Expression);
     errdefer allocator.destroy(left_exp);
 
     left_exp.* = try prefixFn(self);
@@ -463,7 +463,7 @@ fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
         const infixFn = self.infix_parse_fns.get(self.peek_token.type) orelse return left_exp;
         self.nextToken();
 
-        var old_left_exp = try allocator.create(ast.Expression);
+        const old_left_exp = try allocator.create(ast.Expression);
         errdefer allocator.destroy(old_left_exp);
 
         old_left_exp.* = left_exp.*;
@@ -604,7 +604,7 @@ fn parseBlockStatement(self: *Parser) anyerror!ast.BlockStatement {
     self.nextToken();
 
     while (!self.curTokenIs(.@"}") and !self.curTokenIs(.eof)) {
-        var stmt = try self.parseStatement();
+        const stmt = try self.parseStatement();
         try stmts.append(stmt);
         self.nextToken();
     }
@@ -637,7 +637,7 @@ fn parseEnumLiteral(self: *Parser) anyerror!ast.Expression {
 
         if (gop.found_existing) return error.DuplicatedTag;
 
-        var int = try allocator.create(ast.Expression);
+        const int = try allocator.create(ast.Expression);
 
         int.* = .{
             .integer_literal = .{
@@ -711,7 +711,7 @@ fn parseFunctionParameters(self: *Parser) anyerror![]ast.Identifier {
 
     self.nextToken();
 
-    var ident = ast.Identifier{
+    const ident = ast.Identifier{
         .token = self.cur_token,
         .value = self.cur_token.literal,
     };
@@ -722,7 +722,7 @@ fn parseFunctionParameters(self: *Parser) anyerror![]ast.Identifier {
         self.nextToken();
         self.nextToken();
 
-        var ident2 = ast.Identifier{
+        const ident2 = ast.Identifier{
             .token = self.cur_token,
             .value = self.cur_token.literal,
         };
@@ -858,7 +858,7 @@ pub fn parseHashLiteral(self: *Parser) anyerror!ast.Expression {
 
         self.nextToken();
 
-        var val = try self.parseExpression(.lower);
+        const val = try self.parseExpression(.lower);
 
         // BUG: memory leak
         try hash.put(key, val);
@@ -1021,6 +1021,62 @@ pub fn parseRangeExpression(self: *Parser, left: *ast.Expression) anyerror!ast.E
     return .{ .range = range };
 }
 
+pub fn parseMultiForLoopRange(self: *Parser, flr: ast.ForLoopRangeExpression) anyerror!ast.Expression {
+    const allocator = self.arena.allocator();
+
+    var mflr = ast.MultiForLoopRangeExpression{
+        .token = flr.token,
+        .body = undefined,
+        .loops = undefined,
+    };
+
+    var loops = try std.ArrayList(ast.MultiForLoopRangeExpression.LoopVars).initCapacity(allocator, 1);
+    errdefer loops.deinit();
+
+    try loops.append(.{ .index = flr.index, .ident = flr.ident, .iterable = flr.iterable });
+
+    self.nextToken();
+    while (!self.curTokenIs(.@"{")) {
+        const ident = try self.parseIdentifier();
+
+        var loop_elements = ast.MultiForLoopRangeExpression.LoopVars{
+            .ident = ident.identifier.value,
+            .iterable = undefined,
+        };
+
+        if (self.expectPeek(.@",")) {
+            self.nextToken();
+            const index = try self.parseIdentifier();
+            loop_elements.index = index.identifier.value;
+        }
+
+        if (!self.expectPeek(.in)) {
+            return error.ExpectTheInIdentifier;
+        }
+
+        self.nextToken();
+
+        loop_elements.iterable = try self.parseExpression(.lower);
+
+        self.nextToken();
+
+        try loops.append(loop_elements);
+
+        if (self.curTokenIs(.@";")) {
+            self.nextToken();
+            if (self.curTokenIs(.@"{")) break;
+        }
+    }
+
+    mflr.loops = try loops.toOwnedSlice();
+
+    if (!self.curTokenIs(.@"{")) return error.MissingBrance1;
+
+    mflr.body = try self.parseBlockStatement();
+
+    return .{ .multi_forloop_range_expression = mflr };
+}
+
 pub fn parseForLoopRange(self: *Parser, tk: Token, ident: *ast.Expression) anyerror!ast.Expression {
     var flr = ast.ForLoopRangeExpression{
         .token = tk,
@@ -1042,6 +1098,10 @@ pub fn parseForLoopRange(self: *Parser, tk: Token, ident: *ast.Expression) anyer
     self.nextToken();
 
     flr.iterable = try self.parseExpression(.lower);
+
+    if (self.expectPeek(.@";") and !self.peekTokenIs(.@"{")) {
+        return self.parseMultiForLoopRange(flr);
+    }
 
     if (!self.expectPeek(.@"{")) return error.MissingBrance1;
 

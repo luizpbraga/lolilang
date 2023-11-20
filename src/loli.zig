@@ -25,7 +25,7 @@ pub fn main() !void {
     var args = std.process.args();
     _ = args.next();
 
-    var file_name = if (args.next()) |file| file else return error.MissingFILENAME;
+    const file_name = if (args.next()) |file| file else return error.MissingFILENAME;
 
     const input: []const u8 = try std.fs.cwd().readFileAlloc(allocator, file_name, 1024);
     defer allocator.free(input);

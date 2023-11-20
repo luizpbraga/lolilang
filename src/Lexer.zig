@@ -16,7 +16,7 @@ pub fn init(input: []const u8) Self {
 }
 
 fn readNumber(self: *Self) struct { []const u8, bool } {
-    var position = self.position;
+    const position = self.position;
 
     while (isDigit(self.ch)) {
         self.readChar();
@@ -59,7 +59,7 @@ fn skipComments(self: *Self) void {
 }
 
 fn readIdentifier(self: *Self) ![]const u8 {
-    var position = self.position;
+    const position = self.position;
 
     if (isDigit(self.ch)) return error.InvelidDigitCharacterOnItendifierName;
 
@@ -92,7 +92,7 @@ pub fn nextToken(self: *Self) Token {
         return self.nextToken();
     }
 
-    var tok = switch (self.ch) {
+    const tok = switch (self.ch) {
         '=' => switch (self.peekChar()) {
             '=' => x: {
                 self.readChar();
