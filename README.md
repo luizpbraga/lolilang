@@ -22,22 +22,36 @@ var t = 3
 
 #### Function
 
-```js
+```go
 // functions (sometimes it does not work HEHE)
-var foo = fn(x, y) {
+const PI = 3.14
+
+func readFileExample(file_path) {
+    const txt = readFile(file_path)
+    defer { fileClose(txt) }
+
+    var sum = 0
+    for ch, idx in txt {
+        sum += 1
+        print(ch, idx)
+    }
+
+    return txt.len == sum
+}
+
+const foo = func(x, y) {
     var hello = "Hello Loli"
     return if x > y { x } else { hello }
 }
-// yes, Sr!!! The print function!!!
-print( foo(1,2) )
+
 ```
 
 #### Builtin Methods
 
 ```js
-var my_name_is = "Eminem"
-var yoyo = {1, 2, 3, 4}
-println( my_name_is.len != yoyo.len )
+var my_name_is = "Eminem";
+var yoyo = [1, 2, 3, 4];
+print(my_name_is.len != yoyo.len);
 ```
 
 #### Arrays
@@ -73,8 +87,8 @@ for i < 100 {
     i+=1
 }
 
-const list = 1..5
-for idx, item in list {
+const range = 1..5
+for idx, item in range {
     const str = idx + " " + item
     print(str)
 }
@@ -85,7 +99,7 @@ for idx, item in list {
 ```js
 // switch
 const y = 10
-var x = switch y {
+const x = switch y {
     1 => { 0 }
 
     2 => { 1 }
@@ -103,6 +117,5 @@ var x = switch y {
 
 #### to fix:
 
-    1. return strings from function
-    2. hashmap sometimes returns null
-    3. can't use global variables inside local blocks loops
+    + hashmap sometimes returns null
+    + memory leaks
