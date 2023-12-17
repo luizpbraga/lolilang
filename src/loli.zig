@@ -32,5 +32,5 @@ pub fn main() !void {
 
     try Loli.run(allocator, input);
 
-    std.debug.print("\n\t** loli gos brrr **\n", .{});
+    std.debug.print("\n\t** loli go brrr **\n", .{});
 }

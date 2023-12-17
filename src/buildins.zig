@@ -28,47 +28,39 @@ fn closeFileBuiltin(args: []const object.Object) object.Object {
 
 fn pprint(arg: *const object.Object) void {
     switch (arg.*) {
-        .null => |n| std.debug.print("{any}", .{n.value}),
+        .null => std.debug.print("null", .{}),
         .float => |n| std.debug.print("{d}", .{n.value}),
         .string => |n| std.debug.print("{s}", .{n.value}),
-        .integer => |n| std.debug.print("{}", .{n.value}),
-        .boolean => |n| std.debug.print("{}", .{n.value}),
+        inline .integer, .boolean => |n| std.debug.print("{}", .{n.value}),
+        // .boolean => |n| std.debug.print("{}", .{n.value}),
+        .array => |n| {
+            std.debug.print("[", .{});
+            for (n.elements, 0..) |*el, i| {
+                pprint(el);
+                if (i != n.elements.len - 1) std.debug.print(", ", .{});
+            }
+            std.debug.print("]", .{});
+        },
+        .hash => |n| {
+            var iter = n.pairs.valueIterator();
+            std.debug.print("{{", .{});
+            while (iter.next()) |pairs| {
+                pprint(&pairs.key);
+                std.debug.print(" : ", .{});
+                pprint(&pairs.value);
+                std.debug.print(", ", .{});
+            }
+            std.debug.print("}}", .{});
+        },
         else => std.debug.print("Not yet printable\n", .{}),
     }
 }
 
 fn printBuiltin(args: []const object.Object) object.Object {
-    for (args) |arg| {
-        switch (arg) {
-            .enum_tag => |n| std.debug.print(".{s} ", .{n.name}),
-            .null => |n| std.debug.print("{any} ", .{n.value}),
-            .float => |n| std.debug.print("{d} ", .{n.value}),
-            .string => |n| std.debug.print("{s} ", .{n.value}),
-            .integer => |n| std.debug.print("{} ", .{n.value}),
-            .boolean => |n| std.debug.print("{} ", .{n.value}),
-            .array => |n| {
-                std.debug.print("[ ", .{});
-
-                for (n.elements, 0..) |*el, i| {
-                    pprint(el);
-                    if (i < n.elements.len - 1) std.debug.print(", ", .{});
-                }
-
-                std.debug.print(" ]", .{});
-            },
-            // .hash => |h| {
-            //     var iter = h.pairs.iterator();
-            //     std.debug.print("{{ ", .{});
-            //     while (iter.next()) |entry| {
-            //         pprint(entry.key_ptr);
-            //         std.debug.print(":", .{});
-            //         pprint(entry.value_ptr.*);
-            //         std.debug.print(", ", .{});
-            //     }
-            //     std.debug.print("}}{c}", .{ch});
-            // },
-            else => std.debug.print("Not printable yet", .{}),
-        }
+    for (args, 0..) |*arg, i| {
+        pprint(arg);
+        if (i != args.len - 1)
+            std.debug.print(", ", .{});
     }
     std.debug.print("\n", .{});
 

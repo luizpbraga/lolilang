@@ -23,10 +23,10 @@ test "Parse RETURN statements: Size" {
         var p = try Parser.new(talloc, &lexer);
         defer p.deinit();
 
-        var program = try p.parseProgram();
+        const program = try p.parseProgram();
 
         try std.testing.expect(program.statements.items.len == 1);
-        var stmt = program.statements.items[0];
+        const stmt = program.statements.items[0];
 
         var val = stmt.return_statement.value.?;
 
@@ -59,7 +59,7 @@ test "Parse VAR statements" {
         const program = try p.parseProgram();
 
         try std.testing.expect(program.statements.items.len == 1);
-        var stmt = program.statements.items[0];
+        const stmt = program.statements.items[0];
 
         var val = stmt.var_statement.value.?;
 

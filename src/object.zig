@@ -224,12 +224,10 @@ pub const Function = struct {
     }
 
     fn extendFunctionEnv(func: *Function, args: []Object) anyerror!Environment {
-        // TODO: sipa tem que alocar env
-        // TODO asset local variables names with args and global variables names
         var enclose_env = func.env.newEncloseEnv();
 
         for (func.parameters, args) |param, arg|
-            _ = try enclose_env.set(param.value, arg);
+            _ = try enclose_env.setConst(param.value, arg);
 
         return enclose_env;
     }
@@ -269,6 +267,13 @@ pub const Object = union(enum) {
     function: Function,
     enum_tag: Enum.Tag,
     builtin_method: BuiltinMethod,
+
+    pub fn wasAllocated(self: *const @This()) bool {
+        return switch (self.*) {
+            .boolean, .identifier, .err, .null, .string, .integer, .float, .builtin => false,
+            else => true,
+        };
+    }
 
     pub fn objType(self: *const Object) LolliType {
         return switch (self.*) {
@@ -332,8 +337,7 @@ pub const Object = union(enum) {
             .function => |*f| b: {
                 var extended_env = try f.extendFunctionEnv(args);
                 defer extended_env.deinit();
-                var evaluated = try extended_env.eval(.{ .statement = .{ .block_statement = f.body } });
-
+                const evaluated = try extended_env.eval(.{ .statement = .{ .block_statement = f.body } });
                 break :b evaluated.unwrapReturnValue();
             },
 

@@ -5,25 +5,30 @@ literal: []const u8,
 
 const std = @import("std");
 
+pub fn lookupIdentfier(ident: []const u8) TokenType {
+    return if (keywords.has(ident)) keywords.get(ident).? else .identifier;
+}
+
 pub const keywords = std.ComptimeStringMap(TokenType, .{
     .{ "in", .in },
-    .{ "defer", .@"defer" },
-    .{ "continue", .@"continue" },
-    .{ "break", .@"break" },
-    .{ "func", .func },
-    .{ "enum", .@"enum" },
-    .{ "for", .@"for" },
-    .{ "switch", .@"switch" },
+    .{ "or", .@"or" },
     .{ "if", .@"if" },
+    .{ "null", .null },
+    .{ "func", .func },
+    .{ "with", .with },
     .{ "true", .true },
+    .{ "for", .@"for" },
+    .{ "var", .@"var" },
+    .{ "and", .@"and" },
     .{ "false", .false },
     .{ "else", .@"else" },
-    .{ "and", .@"and" },
-    .{ "or", .@"or" },
-    .{ "var", .@"var" },
+    .{ "enum", .@"enum" },
+    .{ "defer", .@"defer" },
     .{ "const", .@"const" },
+    .{ "break", .@"break" },
     .{ "return", .@"return" },
-    .{ "null", .null },
+    .{ "switch", .@"switch" },
+    .{ "continue", .@"continue" },
 });
 
 pub const TokenType = enum {
@@ -63,6 +68,7 @@ pub const TokenType = enum {
     @",",
     @";",
     @":",
+    @"^",
 
     @"(",
     @")",
@@ -87,6 +93,7 @@ pub const TokenType = enum {
     false,
     true,
     in,
+    with,
     @"if",
     @"else",
     @"or",
@@ -95,7 +102,3 @@ pub const TokenType = enum {
     @"break",
     @"defer",
 };
-
-pub fn lookupIdentfier(ident: []const u8) TokenType {
-    return if (keywords.has(ident)) keywords.get(ident).? else .identifier;
-}

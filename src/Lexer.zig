@@ -93,6 +93,15 @@ pub fn nextToken(self: *Self) Token {
     }
 
     const tok = switch (self.ch) {
+        '^' => newToken(.@"^"),
+        ';' => newToken(.@";"),
+        ',' => newToken(.@","),
+        '(' => newToken(.@"("),
+        ')' => newToken(.@")"),
+        '{' => newToken(.@"{"),
+        '}' => newToken(.@"}"),
+        '[' => newToken(.@"["),
+        ']' => newToken(.@"]"),
         '=' => switch (self.peekChar()) {
             '=' => x: {
                 self.readChar();
@@ -134,7 +143,6 @@ pub fn nextToken(self: *Self) Token {
                 self.readChar();
                 break :x newToken(.@"++");
             },
-
             else => newToken(.@"+"),
         },
         '-' => switch (self.peekChar()) {
@@ -169,14 +177,6 @@ pub fn nextToken(self: *Self) Token {
             },
             else => newToken(.@"/"),
         },
-        ';' => newToken(.@";"),
-        ',' => newToken(.@","),
-        '(' => newToken(.@"("),
-        ')' => newToken(.@")"),
-        '{' => newToken(.@"{"),
-        '}' => newToken(.@"}"),
-        '[' => newToken(.@"["),
-        ']' => newToken(.@"]"),
         ':' => switch (self.peekChar()) {
             '=' => x: {
                 self.readChar();
@@ -196,7 +196,6 @@ pub fn nextToken(self: *Self) Token {
             const token_type = Token.lookupIdentfier(literal);
             return Token{ .type = token_type, .literal = literal };
         },
-
         '0'...'9' => {
             const literal, const is_float = self.readNumber();
             return Token{ .type = if (is_float) .float else .int, .literal = literal };
@@ -214,5 +213,5 @@ fn isLetter(ch: u8) bool {
 }
 
 fn isDigit(ch: u8) bool {
-    return '0' <= ch and ch <= '9';
+    return ('0' <= ch and ch <= '9') or ch == '_';
 }

@@ -377,6 +377,7 @@ fn parseConstBlockStatement(self: *Parser, tk: Token) anyerror!ast.ConstBlockSta
     return stmt;
 }
 
+/// BUG: var y is allowed
 fn parseVarStatement(self: *Parser) anyerror!ast.Statement {
     const tk = self.cur_token;
 
@@ -399,14 +400,26 @@ fn parseVarStatement(self: *Parser) anyerror!ast.Statement {
     };
 
     if (!self.expectPeek(.@"=")) {
-        std.log.err("Expect Assignment Token (=), found '{s}'", .{self.cur_token.literal});
-        return error.UnexpectedToken;
+        const var_type = try self.parseExpression(.lower);
+        var_stmt.type = var_type;
+
+        self.nextToken();
+
+        if (!self.expectPeek(.@"=")) {
+            var_stmt.value = try self.parseNull();
+
+            if (self.peekTokenIs(.@";")) {
+                self.nextToken();
+            }
+
+            return .{ .var_statement = var_stmt };
+        }
     }
 
     self.nextToken();
 
     // TODO: pointer?
-    var_stmt.value = (try self.parseExpression(Precedence.lower)).*;
+    var_stmt.value = (try self.parseExpression(.lower)).*;
 
     if (self.peekTokenIs(.@";")) {
         self.nextToken();
@@ -429,6 +442,8 @@ fn parseStatement(self: *Parser) !ast.Statement {
 
         .@"defer" => try self.parseDeferStatement(),
 
+        .@"{" => .{ .block_statement = try self.parseBlockStatement() },
+
         else => try self.parseExpressionStatement(),
     };
 }
@@ -444,6 +459,11 @@ fn parseExpressionStatement(self: *Parser) anyerror!ast.Statement {
     }
 
     return .{ .expression_statement = exp_stmt };
+}
+
+fn parseType(self: *Parser) anyerror!*ast.Expression {
+    const value = try self.parseExpression(.lower);
+    return .{ .type = .{ .type = value.identifier } };
 }
 
 fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
@@ -462,12 +482,9 @@ fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
     while (@intFromEnum(precedence) < @intFromEnum(self.peekPrecedence())) {
         const infixFn = self.infix_parse_fns.get(self.peek_token.type) orelse return left_exp;
         self.nextToken();
-
         const old_left_exp = try allocator.create(ast.Expression);
         errdefer allocator.destroy(old_left_exp);
-
         old_left_exp.* = left_exp.*;
-
         left_exp.* = try infixFn(self, old_left_exp);
     }
 
@@ -521,7 +538,7 @@ fn parseBoolean(self: *Parser) anyerror!ast.Expression {
 }
 
 fn parseNull(_: *Parser) anyerror!ast.Expression {
-    return .void;
+    return .null_literal;
 }
 
 //  BUG
@@ -852,6 +869,12 @@ pub fn parseHashLiteral(self: *Parser) anyerror!ast.Expression {
         const key = try self.parseExpression(.lower);
 
         if (!self.expectPeek(.@":")) {
+            if (self.expectPeek(.@",") or self.expectPeek(.@"}")) {
+                try hash.put(key, key);
+                if (self.curTokenIs(.@"}")) break;
+                continue;
+            }
+
             std.log.warn("syntax error: expect ':'\n", .{});
             return error.MissingValueInHash;
         }
