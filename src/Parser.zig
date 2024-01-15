@@ -85,11 +85,11 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Parser {
     try parser.registerPrefix(.null, parseNull);
     try parser.registerPrefix(.@"[", parseArrayLiteral);
     try parser.registerPrefix(.@"{", parseHashLiteral);
-    try parser.registerPrefix(.func, parseFunctionLiteral);
+    try parser.registerPrefix(.@"fn", parseFunctionLiteral);
     try parser.registerPrefix(.string, parseStringLiteral);
     try parser.registerPrefix(.@"if", parseIfExpression);
     try parser.registerPrefix(.@"for", parseForLoop);
-    try parser.registerPrefix(.@"switch", parseSwitchExpression);
+    try parser.registerPrefix(.match, parseSwitchExpression);
     try parser.registerPrefix(.@"enum", parseEnumLiteral);
     try parser.registerPrefix(.@"else", parseIfExpression);
     try parser.registerPrefix(.@"!", parsePrefixExpression);
@@ -432,13 +432,13 @@ fn parseStatement(self: *Parser) !ast.Statement {
     return switch (self.cur_token.type) {
         .@"var" => try self.parseVarStatement(),
 
-        .@"const" => try self.parseConstStatement(),
+        .con => try self.parseConstStatement(),
 
         .@"return" => try self.parseReturnStatement(),
 
         .@"break" => try self.parseBreakStatement(),
 
-        .func => try self.parseFunctionStatement(),
+        .@"fn" => try self.parseFunctionStatement(),
 
         .@"defer" => try self.parseDeferStatement(),
 

@@ -83,6 +83,7 @@ pub fn setConst(env: *Environment, name: []const u8, obj: object.Object) !object
 
     try env.store.put(name, obj);
     try env.is_const.put(name, true);
+    env.gc.incRef(obj);
     return obj;
 }
 
@@ -92,39 +93,17 @@ pub fn setVar(env: *Environment, name: []const u8, obj: object.Object) !object.O
     }
 
     const env_ = try env.setCheck(name);
-
     try env_.store.put(name, obj);
-
     try env_.is_const.put(name, false);
-
+    env.gc.incRef(obj);
     return obj;
 }
 
 pub fn assigVar(env: *Environment, name: []const u8, obj: object.Object) !object.Object {
     _ = env.get(name) orelse return error.VariableNotDeclared;
     const var_env = try env.setCheck(name);
+    env.gc.incRef(obj);
     try var_env.store.put(name, obj);
-
-    switch (obj) {
-        .string => |it| {
-            if (var_env.gc.contains(it.value)) {
-                const p: *void = @ptrCast(@constCast(it.value));
-                var info = var_env.gc.map.getPtr(p).?;
-                info.ref += 1;
-            }
-        },
-
-        .array => |it| {
-            if (var_env.gc.contains(it.elements)) {
-                const p: *void = @ptrCast(@constCast(it.elements));
-                var info = var_env.gc.map.getPtr(p).?;
-                info.ref += 1;
-            }
-        },
-
-        else => {},
-    }
-
     return obj;
 }
 
@@ -482,22 +461,12 @@ fn evalProgram(env: *Environment, stmts: []ast.Statement) anyerror!object.Object
 pub fn evalBlockStatement(env: *Environment, stmts: []ast.Statement) anyerror!object.Object {
     var result: object.Object = undefined;
 
-    var new_env = env.newEncloseEnv();
-    defer new_env.deinit();
-
-    for (stmts) |statement| {
-        result = try new_env.eval(.{ .statement = statement });
-        if (result == .@"return") return result;
-    }
-
-    return result;
-}
-
-pub fn evalFunctionBody(env: *Environment, stmts: []ast.Statement) anyerror!object.Object {
-    var result: object.Object = undefined;
+    // var new_env = env.newEncloseEnv();
+    // defer new_env.deinit();
 
     for (stmts) |statement| {
         result = try env.eval(.{ .statement = statement });
+        // result = try new_env.eval(.{ .statement = statement });
         if (result == .@"return") return result;
     }
 
@@ -516,16 +485,19 @@ fn evalStatement(env: *Environment, stmts: []ast.Statement) anyerror!object.Obje
 fn evalIfExpression(env: *Environment, ie: *const ast.IfExpression) anyerror!object.Object {
     const condition = try env.eval(.{ .expression = ie.condition.* });
 
+    // TODO: return an error
     if (condition != .boolean) return object.NULL;
 
     if (condition.boolean.value) {
         // { block statements if}
-        return try env.eval(.{ .statement = .{ .block_statement = ie.consequence } });
+        // return try env.eval(.{ .statement = .{ .block_statement = ie.consequence } });
+        return try env.evalBlockStatement(ie.consequence.statements);
     }
 
     if (ie.alternative) |alternative| {
         // { block statement else }
-        return try env.eval(.{ .statement = .{ .block_statement = alternative } });
+        // return try env.eval(.{ .statement = .{ .block_statement = alternative } });
+        return try env.evalBlockStatement(alternative.statements);
     }
 
     return object.NULL;

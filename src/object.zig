@@ -335,18 +335,9 @@ pub const Object = union(enum) {
         return switch (func.*) {
             .function => |*f| b: {
                 var extended_env = try f.extendFunctionEnv(args);
-                const evaluated = try extended_env.evalFunctionBody(f.body.statements);
-
-                // NOTE:
-                // the memory allocated inside the function
-                // will be extended to it's outer env
-                // wee don't deinit the gc here
-                {
-                    extended_env.store.deinit();
-                    extended_env.is_const.deinit();
-                }
-
-                break :b evaluated.unwrapReturnValue();
+                const evaluated = try extended_env.evalBlockStatement(f.body.statements);
+                defer extended_env.deinit();
+                break :b evaluated.unwrapReturnValue(&extended_env);
             },
 
             .builtin => |b| b.func(args),
@@ -355,11 +346,29 @@ pub const Object = union(enum) {
         };
     }
 
-    pub fn unwrapReturnValue(obj: *const Object) Object {
-        if (obj.* == .@"return") {
-            return obj.@"return".value.*;
+    pub fn unwrapReturnValue(obj: *const Object, env: *const Environment) Object {
+        const ret = if (obj.* == .@"return") obj.@"return".value else obj;
+
+        switch (ret.*) {
+            .string => |s| {
+                const p: *void = @ptrCast(@constCast(s.value));
+                if (env.gc.contains(p)) {
+                    var i = env.gc.map.getPtr(p).?;
+                    i.ref += 1;
+                }
+            },
+
+            .array => |a| {
+                const p: *void = @ptrCast(@constCast(a.elements));
+                if (env.gc.contains(p)) {
+                    var i = env.gc.map.getPtr(p).?;
+                    i.ref += 1;
+                }
+            },
+            else => {},
         }
-        return obj.*;
+
+        return ret.*;
     }
 
     pub fn evalPrefixExpression(right: Object, op: []const u8) Object {

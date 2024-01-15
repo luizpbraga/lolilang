@@ -25,6 +25,17 @@ pub fn put(gc: *GarbageCollector, ptr: anytype, t: Type) !void {
     i.ref += 1;
 }
 
+pub fn incRef(gc: *GarbageCollector, obj: Object) void {
+    const p: *void = switch (obj) {
+        .string => |it| @ptrCast(@constCast(it.value)),
+        .array => |it| @ptrCast(@constCast(it.elements)),
+        else => return,
+    };
+
+    var info = gc.map.getPtr(p) orelse return;
+    info.ref += 1;
+}
+
 pub fn contains(gc: *GarbageCollector, ptr: anytype) bool {
     const p: *void = @ptrCast(@constCast(ptr));
     return gc.map.contains(p);
@@ -37,6 +48,10 @@ pub fn init(allocator: std.mem.Allocator) GarbageCollector {
 }
 
 pub fn deinit(gc: *GarbageCollector) void {
+    while (gc.map.count() != 0) {
+        gc.free();
+    }
+
     gc.map.deinit();
 }
 
