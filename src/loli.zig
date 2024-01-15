@@ -2,6 +2,7 @@ const std = @import("std");
 const Lexer = @import("Lexer.zig");
 const Parser = @import("Parser.zig");
 const Environment = @import("Environment.zig");
+const GarbageCollector = @import("GarbageCollector.zig");
 
 const Loli = struct {
     fn run(allocator: std.mem.Allocator, input: []const u8) !void {
@@ -12,15 +13,25 @@ const Loli = struct {
 
         const program = try parser.parseProgram();
 
-        var env = Environment.init(allocator);
+        var gc = GarbageCollector.init(allocator);
+        defer gc.deinit();
+
+        // var t = try gc.start();
+        // defer t.join();
+
+        var env = Environment.init(allocator, &gc);
         defer env.deinit();
 
         _ = try env.eval(.{ .statement = .{ .program_statement = program } });
+
+        // gc.exit = true;
     }
 };
 
 pub fn main() !void {
-    const allocator = std.heap.c_allocator;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer if (.leak == gpa.deinit()) std.debug.print("LEAK", .{});
 
     var args = std.process.args();
     _ = args.next();

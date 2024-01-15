@@ -332,12 +332,20 @@ pub const Object = union(enum) {
     }
 
     pub fn applyFunction(func: *Object, args: []Object) !Object {
-        // TODO 147
         return switch (func.*) {
             .function => |*f| b: {
                 var extended_env = try f.extendFunctionEnv(args);
-                defer extended_env.deinit();
-                const evaluated = try extended_env.eval(.{ .statement = .{ .block_statement = f.body } });
+                const evaluated = try extended_env.evalFunctionBody(f.body.statements);
+
+                // NOTE:
+                // the memory allocated inside the function
+                // will be extended to it's outer env
+                // wee don't deinit the gc here
+                {
+                    extended_env.store.deinit();
+                    extended_env.is_const.deinit();
+                }
+
                 break :b evaluated.unwrapReturnValue();
             },
 
