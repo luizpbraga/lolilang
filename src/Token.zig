@@ -40,6 +40,7 @@ pub const TokenType = enum {
     float,
     int, // 123678
     string, // "fuck u"
+    char,
     null,
 
     // operators

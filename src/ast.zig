@@ -73,6 +73,7 @@ pub const Expression = union(enum) {
     float_literal: FloatLiteral,
     integer_literal: IntegerLiteral,
     string_literal: StringLiteral,
+    char_literal: CharLiteral,
     array_literal: ArrayLiteral,
     range: RangeExpression,
     hash_literal: HashLiteral,
@@ -296,6 +297,17 @@ pub const FloatLiteral = struct {
 pub const IntegerLiteral = struct {
     token: Token,
     value: i64,
+
+    pub fn expressionNode() void {}
+
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const CharLiteral = struct {
+    token: Token,
+    value: u8,
 
     pub fn expressionNode() void {}
 

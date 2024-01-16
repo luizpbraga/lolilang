@@ -87,6 +87,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Parser {
     try parser.registerPrefix(.@"{", parseHashLiteral);
     try parser.registerPrefix(.@"fn", parseFunctionLiteral);
     try parser.registerPrefix(.string, parseStringLiteral);
+    try parser.registerPrefix(.char, parseCharLiteral);
     try parser.registerPrefix(.@"if", parseIfExpression);
     try parser.registerPrefix(.@"for", parseForLoop);
     try parser.registerPrefix(.match, parseSwitchExpression);
@@ -819,6 +820,15 @@ pub fn parseStringLiteral(self: *Parser) anyerror!ast.Expression {
         .string_literal = .{
             .token = self.cur_token,
             .value = self.cur_token.literal,
+        },
+    };
+}
+
+pub fn parseCharLiteral(self: *Parser) anyerror!ast.Expression {
+    return .{
+        .char_literal = .{
+            .token = self.cur_token,
+            .value = self.cur_token.literal[0],
         },
     };
 }

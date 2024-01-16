@@ -31,6 +31,7 @@ fn pprint(arg: *const object.Object) void {
         .null => std.debug.print("null", .{}),
         .float => |n| std.debug.print("{d}", .{n.value}),
         .string => |n| std.debug.print("{s}", .{n.value}),
+        .char => |n| std.debug.print("{c}", .{n.value}),
         inline .integer, .boolean => |n| std.debug.print("{}", .{n.value}),
         // .boolean => |n| std.debug.print("{}", .{n.value}),
         .array => |n| {

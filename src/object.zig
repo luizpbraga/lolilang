@@ -16,6 +16,7 @@ const LolliType = enum {
     hash_key,
     hash_pair,
     boolean,
+    char,
     null,
     @"return",
     @"break",
@@ -38,6 +39,14 @@ pub const Integer = struct {
 
     pub fn objType(_: *const @This()) LolliType {
         return .integer;
+    }
+};
+
+pub const Char = struct {
+    value: u8,
+
+    pub fn objType(_: *const @This()) LolliType {
+        return .char;
     }
 };
 
@@ -94,24 +103,23 @@ pub const Array = struct {
     pub fn objType(_: *const @This()) LolliType {
         return .array;
     }
-
-    pub fn next(self: *Array) NextReturn {
-        if (self.offset < self.elements.len) {
-            self.offset += 1;
-
-            const element = self.elements[self.offset - 1];
-            return .{ .element = element, .index = .{ .integer = .{ .value = @as(i64, @intCast(self.offset - 1)) } }, .ok = true };
-        }
-        return .{
-            .element = .{ .null = Null{} },
-            .index = .{ .integer = .{ .value = 0 } },
-            .ok = false,
-        };
-    }
-
-    pub fn reset(self: *Array) void {
-        self.offset = 0;
-    }
+    // pub fn next(self: *Array) NextReturn {
+    //     if (self.offset < self.elements.len) {
+    //         self.offset += 1;
+    //
+    //         const element = self.elements[self.offset - 1];
+    //         return .{ .element = element, .index = .{ .integer = .{ .value = @as(i64, @intCast(self.offset - 1)) } }, .ok = true };
+    //     }
+    //     return .{
+    //         .element = .{ .null = Null{} },
+    //         .index = .{ .integer = .{ .value = 0 } },
+    //         .ok = false,
+    //     };
+    // }
+    //
+    // pub fn reset(self: *Array) void {
+    //     self.offset = 0;
+    // }
 };
 
 pub const Hash = struct {
@@ -257,6 +265,7 @@ pub const Object = union(enum) {
     hash: Hash,
     array: Array,
     float: Float,
+    char: Char,
     string: String,
     integer: Integer,
     enumerator: Enum,

@@ -147,6 +147,8 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
 
                 .string_literal => |s| .{ .string = .{ .value = s.value } },
 
+                .char_literal => |c| .{ .char = .{ .value = c.value } },
+
                 .integer_literal => |i| .{ .integer = .{ .value = i.value } },
 
                 .float_literal => |f| .{ .float = .{ .value = f.value } },
@@ -775,57 +777,59 @@ fn evalForLoopExpression(env: *Environment, fl: *const ast.ForLoopExpression) !o
     }
 }
 
+/// TODO: refactor
 fn evalForLoopRangeExpression(env: *Environment, fl: *const ast.ForLoopRangeExpression) !object.Object {
-    var iterabol = try env.eval(.{ .expression = fl.iterable.* });
+    const iterable = try env.eval(.{ .expression = fl.iterable.* });
 
-    var permit0 = std.ArrayList([]const u8).init(env.allocator);
-    defer permit0.deinit();
+    switch (iterable) {
+        .array => |arr| {
+            env.gc.incRef(iterable);
 
-    try permit0.append(fl.ident);
+            if (env.store.contains(fl.ident)) return error.LoopIndexIniAmbiguous;
 
-    if (fl.index) |index| {
-        try permit0.append(index);
-    }
+            for (arr.elements, 0..) |element, i| {
+                var _env = env.newEncloseEnv();
+                defer {
+                    _env.store.deinit();
+                    _env.is_const.deinit();
+                }
 
-    const permit = try permit0.toOwnedSlice();
-    defer env.allocator.free(permit);
+                _ = try _env.setConst(fl.ident, element);
 
-    var info = try iterabol.next();
-    var element = info.element;
-    var idx = info.index;
-    var ok = info.ok;
+                if (fl.index) |index| {
+                    const idx_: object.Object = .{ .integer = .{ .value = @intCast(i) } };
+                    _ = try _env.setConst(index, idx_);
+                }
 
-    while (ok) {
-        var new_env = env.newEncloseEnv();
+                const evaluated_block = try _env.evalBlockStatement(fl.body.statements);
 
-        if (!(fl.ident.len == 1 and fl.ident[0] == '_')) {
-            if (env.get(fl.ident)) |_| {
-                return error.LoopIndexInAmbiguous;
+                // if (evaluated_block.objType() == .@"continue") return evaluated_block;
+                if (evaluated_block.objType() == .@"return") return evaluated_block;
+                if (evaluated_block.objType() == .@"break") return evaluated_block;
             }
-            _ = try new_env.setConst(fl.ident, element);
-        }
+        },
+        .string => |str| {
+            for (str.value, 0..) |char, i| {
+                const ch: object.Object = .{ .char = .{ .value = char } };
 
-        if (fl.index) |index| if (!(index.len == 1 and index[0] == '_')) {
-            if (env.get(index)) |_| {
-                return error.LoopIndexInAmbiguous;
+                var _env = env.newEncloseEnv();
+                defer _env.deinit();
+
+                _ = try _env.setConst(fl.ident, ch);
+
+                if (fl.index) |index| {
+                    const idx_: object.Object = .{ .integer = .{ .value = @intCast(i) } };
+                    _ = try _env.setConst(index, idx_);
+                }
+
+                const evaluated_block = try _env.evalBlockStatement(fl.body.statements);
+
+                // if (evaluated_block.objType() == .@"continue") return evaluated_block;
+                if (evaluated_block.objType() == .@"return") return evaluated_block;
+                if (evaluated_block.objType() == .@"break") return evaluated_block;
             }
-            _ = try new_env.setConst(index, idx);
-        };
-
-        // var block_eval = try env.eval(.{ .statement = .{ .block_statement = fl.body } });
-        var block_eval = try new_env.evalBlockStatement(fl.body.statements);
-
-        // drop the index and val
-        // new_env.dropScopeVar(fl.ident);
-        // if (fl.index) |index| new_env.dropScopeVar(index);
-        new_env.deinit();
-
-        if (block_eval.objType() == .@"return") return block_eval;
-
-        info = try iterabol.next();
-        ok = info.ok;
-        idx = info.index;
-        element = info.element;
+        },
+        else => return error.FuckedIterableType,
     }
 
     return object.NULL;
