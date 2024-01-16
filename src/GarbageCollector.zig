@@ -9,6 +9,7 @@ const Map = std.AutoHashMap(*void, Info);
 pub const Type = union(enum) {
     string: usize, // []const u8,
     objeto: usize, // []const Object
+    hash, // hash pair
 };
 
 pub const Info = struct { t: Type, ref: usize = 0 };
@@ -29,6 +30,7 @@ pub fn incRef(gc: *GarbageCollector, obj: Object) void {
     const p: *void = switch (obj) {
         .string => |it| @ptrCast(@constCast(it.value)),
         .array => |it| @ptrCast(@constCast(it.elements)),
+        .hash => |it| @ptrCast(@constCast(it.pairs)),
         else => return,
     };
 
@@ -77,6 +79,13 @@ pub fn free(gc: *GarbageCollector) void {
             .objeto => |len| {
                 const p = @as([*]Object, @alignCast(@ptrCast(pkey.*)))[0..len];
                 gc.map.allocator.free(p);
+            },
+
+            .hash => {
+                const KeyParHash = @import("Environment.zig").KeyParHash;
+                const p: *KeyParHash = @alignCast(@ptrCast(pkey.*));
+                p.deinit();
+                gc.map.allocator.destroy(p);
             },
         }
 

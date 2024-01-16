@@ -12,7 +12,7 @@ Loli is an interpreter that sometimes does not know how to interpret.
 
 ```go
 // multi-line declaration
-const {
+con {
     ONE = 1
     TWO = 2
 }
@@ -24,10 +24,10 @@ var t = 3
 
 ```go
 // functions (sometimes it does not work HEHE)
-const PI = 3.14
+con PI = 3.14
 
 func readFileExample(file_path) {
-    const txt = readFile(file_path)
+    con txt = readFile(file_path)
     defer { closeFile(txt) }
 
     var sum = 0
@@ -39,7 +39,7 @@ func readFileExample(file_path) {
     return txt.len == sum
 }
 
-const foo = func(x, y) {
+con foo = func(x, y) {
     var hello = "Hello Loli"
     return if x > y { x } else { hello }
 }
@@ -60,14 +60,14 @@ print(my_name_is.len != yoyo.len);
 // we have arrays
 var v = [1, true, "2", false, 4];
 v[0] += 1;
-const v_size = v.len;
+con v_size = v.len;
 ```
 
 #### Hashmap
 
 ```js
 // hashmaps
-const map = {
+con map = {
     1: "a",
     2: "b",
     true: false,
@@ -87,9 +87,9 @@ for i < 100 {
     i+=1
 }
 
-const range = 1..5
+con range = 1..5
 for idx, item in range {
-    const str = idx + " " + item
+    con str = idx + " " + item
     print(str)
 }
 ```
@@ -98,8 +98,8 @@ for idx, item in range {
 
 ```js
 // switch
-const y = 10
-const x = switch y {
+con y = 10
+con x = switch y {
     1 => { 0 }
 
     2 => { 1 }

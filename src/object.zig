@@ -123,7 +123,7 @@ pub const Array = struct {
 };
 
 pub const Hash = struct {
-    pairs: std.AutoHashMap(Key, Pair),
+    pairs: *std.AutoHashMap(Key, Pair),
 
     pub fn objType(_: *const @This()) LolliType {
         return .hash;

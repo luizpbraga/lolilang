@@ -166,7 +166,7 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
                 //     break :tag .{ .enum_tag = .{ .value = &value, .name = et.value.value } };
                 // },
                 //
-                // .hash_literal => |*hash| .{ .hash = .{ .pairs = try env.evalHashExpression(hash) } },
+                .hash_literal => |*hash| .{ .hash = .{ .pairs = try env.evalHashExpression(hash) } },
                 //
                 // .enum_literal => |*enu| .{ .enumerator = .{ .tags = try env.evalEnumExpression(enu) } },
                 //
@@ -365,37 +365,30 @@ fn evalEnumExpression(
     return tags;
 }
 
+pub const KeyParHash = std.AutoHashMap(object.Hash.Key, object.Hash.Pair);
+
 fn evalHashExpression(
     env: *Environment,
     hash_obj: *const ast.HashLiteral,
-) !std.AutoHashMap(object.Hash.Key, object.Hash.Pair) {
-    var pairs = std.AutoHashMap(object.Hash.Key, object.Hash.Pair).init(env.allocator);
+) !*KeyParHash {
+    var pairs = try env.allocator.create(KeyParHash);
+    errdefer env.allocator.destroy(pairs);
+
+    pairs.* = KeyParHash.init(env.allocator);
     errdefer pairs.deinit();
 
     var hash_iterator = hash_obj.pairs.iterator();
     while (hash_iterator.next()) |hash| {
-        var key_value = try env.allocator.alloc(object.Object, 2);
-        errdefer env.allocator.free(key_value);
-
-        key_value[0] = env.eval(.{ .expression = hash.key_ptr.*.* }) catch |err| switch (err) {
-            // teste
-            // TODO: m.x onde x é um hash_tag, e não um identifier (ou algo assim)
-            error.IdentifierNotFound => .{ .builtin_method = .{ .method_name = hash.key_ptr.*.*.identifier } },
-            else => return err,
-        };
-        key_value[1] = try env.eval(.{ .expression = hash.value_ptr.*.* });
-
-        var key = key_value[0];
-        const val = key_value[1];
+        const key = try env.eval(.{ .expression = hash.key_ptr.*.* });
+        const val = try env.eval(.{ .expression = hash.value_ptr.*.* });
 
         const hash_key = try object.Hash.Key.init(&key);
         const hash_pair: object.Hash.Pair = .{ .key = key, .value = val };
 
         try pairs.put(hash_key, hash_pair);
-        try env.allocated_obj_list.append(key_value);
     }
 
-    try env.allocated_hash.append(pairs);
+    try env.gc.put(pairs, .{ .hash = {} });
 
     return pairs;
 }
@@ -463,12 +456,8 @@ fn evalProgram(env: *Environment, stmts: []ast.Statement) anyerror!object.Object
 pub fn evalBlockStatement(env: *Environment, stmts: []ast.Statement) anyerror!object.Object {
     var result: object.Object = undefined;
 
-    // var new_env = env.newEncloseEnv();
-    // defer new_env.deinit();
-
     for (stmts) |statement| {
         result = try env.eval(.{ .statement = statement });
-        // result = try new_env.eval(.{ .statement = statement });
         if (result == .@"return") return result;
     }
 
