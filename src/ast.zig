@@ -45,6 +45,7 @@ pub const Statement = union(enum) {
     expression_statement: ExpressionStatement,
     block_statement: BlockStatement,
     program_statement: Program,
+    struct_statement: StructStatement,
 
     fn statementNode(self: *const Statement) void {
         switch (self.*) {
@@ -78,19 +79,23 @@ pub const Expression = union(enum) {
     range: RangeExpression,
     hash_literal: HashLiteral,
     enum_literal: EnumLiteral,
+    struct_literal: StructLiteral,
     enum_tag: EnumTag,
     identifier: Identifier,
+    function_literal: FunctionLiteral,
+
+    assignment_expression: AssignmentExpression,
+    prefix_expression: PrefixExpression,
+    infix_expression: InfixExpression,
+
+    if_expression: IfExpression,
     forloop_expression: ForLoopExpression,
     forloop_range_expression: ForLoopRangeExpression,
     multi_forloop_range_expression: MultiForLoopRangeExpression,
     switch_expression: SwitchExpression,
-    function_literal: FunctionLiteral,
-    assignment_expression: AssignmentExpression,
 
-    prefix_expression: PrefixExpression,
-    infix_expression: InfixExpression,
-    if_expression: IfExpression,
     call_expression: CallExpression,
+    init_expression: InitExpression,
     method_expression: MethodExpression,
     index_expression: IndexExpression,
 
@@ -368,6 +373,27 @@ pub const HashLiteral = struct {
     }
 };
 
+/// con P = struct {}
+pub const StructLiteral = struct {
+    token: Token, // .{
+    fields: std.StringHashMap(*Expression),
+
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
+        return self.token.literal;
+    }
+};
+
+/// struct P {}
+pub const StructStatement = struct {
+    token: Token,
+    name: Identifier,
+    fields: std.StringHashMap(*Expression),
+
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
+        return self.token.literal;
+    }
+};
+
 pub const EnumLiteral = struct {
     token: Token,
     tags: std.StringHashMap(*Expression),
@@ -419,6 +445,16 @@ pub const CallExpression = struct {
     token: Token, // (
     function: *Expression, // Identifier or FunctionLiteral
     arguments: []Expression,
+
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const InitExpression = struct {
+    token: Token, // (
+    type: *Expression, // Identifier of StructLiteral
+    struct_: StructLiteral,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;

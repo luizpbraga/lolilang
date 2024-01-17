@@ -5,6 +5,10 @@ const Environment = @import("Environment.zig");
 pub const NULL = Object{ .null = Null{} };
 
 const LolliType = enum {
+    type,
+    type_field,
+    @"struct",
+    struct_field,
     @"enum",
     enum_tag,
     enum_pair,
@@ -187,6 +191,42 @@ pub const Enum = struct {
     };
 };
 
+pub const Type = struct {
+    name: []const u8,
+    fields: *std.StringHashMap(Field),
+
+    pub fn objType(_: *const @This()) LolliType {
+        return .type;
+    }
+
+    pub const Field = struct {
+        name: []const u8,
+        value: Object,
+
+        pub fn objType(_: *const @This()) LolliType {
+            return .type_field;
+        }
+    };
+};
+
+pub const Struct = struct {
+    type: ?[]const u8,
+    fields: *std.StringHashMap(Field),
+
+    pub fn objType(_: *const @This()) LolliType {
+        return .@"struct";
+    }
+
+    pub const Field = struct {
+        name: []const u8,
+        value: Object,
+
+        pub fn objType(_: *const @This()) LolliType {
+            return .struct_field;
+        }
+    };
+};
+
 pub const Null = struct {
     // NOTE: this fix the error "union depend on itself" (something like that)
     comptime value: @TypeOf(null) = null,
@@ -269,6 +309,8 @@ pub const Object = union(enum) {
     string: String,
     integer: Integer,
     enumerator: Enum,
+    type: Type,
+    structure: Struct,
     builtin: Builtin,
     boolean: Boolean,
     @"return": Return,
@@ -325,6 +367,11 @@ pub const Object = union(enum) {
             return evalEnumIndexExpression(obj, &.{ .builtin_method = arg.* });
         }
 
+        if (obj.objType() == .@"struct") {
+            const field = obj.structure.fields.getPtr(arg.method_name.value) orelse return error.MethodLenNotDefined;
+            return field.value;
+        }
+
         // only string and lists (for now)
         if (std.mem.eql(u8, arg.method_name.value, "len")) {
             const len = switch (obj.objType()) {
@@ -345,7 +392,11 @@ pub const Object = union(enum) {
             .function => |*f| b: {
                 var extended_env = try f.extendFunctionEnv(args);
                 const evaluated = try extended_env.evalBlockStatement(f.body.statements);
-                defer extended_env.deinit();
+                // defer extended_env.deinit();
+                defer {
+                    extended_env.is_const.deinit();
+                    extended_env.store.deinit();
+                }
                 break :b evaluated.unwrapReturnValue(&extended_env);
             },
 

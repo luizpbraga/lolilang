@@ -46,7 +46,7 @@ pub const Precedence = enum {
             .@">", .@"<" => .lessgreater,
             .@"+", .@"-" => .sum,
             .@"/", .@"*" => .product,
-            .@"(" => .call,
+            .@"(", .@"{" => .call,
             .@"!" => .prefix,
             .@"[", .@".", .@".." => .index,
             .@"=", .@":=", .@"+=", .@"-=", .@"*=", .@"/=" => .assigne,
@@ -92,6 +92,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Parser {
     try parser.registerPrefix(.@"for", parseForLoop);
     try parser.registerPrefix(.match, parseSwitchExpression);
     try parser.registerPrefix(.@"enum", parseEnumLiteral);
+    try parser.registerPrefix(.@"struct", parseStructExpression);
     try parser.registerPrefix(.@"else", parseIfExpression);
     try parser.registerPrefix(.@"!", parsePrefixExpression);
     try parser.registerPrefix(.@"-", parsePrefixExpression);
@@ -101,6 +102,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) !Parser {
     try parser.registerInfix(.@"..", parseRangeExpression);
     try parser.registerInfix(.@".", parseMethodExpression);
     try parser.registerInfix(.@"(", parseCallExpression);
+    try parser.registerInfix(.@"{", parseInitExpression);
     try parser.registerInfix(.@"+", parseInfixExpression);
     try parser.registerInfix(.@"-", parseInfixExpression);
     try parser.registerInfix(.@":", parseInfixExpression);
@@ -445,6 +447,8 @@ fn parseStatement(self: *Parser) !ast.Statement {
 
         .@"{" => .{ .block_statement = try self.parseBlockStatement() },
 
+        .@"struct" => try self.parseStructStatement(),
+
         else => try self.parseExpressionStatement(),
     };
 }
@@ -634,6 +638,87 @@ fn parseBlockStatement(self: *Parser) anyerror!ast.BlockStatement {
     return block;
 }
 
+fn parseStructStatement(self: *Parser) anyerror!ast.Statement {
+    var struc = ast.StructStatement{
+        .token = self.cur_token,
+        .fields = undefined, // hash(ident_name, value object)
+        .name = undefined,
+    };
+
+    self.nextToken();
+
+    struc.name = (try self.parseIdentifier()).identifier;
+
+    if (!self.expectPeek(.@"{")) return error.MissingBrance;
+
+    self.nextToken();
+
+    const allocator = self.arena.allocator();
+
+    var fields = std.StringHashMap(*ast.Expression).init(allocator);
+    errdefer fields.deinit();
+
+    while (!self.curTokenIs(.@"}")) {
+        const ident = (try self.parseIdentifier()).identifier;
+
+        const gop = try fields.getOrPut(ident.value);
+
+        if (gop.found_existing) return error.DuplicatedField;
+
+        const value: *ast.Expression = if (self.expectPeek(.@"=")) b: {
+            self.nextToken();
+            break :b try self.parseExpression(.lower);
+        } else @constCast(&.{ .null_literal = {} });
+
+        try fields.put(ident.value, @constCast(value));
+
+        self.nextToken();
+    }
+
+    struc.fields = fields;
+
+    return .{ .struct_statement = struc };
+}
+
+fn parseStructExpression(self: *Parser) anyerror!ast.Expression {
+    var struc = ast.StructLiteral{
+        .token = self.cur_token,
+        .fields = undefined, // hash(ident_name, value object)
+    };
+
+    self.nextToken();
+
+    if (!self.expectPeek(.@"{")) return error.MissingBrance;
+
+    self.nextToken();
+
+    const allocator = self.arena.allocator();
+
+    var fields = std.StringHashMap(*ast.Expression).init(allocator);
+    errdefer fields.deinit();
+
+    while (!self.curTokenIs(.@"}")) {
+        const ident = (try self.parseIdentifier()).identifier;
+
+        const gop = try fields.getOrPut(ident.value);
+
+        if (gop.found_existing) return error.DuplicatedField;
+
+        const value: *ast.Expression = if (self.expectPeek(.@"=")) b: {
+            self.nextToken();
+            break :b try self.parseExpression(.lower);
+        } else @constCast(&.{ .null_literal = {} });
+
+        try fields.put(ident.value, @constCast(value));
+
+        self.nextToken();
+    }
+
+    struc.fields = fields;
+
+    return .{ .struct_literal = struc };
+}
+
 fn parseEnumLiteral(self: *Parser) anyerror!ast.Expression {
     var enu = ast.EnumLiteral{
         .token = self.cur_token,
@@ -649,9 +734,9 @@ fn parseEnumLiteral(self: *Parser) anyerror!ast.Expression {
 
     var i: usize = 0;
     while (!self.expectPeek(.@"}")) {
-        const ident_exp = try self.parseIdentifier();
+        const ident = (try self.parseIdentifier()).identifier;
 
-        const gop = try tags.getOrPut(ident_exp.identifier.value);
+        const gop = try tags.getOrPut(ident.value);
 
         if (gop.found_existing) return error.DuplicatedTag;
 
@@ -664,7 +749,7 @@ fn parseEnumLiteral(self: *Parser) anyerror!ast.Expression {
             },
         };
 
-        try tags.put(ident_exp.identifier.value, int);
+        try tags.put(ident.value, int);
 
         i += 1;
 
@@ -785,6 +870,55 @@ fn parseCallExpression(self: *Parser, func: *ast.Expression) anyerror!ast.Expres
     };
 }
 
+fn parseInitExpression(self: *Parser, _type_exp: *ast.Expression) anyerror!ast.Expression {
+    return .{
+        .init_expression = .{
+            .token = self.cur_token,
+            .type = _type_exp, // ident pointing to struct enum
+            .struct_ = try self.parseStructFields(),
+        },
+    };
+}
+
+// TODO: check fields in parse, not in evaluation
+fn parseStructFields(self: *Parser) anyerror!ast.StructLiteral {
+    const token = self.cur_token;
+    const allocator = self.arena.allocator();
+
+    var fields = std.StringHashMap(*ast.Expression).init(allocator);
+    errdefer fields.deinit();
+
+    while (!self.peekTokenIs(.@"}")) {
+        self.nextToken();
+
+        const ident_exp = try self.parseIdentifier();
+        const ident = ident_exp.identifier;
+
+        if (!self.expectPeek(.@":")) {
+            std.log.warn("syntax error: expect ':'\n", .{});
+            return error.MissingValueInHash;
+        }
+
+        self.nextToken();
+
+        const val = try self.parseExpression(.lower);
+
+        try fields.put(ident.value, val);
+
+        if (!self.peekTokenIs(.@"}") and !self.expectPeek(.@",")) {
+            std.log.warn("syntax error: expect ',' or '}}'\n", .{});
+            return error.UnexpectedToken;
+        }
+    }
+
+    if (!self.expectPeek(.@"}")) {
+        std.log.warn("syntax error: expect '}}'\n", .{});
+        return error.MissingRightBrace;
+    }
+
+    return .{ .token = token, .fields = fields };
+}
+
 fn parseCallArguments(self: *Parser) anyerror![]ast.Expression {
     const allocator = self.arena.allocator();
     var args = std.ArrayList(ast.Expression).init(allocator);
@@ -893,7 +1027,6 @@ pub fn parseHashLiteral(self: *Parser) anyerror!ast.Expression {
 
         const val = try self.parseExpression(.lower);
 
-        // BUG: memory leak
         try hash.put(key, val);
 
         if (!self.peekTokenIs(.@"}") and !self.expectPeek(.@",")) {

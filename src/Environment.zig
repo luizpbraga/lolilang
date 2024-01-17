@@ -141,8 +141,6 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
             return switch (exp) {
                 .null_literal => object.NULL,
 
-                .type => object.NULL,
-
                 .boolean => |b| .{ .boolean = .{ .value = b.value } },
 
                 .string_literal => |s| .{ .string = .{ .value = s.value } },
@@ -153,7 +151,7 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
 
                 .float_literal => |f| .{ .float = .{ .value = f.value } },
 
-                .identifier => |iden| try env.evalIdentifier(&iden),
+                .identifier => |*iden| try env.evalIdentifier(iden),
 
                 .array_literal => |*array| try env.evalArrayLiteral(array),
 
@@ -165,12 +163,10 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
                 //     const value = try env.evalIdentifier(&et.value);
                 //     break :tag .{ .enum_tag = .{ .value = &value, .name = et.value.value } };
                 // },
-                //
-                .hash_literal => |*hash| .{ .hash = .{ .pairs = try env.evalHashExpression(hash) } },
-                //
                 // .enum_literal => |*enu| .{ .enumerator = .{ .tags = try env.evalEnumExpression(enu) } },
-                //
-                .function_literal => |func| .{ .function = .{ .parameters = func.parameters, .body = func.body, .env = env } },
+                .hash_literal => |*hash| .{ .hash = .{ .pairs = try env.evalHashExpression(hash) } },
+
+                .function_literal => |*func| .{ .function = .{ .parameters = func.parameters, .body = func.body, .env = env } },
 
                 .assignment_expression => |ass| try env.evalAssignment(ass),
 
@@ -207,6 +203,72 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
                     break :blk left.evalIndexExpression(&index);
                 },
 
+                // TODO: generalize it for enum.
+                // type_expression
+                // .struct_type => |*str| b: {
+                //     const struct_type: object.Object = try env.evalStructTypeExpression(str);
+                //     break :b try env.setConst(str.name.value, struct_type);
+                // },
+
+                .init_expression => |init_exp| {
+                    switch (init_exp.type.*) {
+                        else => {
+                            std.debug.print("{}\n", .{init_exp.type.*});
+                            return error.ExpressionMustBeAType;
+                        },
+
+                        .identifier => |ident| {
+                            const struct_type = env.get(ident.value).?;
+
+                            if (struct_type.objType() != .type) {
+                                return error.ExpressionMustBeAType;
+                            }
+
+                            // DEFAULT FIELDS
+                            const struct_literal_default_fields = struct_type.type.fields;
+                            // FIELDS INITIALIZED BY THE USER
+                            const struct_literal_fields = &init_exp.struct_;
+
+                            var fields = try env.allocator.create(std.StringHashMap(object.Struct.Field));
+                            errdefer env.allocator.destroy(fields);
+
+                            fields.* = std.StringHashMap(object.Struct.Field).init(env.allocator);
+                            errdefer fields.deinit();
+
+                            var default_iter = struct_literal_default_fields.valueIterator();
+                            while (default_iter.next()) |field_value| {
+                                const ident_value = field_value.name;
+                                const value = field_value.value;
+                                const field: object.Struct.Field = .{ .value = value, .name = ident_value };
+                                try fields.put(ident_value, field);
+                            }
+
+                            var runtime_iter = struct_literal_fields.fields.iterator();
+                            while (runtime_iter.next()) |entry| {
+                                const ident_value = entry.key_ptr.*;
+                                const value = try env.eval(.{ .expression = entry.value_ptr.*.* });
+
+                                if (!struct_literal_default_fields.contains(ident_value))
+                                    return error.NotAValidStructField;
+
+                                const field: object.Struct.Field = .{ .value = value, .name = ident_value };
+                                try fields.put(ident_value, field);
+                            }
+
+                            try env.gc.put(fields, .structure);
+
+                            return .{
+                                .structure = .{
+                                    .fields = fields,
+                                    .type = struct_type.type.name,
+                                },
+                            };
+                        },
+                    }
+
+                    @panic("Not Implemented");
+                },
+
                 .method_expression => |met| blk: {
                     const left = try env.eval(.{ .expression = met.caller.* });
                     const ident = object.BuiltinMethod{ .method_name = met.method };
@@ -223,6 +285,11 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
                 // },
                 //
                 else => unreachable,
+
+                .struct_statement => |*str| b: {
+                    const struct_type: object.Object = try env.evalStructStatement(str);
+                    break :b try env.setConst(str.name.value, struct_type);
+                },
 
                 .program_statement => |program| try env.evalProgram(program.statements.items),
 
@@ -360,9 +427,68 @@ fn evalEnumExpression(
         try tags.put(tag_name, tag);
     }
 
-    // try env.allocated_enum.append(tags);
-
     return tags;
+}
+
+pub const TypeFields = std.StringHashMap(object.Type.Field);
+pub const StructFields = std.StringHashMap(object.Struct.Field);
+
+fn evalStructExpression(
+    env: *Environment,
+    struct_obj: *const ast.StructExpression,
+) !object.Object {
+    var fields = try env.allocator.create(TypeFields);
+    errdefer env.allocator.destroy(fields);
+
+    fields.* = TypeFields.init(env.allocator);
+    errdefer fields.deinit();
+
+    var struct_iterator = struct_obj.fields.iterator();
+    while (struct_iterator.next()) |struc| {
+        const field_name = struc.key_ptr.*;
+        const field_value = try env.eval(.{ .expression = struc.value_ptr.*.* });
+        const field = object.Type.Field{ .name = field_name, .value = field_value };
+        try fields.put(field_name, field);
+    }
+
+    if (fields.count() > 0)
+        try env.gc.put(fields, .type);
+
+    return .{
+        .type = .{
+            .name = struct_obj.name.value,
+            .fields = fields,
+        },
+    };
+}
+
+fn evalStructStatement(
+    env: *Environment,
+    struct_obj: *const ast.StructStatement,
+) !object.Object {
+    var fields = try env.allocator.create(TypeFields);
+    errdefer env.allocator.destroy(fields);
+
+    fields.* = TypeFields.init(env.allocator);
+    errdefer fields.deinit();
+
+    var struct_iterator = struct_obj.fields.iterator();
+    while (struct_iterator.next()) |struc| {
+        const field_name = struc.key_ptr.*;
+        const field_value = try env.eval(.{ .expression = struc.value_ptr.*.* });
+        const field = object.Type.Field{ .name = field_name, .value = field_value };
+        try fields.put(field_name, field);
+    }
+
+    if (fields.count() > 0)
+        try env.gc.put(fields, .type);
+
+    return .{
+        .type = .{
+            .name = struct_obj.name.value,
+            .fields = fields,
+        },
+    };
 }
 
 pub const KeyParHash = std.AutoHashMap(object.Hash.Key, object.Hash.Pair);
@@ -379,7 +505,11 @@ fn evalHashExpression(
 
     var hash_iterator = hash_obj.pairs.iterator();
     while (hash_iterator.next()) |hash| {
-        const key = try env.eval(.{ .expression = hash.key_ptr.*.* });
+        const key = env.eval(.{ .expression = hash.key_ptr.*.* }) catch |err| b: {
+            std.debug.print("{s}", .{@errorName(err)});
+            const ident = hash.key_ptr.*.identifier;
+            break :b object.Object{ .builtin_method = .{ .method_name = ident } };
+        };
         const val = try env.eval(.{ .expression = hash.value_ptr.*.* });
 
         const hash_key = try object.Hash.Key.init(&key);
@@ -388,7 +518,7 @@ fn evalHashExpression(
         try pairs.put(hash_key, hash_pair);
     }
 
-    try env.gc.put(pairs, .{ .hash = {} });
+    try env.gc.put(pairs, .hash);
 
     return pairs;
 }
@@ -481,13 +611,11 @@ fn evalIfExpression(env: *Environment, ie: *const ast.IfExpression) anyerror!obj
 
     if (condition.boolean.value) {
         // { block statements if}
-        // return try env.eval(.{ .statement = .{ .block_statement = ie.consequence } });
         return try env.evalBlockStatement(ie.consequence.statements);
     }
 
     if (ie.alternative) |alternative| {
         // { block statement else }
-        // return try env.eval(.{ .statement = .{ .block_statement = alternative } });
         return try env.evalBlockStatement(alternative.statements);
     }
 
