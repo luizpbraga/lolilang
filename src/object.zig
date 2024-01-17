@@ -384,6 +384,13 @@ pub const Object = union(enum) {
             return .{ .integer = .{ .value = @intCast(len) } };
         }
 
+        if (std.mem.eql(u8, arg.method_name.value, "type")) {
+            const value = switch (obj.objType()) {
+                inline else => |tag| @tagName(tag),
+            };
+            return .{ .string = .{ .value = value } };
+        }
+
         return error.MethodNotDefined;
     }
 

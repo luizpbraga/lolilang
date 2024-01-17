@@ -1,21 +1,25 @@
 const std = @import("std");
 const Token = @import("Token.zig");
 
-const BuiltinType = union(enum) {
+const TypeLiteral = union(enum) {
+    null,
     bool,
-
     int,
     uint,
     float,
+    char,
 
-    null,
-
-    string,
-
-    func: struct {
-        args_type: []const TypeLiteral,
-        return_type: TypeLiteral,
+    string: struct {
+        len: usize,
     },
+
+    array: struct {
+        len: usize,
+        type: *const TypeLiteral,
+    },
+
+    structure,
+    enumerator,
 };
 
 // interface
@@ -59,11 +63,6 @@ pub const Statement = union(enum) {
             inline else => |x| x.tokenLiteral(),
         };
     }
-};
-
-pub const TypeLiteral = union(enum) {
-    Identifier,
-    BuiltinType,
 };
 
 /// implements Node,
@@ -291,6 +290,7 @@ pub const Type = struct {
 pub const FloatLiteral = struct {
     token: Token,
     value: f64,
+    type: TypeLiteral = .float,
 
     pub fn expressionNode() void {}
 
@@ -302,6 +302,7 @@ pub const FloatLiteral = struct {
 pub const IntegerLiteral = struct {
     token: Token,
     value: i64,
+    type: TypeLiteral = .int,
 
     pub fn expressionNode() void {}
 
@@ -336,8 +337,8 @@ pub const Boolean = struct {
     token: Token,
     value: bool,
 
-    pub fn typeIs() BuiltinType {
-        return .boolean;
+    pub fn typeIs() TypeLiteral {
+        return .bool;
     }
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {

@@ -155,6 +155,8 @@ pub fn eval(env: *Environment, node: ast.Node) anyerror!object.Object {
 
                 .array_literal => |*array| try env.evalArrayLiteral(array),
 
+                .type => undefined,
+
                 else => unreachable,
 
                 .range => |*range| try env.evalRange(range),

@@ -53,6 +53,19 @@ fn pprint(arg: *const object.Object) void {
             }
             std.debug.print("}}", .{});
         },
+        .structure => |s| {
+            var iter = s.fields.valueIterator();
+
+            std.debug.print("{{", .{});
+            while (iter.next()) |field| {
+                const name = field.name;
+                const value = field.value;
+                std.debug.print(" {s}: ", .{name});
+                pprint(&value);
+                std.debug.print(", ", .{});
+            }
+            std.debug.print("}}", .{});
+        },
         else => std.debug.print("Not yet printable\n", .{}),
     }
 }

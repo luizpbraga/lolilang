@@ -10,6 +10,11 @@ pub fn lookupIdentfier(ident: []const u8) TokenType {
 }
 
 pub const keywords = std.ComptimeStringMap(TokenType, .{
+    .{ "int", .int },
+    .{ "float", .float },
+    .{ "string", .string },
+    .{ "char", .char },
+    .{ "null", .null },
     .{ "in", .in },
     .{ "or", .@"or" },
     .{ "if", .@"if" },
