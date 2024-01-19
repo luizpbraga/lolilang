@@ -1299,11 +1299,8 @@ pub fn parseForLoopRange(self: *Parser, tk: Token, ident: *ast.Expression) anyer
 
     flr.iterable = try self.parseExpressionDump(.lower, .@"{");
 
-    std.debug.print("cur: {s}", .{self.cur_token.literal});
-
     if (self.expectPeek(.@";") and !self.peekTokenIs(.@"{")) {
         @panic("NOT SUPPORTED");
-        // return self.parseMultiForLoopRange(flr);
     }
 
     if (!self.curTokenIs(.@"{")) return error.MissingBrance;

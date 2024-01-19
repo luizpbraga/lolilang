@@ -590,6 +590,7 @@ pub fn evalBlockStatement(env: *Environment, stmts: []ast.Statement) anyerror!ob
 
     for (stmts) |statement| {
         result = try env.eval(.{ .statement = statement });
+        if (result == .@"break") return result;
         if (result == .@"return") return result;
     }
 
