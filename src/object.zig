@@ -206,8 +206,8 @@ pub const Return = struct {
 
 /// TODO
 pub const Error = struct {
-    name: []const u8,
-    payload: ?*Object = null,
+    message: []const u8,
+    // payload: ?*Object = null,
 
     pub fn objType(_: *const @This()) LolliType {
         return .err;

@@ -2,6 +2,7 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const object = @import("./object.zig");
 const buildins = @import("./buildins.zig").buildins;
+const c = @cImport(@cInclude("gc.h"));
 
 const eql = std.mem.eql;
 
@@ -19,9 +20,7 @@ store: std.StringHashMap(object.Object),
 allocated_str: std.ArrayList([]u8),
 /// arrays, function arguments
 allocated_obj_list: std.ArrayList([]object.Object),
-// allocated_enum: std.ArrayList(std.StringHashMap(object.Enum.Tag)),
 allocated_hash: std.ArrayList(std.AutoHashMap(object.Hash.Key, object.Hash.Pair)),
-// to_defer: std.ArrayList([]ast.Statement),
 
 pub fn init(allocator: std.mem.Allocator) Environment {
     return .{
@@ -164,7 +163,6 @@ fn evalIdentifier(env: *Environment, node: *const ast.Identifier) !object.Object
         return .{ .builtin = val };
     }
 
-    std.log.warn("the identifier: {s}\n", .{node.value});
     return error.IdentifierNotFound;
 }
 
