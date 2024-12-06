@@ -7,7 +7,7 @@ const Loli = struct {
     fn run(allocator: std.mem.Allocator, input: []const u8) !void {
         var lexer = Lexer.init(input);
 
-        var parser = try Parser.new(allocator, &lexer);
+        var parser = Parser.new(allocator, &lexer);
         defer parser.deinit();
 
         const program = try parser.parseProgram();
@@ -31,6 +31,4 @@ pub fn main() !void {
     defer allocator.free(input);
 
     try Loli.run(allocator, input);
-
-    std.debug.print("\n\t** loli go brrr **\n", .{});
 }

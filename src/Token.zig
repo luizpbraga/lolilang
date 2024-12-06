@@ -1,20 +1,20 @@
 const Self = @This();
 
-type: TokenType,
+type: Type,
 literal: []const u8,
 
 const std = @import("std");
 
-pub fn lookupIdentfier(ident: []const u8) TokenType {
+pub fn lookupIdentfier(ident: []const u8) Type {
     return if (keywords.has(ident)) keywords.get(ident).? else .identifier;
 }
 
-pub const keywords = std.ComptimeStringMap(TokenType, .{
+pub const keywords = std.StaticStringMap(Type).initComptime(.{
     .{ "in", .in },
     .{ "or", .@"or" },
     .{ "if", .@"if" },
     .{ "null", .null },
-    .{ "func", .func },
+    .{ "fn", .func },
     .{ "with", .with },
     .{ "true", .true },
     .{ "for", .@"for" },
@@ -24,14 +24,14 @@ pub const keywords = std.ComptimeStringMap(TokenType, .{
     .{ "else", .@"else" },
     .{ "enum", .@"enum" },
     .{ "defer", .@"defer" },
-    .{ "const", .@"const" },
+    .{ "con", .@"const" },
     .{ "break", .@"break" },
     .{ "return", .@"return" },
     .{ "switch", .@"switch" },
     .{ "continue", .@"continue" },
 });
 
-pub const TokenType = enum {
+pub const Type = enum {
     illegal,
     eof,
 

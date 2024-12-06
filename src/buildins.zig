@@ -2,10 +2,10 @@ const std = @import("std");
 const object = @import("object.zig");
 const Environment = @import("./Environment.zig");
 
-pub const buildins = std.ComptimeStringMap(object.Builtin, .{
-    .{ "print", .{ .func = printBuiltin } },
-    .{ "readFile", .{ .func = readFileBuiltin } },
-    .{ "closeFile", .{ .func = closeFileBuiltin } },
+pub const buildins = std.StaticStringMap(object.Builtin).initComptime(.{
+    .{ "print", object.Builtin{ .func = printBuiltin } },
+    .{ "readFile", object.Builtin{ .func = readFileBuiltin } },
+    .{ "closeFile", object.Builtin{ .func = closeFileBuiltin } },
 });
 
 const calloc = std.heap.c_allocator;

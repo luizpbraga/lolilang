@@ -57,7 +57,7 @@ pub const String = struct {
             var w = "0".*;
             w[0] = ch;
             const w2 = &w;
-            const element = .{ .string = .{ .value = w2 } };
+            const element = Object{ .string = .{ .value = w2 } };
             return .{
                 .element = element,
                 .index = .{ .integer = .{ .value = @intCast(self.offset - 1) } },

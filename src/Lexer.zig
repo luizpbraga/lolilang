@@ -7,7 +7,7 @@ ch: u8 = 0,
 
 const std = @import("std");
 const Token = @import("Token.zig");
-const TokenType = Token.TokenType;
+const TokenType = Token.Type;
 
 pub fn init(input: []const u8) Self {
     var lexer = Self{ .input = input };

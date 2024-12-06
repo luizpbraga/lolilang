@@ -20,7 +20,7 @@ const BuiltinType = union(enum) {
 
 // interface
 pub const Node = union(enum) {
-    expression: Expression,
+    expression: *Expression,
     statement: Statement,
 
     fn tokenLiteral(self: *const Node) []const u8 {
@@ -175,7 +175,7 @@ pub const Program = struct {
 pub const ConstStatement = struct {
     token: Token, //= .@"var",
     name: Identifier,
-    value: Expression,
+    value: *Expression,
 
     pub fn statementNode(self: *const @This()) void {
         _ = self;
@@ -199,7 +199,7 @@ pub const ConstBlockStatement = struct {
 pub const VarStatement = struct {
     token: Token, //= .@"var",
     name: Identifier,
-    value: Expression,
+    value: *Expression,
     type: ?*Expression = null,
 
     pub fn statementNode(self: *const @This()) void {
@@ -213,7 +213,7 @@ pub const VarStatement = struct {
 
 pub const ReturnStatement = struct {
     token: Token,
-    value: Expression,
+    value: *Expression,
 
     pub fn statementNode(self: *const @This()) void {
         _ = self;
@@ -226,7 +226,7 @@ pub const ReturnStatement = struct {
 
 pub const BreakStatement = struct {
     token: Token,
-    value: Expression,
+    value: *Expression,
 
     pub fn statementNode(self: *const @This()) void {
         _ = self;
@@ -330,7 +330,7 @@ pub const Boolean = struct {
 
 pub const ArrayLiteral = struct {
     token: Token,
-    elements: []Expression,
+    elements: []*Expression,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
@@ -349,7 +349,7 @@ pub const RangeExpression = struct {
 
 pub const HashLiteral = struct {
     token: Token,
-    pairs: std.AutoHashMap(*const Expression, *Expression),
+    pairs: std.AutoHashMap(*Expression, *Expression),
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
@@ -406,7 +406,7 @@ pub const FunctionLiteral = struct {
 pub const CallExpression = struct {
     token: Token, // (
     function: *Expression, // Identifier or FunctionLiteral
-    arguments: []Expression,
+    arguments: []*Expression,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
