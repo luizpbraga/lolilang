@@ -2,7 +2,7 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const object = @import("./object.zig");
 const buildins = @import("./buildins.zig").buildins;
-const c = @cImport(@cInclude("gc.h"));
+// const c = @cImport(@cInclude("gc.h"));
 
 const eql = std.mem.eql;
 
