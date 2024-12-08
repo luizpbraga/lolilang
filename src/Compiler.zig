@@ -28,14 +28,50 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.compile(.{ .statement = s });
             },
 
-            .expression_statement => |exp_stmt| try c.compile(.{ .expression = exp_stmt.expression }),
+            .expression_statement => |exp_stmt| {
+                try c.compile(.{ .expression = exp_stmt.expression });
+                _ = try c.emit(.pop, &.{});
+            },
 
             else => return error.InvalidStatemend,
         },
+
         .expression => |exp| switch (exp.*) {
             .infix_expression => |infix| {
+                const token = infix.token.type;
+
+                if (token == .@"<") {
+                    try c.compile(.{ .expression = infix.right });
+                    try c.compile(.{ .expression = infix.left });
+                    _ = try c.emit(.gt, &.{});
+                    return;
+                }
+
                 try c.compile(.{ .expression = infix.left });
                 try c.compile(.{ .expression = infix.right });
+
+                switch (token) {
+                    .@"+" => _ = try c.emit(.add, &.{}),
+                    .@"-" => _ = try c.emit(.sub, &.{}),
+                    .@"*" => _ = try c.emit(.mul, &.{}),
+                    .@"/" => _ = try c.emit(.div, &.{}),
+                    .@">" => _ = try c.emit(.gt, &.{}),
+                    .@"==" => _ = try c.emit(.eq, &.{}),
+                    .@"!=" => _ = try c.emit(.neq, &.{}),
+                    else => return error.UnknowOperator,
+                }
+            },
+
+            .prefix_expression => |prefix| {
+                const token = prefix.token.type;
+
+                try c.compile(.{ .expression = prefix.right });
+
+                switch (token) {
+                    .@"!" => _ = try c.emit(.not, &.{}),
+                    .@"-" => _ = try c.emit(.min, &.{}),
+                    else => return error.UnknowOperator,
+                }
             },
 
             .integer_literal => |int| {
@@ -43,6 +79,11 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     .integer = .{ .value = int.value },
                 });
                 _ = try c.emit(.constant, &.{pos});
+            },
+
+            .boolean => |boolean| {
+                const op: code.Opcode = if (boolean.value) .true else .false;
+                _ = try c.emit(op, &.{});
             },
 
             else => return error.InvalidExpression,
@@ -99,33 +140,183 @@ const CompilerTestCase = struct {
 test "Integer Arithmetic" {
     const tests: []const CompilerTestCase = &.{
         .{
+            .input = "-1",
+            .expected_constants = &.{1},
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .min, &.{}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+        .{
             .input = "1 + 2",
             .expected_constants = &.{ 1, 2 },
             .expected_instructions = &.{
                 try code.makeBytecode(talloc, .constant, &.{0}),
                 try code.makeBytecode(talloc, .constant, &.{1}),
+                try code.makeBytecode(talloc, .add, &.{}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+        .{
+            .input = "1 - 2",
+            .expected_constants = &.{ 1, 2 },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                try code.makeBytecode(talloc, .sub, &.{}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+        .{
+            .input = "1 * 2",
+            .expected_constants = &.{ 1, 2 },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                try code.makeBytecode(talloc, .mul, &.{}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+        .{
+            .input = "1 / 2",
+            .expected_constants = &.{ 1, 2 },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                try code.makeBytecode(talloc, .div, &.{}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+        .{
+            .input = "1;2",
+            .expected_constants = &.{ 1, 2 },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                try code.makeBytecode(talloc, .pop, &.{}),
             },
         },
     };
 
+    try runCompilerTest(talloc, tests);
+}
+
+test "Boolean Expression" {
+    const tests: []const CompilerTestCase = &.{
+        .{
+            .input = "!true",
+            .expected_constants = &.{},
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .true, &.{}),
+                try code.makeBytecode(talloc, .not, &.{}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+        .{
+            .input = "true",
+            .expected_constants = &.{},
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .true, &.{}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+        .{
+            .input = "false",
+            .expected_constants = &.{},
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .false, &.{}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+        .{
+            .input = "1 > 2",
+            .expected_constants = &.{ 1, 2 },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                try code.makeBytecode(talloc, .gt, &.{}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+        .{
+            .input = "1 < 2",
+            .expected_constants = &.{ 2, 1 }, // ATTENTION!!
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                try code.makeBytecode(talloc, .gt, &.{}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+        .{
+            .input = "1 != 2",
+            .expected_constants = &.{ 1, 2 },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                try code.makeBytecode(talloc, .neq, &.{}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+        .{
+            .input = "1 == 2",
+            .expected_constants = &.{ 1, 2 },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                try code.makeBytecode(talloc, .eq, &.{}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+
+        .{
+            .input = "true != false",
+            .expected_constants = &.{},
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .true, &.{}),
+                try code.makeBytecode(talloc, .false, &.{}),
+                try code.makeBytecode(talloc, .neq, &.{}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+        .{
+            .input = "true == false",
+            .expected_constants = &.{},
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .true, &.{}),
+                try code.makeBytecode(talloc, .false, &.{}),
+                try code.makeBytecode(talloc, .eq, &.{}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+    };
+
+    try runCompilerTest(talloc, tests);
+}
+
+fn runCompilerTest(alloc: anytype, tests: anytype) !void {
     for (tests) |t| {
         defer for (t.expected_instructions) |bytes| {
-            talloc.free(bytes);
+            alloc.free(bytes);
         };
 
         var lexer = Lexer.init(t.input);
-        var parser = Parser.new(talloc, &lexer);
+        var parser = Parser.new(alloc, &lexer);
         defer parser.deinit();
         const program = try parser.parseProgram();
 
-        var compiler = Compiler.init(talloc);
+        var compiler = Compiler.init(alloc);
         defer compiler.deinit();
-        try compiler.compile(.{ .statement = .{ .program_statement = program } });
+        try compiler.compile(.{
+            .statement = .{ .program_statement = program },
+        });
         // // assert the bytecodes
         var b = try compiler.bytecode();
         defer b.deinit(&compiler);
 
-        try checkInstructions(talloc, t.expected_instructions, b.instructions);
+        try checkInstructions(alloc, t.expected_instructions, b.instructions);
         try checkConstants(t.expected_constants, b.constants);
     }
 }
@@ -135,7 +326,7 @@ fn checkInstructions(alloc: anytype, expected: []const code.Instructions, actual
     defer alloc.free(concatted);
 
     if (actual.len != concatted.len) {
-        std.log.err("want={}, got={}\n", .{ actual.len, concatted.len });
+        std.log.err("want='{s}'\ngot='{s}'\n", .{ actual, concatted });
         return error.WrongInstructionLenght;
     }
 
@@ -163,5 +354,8 @@ fn checkIntegerObject(exp: i64, act: object.Object) !void {
         else => return error.NotAInteger,
     };
 
-    if (result.value != exp) return error.WrongIntegerValue;
+    if (result.value != exp) {
+        std.log.err("Expect: {} Got: {}\n", .{ exp, result.value });
+        return error.WrongIntegerValue;
+    }
 }

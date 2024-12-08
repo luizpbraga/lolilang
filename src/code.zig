@@ -6,8 +6,25 @@ pub const Instructions = []u8;
 
 /// Instruction frist byte.
 pub const Opcode = enum(u8) {
-    /// comptime numbers
+    // comptime numbers
     constant,
+    // remove the topmost elements of the stack and add it
+    add,
+    sub,
+    mul,
+    div,
+    // pop the topmost stack element after every statement
+    pop,
+    // boolean values: add boolean values to the stack
+    true,
+    false,
+    // comparison operators
+    eq,
+    gt,
+    neq,
+    /// infix op
+    min,
+    not,
 
     /// numbers of operands (bytes) for a given upcode
     /// optimize: use a single small integer
@@ -18,6 +35,23 @@ pub const Opcode = enum(u8) {
         // 2 bytes long -> u16 (max of 65535 contants defined)
         // bytecode with 3 bytes long
         .constant = &.{2},
+        // operates in the two top most elements on the stack
+        .add = &.{},
+        .sub = &.{},
+        .mul = &.{},
+        .div = &.{},
+        // pop's the last element
+        .pop = &.{},
+        // gen a boolean obj
+        .true = &.{},
+        .false = &.{},
+        // compare the two to most elements on the stack
+        .eq = &.{},
+        .gt = &.{},
+        .neq = &.{},
+        // infix
+        .min = &.{},
+        .not = &.{},
     });
 
     pub fn lookUp(op: u8) !OperandWidth {
@@ -69,6 +103,7 @@ test makeBytecode {
         expected: []const u8,
     } = &.{
         .{ .op = .constant, .operands = &.{65534}, .expected = &.{ @intFromEnum(Opcode.constant), 255, 254 } },
+        .{ .op = .add, .operands = &.{}, .expected = &.{@intFromEnum(Opcode.add)} },
     };
 
     for (tests) |t| {
@@ -136,16 +171,16 @@ fn readOperands(alloc: anytype, widths: Opcode.OperandWidth, ins: Instructions) 
 
 test "Instructions String" {
     const instructions: []const Instructions = &.{
-        try makeBytecode(talloc, .constant, &.{1}),
+        try makeBytecode(talloc, .add, &.{}),
         try makeBytecode(talloc, .constant, &.{2}),
         try makeBytecode(talloc, .constant, &.{65535}),
     };
     defer for (instructions) |ins| talloc.free(ins);
 
     const expected =
-        \\0000 constant 1
-        \\0003 constant 2
-        \\0006 constant 65535
+        \\0000 add
+        \\0001 constant 2
+        \\0004 constant 65535
         \\
     ;
 
@@ -184,6 +219,7 @@ fn formatInstruction(alloc: anytype, ins: Instructions) ![]const u8 {
         }
 
         switch (operand_count) {
+            0 => try out.writer().print("{:0>4} {s}\n", .{ i, @tagName(op) }),
             1 => try out.writer().print("{:0>4} {s} {d}\n", .{ i, @tagName(op), operands[0] }),
             else => try out.writer().print("{d} Error: operand len {d} does not match defined {d}\n", .{ i, operands.len, operand_count }),
         }

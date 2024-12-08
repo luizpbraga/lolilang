@@ -11,7 +11,7 @@ const Environment = @This();
 /// outer scope (like globals for a scope)
 allocator: std.mem.Allocator,
 /// to be tested
-arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.c_allocator),
+arena: std.heap.ArenaAllocator,
 outer: ?*Environment = null,
 permit: ?[]const []const u8 = null,
 
@@ -24,6 +24,7 @@ allocated_hash: std.ArrayList(std.AutoHashMap(object.Hash.Key, object.Hash.Pair)
 
 pub fn init(allocator: std.mem.Allocator) Environment {
     return .{
+        .arena = std.heap.ArenaAllocator.init(allocator),
         .allocator = allocator,
         .store = std.StringHashMap(object.Object).init(allocator),
         .is_const = std.StringHashMap(bool).init(allocator),

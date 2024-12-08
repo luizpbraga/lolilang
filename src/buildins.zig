@@ -4,27 +4,27 @@ const Environment = @import("./Environment.zig");
 
 pub const buildins = std.StaticStringMap(object.Builtin).initComptime(.{
     .{ "print", object.Builtin{ .func = printBuiltin } },
-    .{ "readFile", object.Builtin{ .func = readFileBuiltin } },
-    .{ "closeFile", object.Builtin{ .func = closeFileBuiltin } },
+    // .{ "readFile", object.Builtin{ .func = readFileBuiltin } },
+    // .{ "closeFile", object.Builtin{ .func = closeFileBuiltin } },
 });
 
-const calloc = std.heap.c_allocator;
-
-fn readFile(file_path: []const u8) ?[]const u8 {
-    return std.fs.cwd().readFileAlloc(calloc, file_path, std.math.maxInt(usize)) catch null;
-}
-
-fn readFileBuiltin(args: []const object.Object) object.Object {
-    const file_path = args[0].string.value;
-    const content = readFile(file_path) orelse return object.NULL;
-    return object.Object{ .string = .{ .value = content } };
-}
-
-fn closeFileBuiltin(args: []const object.Object) object.Object {
-    const string_to_kill = args[0].string.value;
-    calloc.free(string_to_kill);
-    return object.NULL;
-}
+// const calloc = std.heap.c_allocator;
+//
+// fn readFile(file_path: []const u8) ?[]const u8 {
+//     return std.fs.cwd().readFileAlloc(calloc, file_path, std.math.maxInt(usize)) catch null;
+// }
+//
+// fn readFileBuiltin(args: []const object.Object) object.Object {
+//     const file_path = args[0].string.value;
+//     const content = readFile(file_path) orelse return object.NULL;
+//     return object.Object{ .string = .{ .value = content } };
+// }
+//
+// fn closeFileBuiltin(args: []const object.Object) object.Object {
+//     const string_to_kill = args[0].string.value;
+//     calloc.free(string_to_kill);
+//     return object.NULL;
+// }
 
 fn pprint(arg: *const object.Object) void {
     switch (arg.*) {
