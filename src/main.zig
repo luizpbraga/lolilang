@@ -7,7 +7,10 @@ pub fn main() !void {
     var args = std.process.args();
     _ = args.next();
 
-    const file_name = if (args.next()) |file| file else return error.MissingFile;
+    const file_name = if (args.next()) |file| file else {
+        return try loli.startRepl(allocator);
+    };
+
     const input: []const u8 = try std.fs.cwd().readFileAlloc(allocator, file_name, 1024);
     defer allocator.free(input);
 

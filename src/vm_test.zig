@@ -8,6 +8,20 @@ const Compiler = @import("Compiler.zig");
 const Vm = @import("Vm.zig");
 const talloc = std.testing.allocator;
 
+test "Conditionals" {
+    const tests: []const struct {
+        input: []const u8,
+        expected: isize,
+    } = &.{
+        .{ .input = "if true { -1 }", .expected = -1 },
+        .{ .input = "if true { -1 } else { 2 }", .expected = -1 },
+        .{ .input = "if false { -1 } else { 2 }", .expected = 2 },
+        .{ .input = "if (1 < 2) { -1 } else { 2 }", .expected = -1 },
+    };
+
+    try runVmTests(talloc, tests);
+}
+
 test "Integer Arithmetic" {
     const tests: []const struct {
         input: []const u8,

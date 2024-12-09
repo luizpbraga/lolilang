@@ -14,7 +14,7 @@ pub fn init(b: *Compiler.Bytecode) Vm {
 pub fn runVm(b: *Compiler.Bytecode) !object.Object {
     var vm: Vm = .init(b);
     try vm.run();
-    return vm.lastPoped();
+    return vm.lastPopped();
 }
 
 pub fn run(vm: *Vm) !void {
@@ -37,6 +37,28 @@ pub fn run(vm: *Vm) !void {
             .not, .min => try vm.executePrefixOperation(op),
 
             .true, .false => try vm.push(.{ .boolean = .{ .value = if (op == .true) true else false } }),
+
+            .jump => {
+                // get the operand located right afther the opcode
+                const pos = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
+                // move ip to the target out of jump
+                ip = pos - 1;
+            },
+
+            .jumpifnottrue => {
+                const pos = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
+                ip += 2;
+
+                const condition = vm.pop();
+
+                if (condition != .boolean) {
+                    return error.NotABooleanExpression;
+                }
+
+                if (!condition.boolean.value) {
+                    ip = pos - 1;
+                }
+            },
 
             .pop => _ = vm.pop(),
         }
@@ -139,7 +161,7 @@ fn top(vm: *Vm) ?object.Object {
     return vm.stack[vm.sp - 1];
 }
 
-pub fn lastPoped(vm: *Vm) object.Object {
+pub fn lastPopped(vm: *Vm) object.Object {
     return vm.stack[vm.sp];
 }
 

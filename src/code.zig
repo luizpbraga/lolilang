@@ -6,25 +6,36 @@ pub const Instructions = []u8;
 
 /// Instruction frist byte.
 pub const Opcode = enum(u8) {
-    // comptime numbers
+    /// comptime values
     constant,
-    // remove the topmost elements of the stack and add it
+    /// remove the topmost elements of the stack and add it
     add,
+    /// remove the topmost elements of the stack and sub it
     sub,
+    /// remove the topmost elements of the stack and mul it
     mul,
+    /// remove the topmost elements of the stack and div it
     div,
-    // pop the topmost stack element after every statement
+    /// pops the topmost stack element after every statement
     pop,
-    // boolean values: add boolean values to the stack
+    /// boolean values: add boolean value 'true' to the stack
     true,
+    /// boolean values: add boolean value 'true' to the stack
     false,
-    // compare the two topmost op on the stack
+    /// compare the two topmost op on the stack (==)
     eq,
+    /// compare the two topmost op on the stack (> and <)
     gt,
+    /// compare the two topmost op on the stack (!=)
     neq,
-    /// infix op
+    /// infix op (-)
     min,
+    /// infix op (!)
     not,
+    /// conditionals: jump if the value on top of the stack IS NOT true
+    jumpifnottrue,
+    /// just jump bytecodes
+    jump,
 
     /// numbers of operands (bytes) for a given upcode
     /// optimize: use a single small integer
@@ -35,6 +46,8 @@ pub const Opcode = enum(u8) {
         // 2 bytes long -> u16 (max of 65535 contants defined)
         // bytecode with 3 bytes long
         .constant = &.{2},
+        .jumpifnottrue = &.{2},
+        .jump = &.{2},
     });
 
     pub fn lookUp(op: u8) !OperandWidth {

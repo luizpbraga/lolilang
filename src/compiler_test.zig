@@ -13,6 +13,53 @@ const CompilerTestCase = struct {
     expected_instructions: []const []u8,
 };
 
+test "Conditionals" {
+    const tests: []const CompilerTestCase = &.{
+        .{
+            .input = "if (true) { 10 } else { 20 }; 666;",
+            .expected_constants = &.{ 10, 20, 666 },
+            .expected_instructions = &.{
+                // 0000
+                try code.makeBytecode(talloc, .true, &.{}),
+                // 0001
+                try code.makeBytecode(talloc, .jumpifnottrue, &.{10}),
+                // 0004
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                // 0007
+                try code.makeBytecode(talloc, .jump, &.{13}),
+                // 00010
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                // 0013
+                try code.makeBytecode(talloc, .pop, &.{}),
+                //0014
+                try code.makeBytecode(talloc, .constant, &.{2}),
+                // 0017
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+        .{
+            .input = "if (true) { 10 }; 666;",
+            .expected_constants = &.{ 10, 666 },
+            .expected_instructions = &.{
+                // 0000
+                try code.makeBytecode(talloc, .true, &.{}),
+                // 0001
+                try code.makeBytecode(talloc, .jumpifnottrue, &.{7}),
+                // 0004
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                // 0007
+                try code.makeBytecode(talloc, .pop, &.{}),
+                // 0008
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                // 0011
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+    };
+    defer for (tests) |t| for (t.expected_instructions) |bytes| talloc.free(bytes);
+    try runCompilerTest(talloc, tests);
+}
+
 test "Integer Arithmetic" {
     const tests: []const CompilerTestCase = &.{
         .{
@@ -75,6 +122,7 @@ test "Integer Arithmetic" {
             },
         },
     };
+    defer for (tests) |t| for (t.expected_instructions) |bytes| talloc.free(bytes);
 
     try runCompilerTest(talloc, tests);
 }
@@ -168,15 +216,16 @@ test "Boolean Expression" {
             },
         },
     };
+    defer for (tests) |t| for (t.expected_instructions) |bytes| talloc.free(bytes);
 
     try runCompilerTest(talloc, tests);
 }
 
 fn runCompilerTest(alloc: anytype, tests: anytype) !void {
     for (tests) |t| {
-        defer for (t.expected_instructions) |bytes| {
-            alloc.free(bytes);
-        };
+        // defer for (t.expected_instructions) |bytes| {
+        //     alloc.free(bytes);
+        // };
 
         var lexer = Lexer.init(t.input);
         var parser = Parser.new(alloc, &lexer);
@@ -202,13 +251,24 @@ fn checkInstructions(alloc: anytype, expected: []const code.Instructions, actual
     defer alloc.free(concatted);
 
     if (actual.len != concatted.len) {
-        std.log.err("want='{s}'\ngot='{s}'\n", .{ actual, concatted });
+        try logBytecode(alloc, concatted, actual);
         return error.WrongInstructionLenght;
     }
 
     for (actual, concatted) |act, ins| {
-        if (act != ins) return error.WrongInstruction;
+        if (act != ins) {
+            try logBytecode(alloc, concatted, actual);
+            return error.WrongInstruction;
+        }
     }
+}
+
+fn logBytecode(alloc: anytype, concatted: []u8, actual: []u8) !void {
+    const exp_fmt = try code.formatInstruction(alloc, concatted);
+    defer alloc.free(exp_fmt);
+    const act_fmt = try code.formatInstruction(alloc, actual);
+    defer alloc.free(act_fmt);
+    std.log.err("\nExpected:'{s}'\nGot:'{s}'\n", .{ exp_fmt, act_fmt });
 }
 
 fn checkConstants(expected: anytype, actual: []object.Object) !void {

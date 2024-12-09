@@ -4,12 +4,21 @@ const Compiler = @This();
 allocator: std.mem.Allocator,
 constants: std.ArrayList(object.Object),
 instructions: std.ArrayList(code.Instructions),
+last_ins: EmittedInstruction,
+prev_ins: EmittedInstruction,
+
+const EmittedInstruction = struct {
+    opcode: code.Opcode,
+    pos: usize,
+};
 
 pub fn init(alloc: anytype) Compiler {
     return .{
         .allocator = alloc,
         .constants = .init(alloc),
         .instructions = .init(alloc),
+        .last_ins = undefined,
+        .prev_ins = undefined,
     };
 }
 
@@ -24,13 +33,21 @@ pub fn deinit(c: *Compiler) void {
 pub fn compile(c: *Compiler, node: ast.Node) !void {
     switch (node) {
         .statement => |stmt| switch (stmt) {
-            .program_statement => |program| for (program.statements.items) |s| {
-                try c.compile(.{ .statement = s });
+            .program_statement => |program| {
+                for (program.statements.items) |s| {
+                    try c.compile(.{ .statement = s });
+                }
             },
 
             .expression_statement => |exp_stmt| {
                 try c.compile(.{ .expression = exp_stmt.expression });
-                _ = try c.emit(.pop, &.{});
+                try c.emit(.pop, &.{});
+            },
+
+            .block_statement => |block| {
+                for (block.statements) |_stmt| {
+                    try c.compile(.{ .statement = _stmt });
+                }
             },
 
             else => return error.InvalidStatemend,
@@ -43,23 +60,23 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 if (token == .@"<") {
                     try c.compile(.{ .expression = infix.right });
                     try c.compile(.{ .expression = infix.left });
-                    _ = try c.emit(.gt, &.{});
+                    try c.emit(.gt, &.{});
                     return;
                 }
 
                 try c.compile(.{ .expression = infix.left });
                 try c.compile(.{ .expression = infix.right });
-
-                switch (token) {
-                    .@"+" => _ = try c.emit(.add, &.{}),
-                    .@"-" => _ = try c.emit(.sub, &.{}),
-                    .@"*" => _ = try c.emit(.mul, &.{}),
-                    .@"/" => _ = try c.emit(.div, &.{}),
-                    .@">" => _ = try c.emit(.gt, &.{}),
-                    .@"==" => _ = try c.emit(.eq, &.{}),
-                    .@"!=" => _ = try c.emit(.neq, &.{}),
+                const op: code.Opcode = switch (token) {
+                    .@"+" => .add,
+                    .@"-" => .sub,
+                    .@"*" => .mul,
+                    .@"/" => .div,
+                    .@">" => .gt,
+                    .@"==" => .eq,
+                    .@"!=" => .neq,
                     else => return error.UnknowOperator,
-                }
+                };
+                try c.emit(op, &.{});
             },
 
             .prefix_expression => |prefix| {
@@ -68,8 +85,8 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.compile(.{ .expression = prefix.right });
 
                 switch (token) {
-                    .@"!" => _ = try c.emit(.not, &.{}),
-                    .@"-" => _ = try c.emit(.min, &.{}),
+                    .@"!" => try c.emit(.not, &.{}),
+                    .@"-" => try c.emit(.min, &.{}),
                     else => return error.UnknowOperator,
                 }
             },
@@ -78,16 +95,68 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 const pos = try c.addConstants(.{
                     .integer = .{ .value = int.value },
                 });
-                _ = try c.emit(.constant, &.{pos});
+                try c.emit(.constant, &.{pos});
             },
 
             .boolean => |boolean| {
                 const op: code.Opcode = if (boolean.value) .true else .false;
-                _ = try c.emit(op, &.{});
+                try c.emit(op, &.{});
+            },
+
+            .if_expression => |ifexp| {
+                // AST if (condition) { consequence } else { alternative }
+                //
+                // compiling the condition
+                try c.compile(.{ .expression = ifexp.condition });
+
+                const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
+
+                // compiling the consequence
+                try c.compile(.{ .statement = .{ .block_statement = ifexp.consequence } });
+
+                // statements add a pop in the end, wee drop the last pop (if return)
+                c.ifLastInstructionIsPopcodeThenPopIt();
+
+                if (ifexp.alternative) |alt| {
+                    const jum_pos = try c.emitPos(.jump, &.{9999});
+
+                    const after_consequence_position = c.insLen();
+                    // replases the 9999 (.jump_if_not_true_pos) to the correct operand (after_consequence_position);
+                    try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
+
+                    try c.compile(.{ .statement = .{ .block_statement = alt } });
+
+                    // statements add a pop in the end, wee drop the last pop (if return)
+                    c.ifLastInstructionIsPopcodeThenPopIt();
+
+                    const after_alternative_pos = c.insLen();
+                    // replases the 9999 (.jump) to the correct operand (after_alternative_pos);
+                    try c.changeOperand(jum_pos, after_alternative_pos);
+
+                    return;
+                }
+
+                // after_alternative_pos - jump_if_not_true_pos gives the offset
+                const after_consequence_position = c.insLen();
+                // replases the 999 to the correct operand (after_consequence_position);
+                try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
             },
 
             else => return error.InvalidExpression,
         },
+    }
+}
+
+fn insLen(c: *Compiler) usize {
+    var len: usize = 0;
+    for (c.instructions.items) |ins| len += ins.len;
+    return len;
+}
+
+fn ifLastInstructionIsPopcodeThenPopIt(c: *Compiler) void {
+    if (c.last_ins.opcode == .pop) {
+        c.allocator.free(c.instructions.pop());
+        c.last_ins = c.prev_ins;
     }
 }
 
@@ -102,10 +171,35 @@ fn addInstruction(c: *Compiler, ins: code.Instructions) !usize {
     return pos_new_ins;
 }
 
+fn replaceInstruction(c: *Compiler, pos: usize, new_ins: []u8) !void {
+    c.allocator.free(c.instructions.orderedRemove(pos));
+    try c.instructions.insert(pos, new_ins);
+}
+
+/// replaces the instruction
+fn changeOperand(c: *Compiler, op_pos: usize, operand: usize) !void {
+    const op: code.Opcode = @enumFromInt(c.instructions.items[op_pos][0]);
+    const new_ins = try code.makeBytecode(c.allocator, op, &.{operand});
+    try c.replaceInstruction(op_pos, new_ins);
+}
+
 /// generate a instruction and add it to a pool
-pub fn emit(c: *Compiler, op: code.Opcode, operants: []const usize) !usize {
+pub fn emit(c: *Compiler, op: code.Opcode, operants: []const usize) !void {
     const ins = try code.makeBytecode(c.allocator, op, operants);
-    return try c.addInstruction(ins);
+    const pos = try c.addInstruction(ins);
+    c.setLastInstruction(op, pos);
+}
+
+pub fn emitPos(c: *Compiler, op: code.Opcode, operants: []const usize) !usize {
+    const ins = try code.makeBytecode(c.allocator, op, operants);
+    const pos = try c.addInstruction(ins);
+    c.setLastInstruction(op, pos);
+    return pos;
+}
+
+fn setLastInstruction(c: *Compiler, op: code.Opcode, pos: usize) void {
+    c.prev_ins = c.last_ins;
+    c.last_ins = .{ .opcode = op, .pos = pos };
 }
 
 pub fn bytecode(c: *Compiler) !Bytecode {
@@ -358,4 +452,8 @@ fn checkIntegerObject(exp: i64, act: object.Object) !void {
         std.log.err("Expect: {} Got: {}\n", .{ exp, result.value });
         return error.WrongIntegerValue;
     }
+}
+
+test {
+    _ = @import("compiler_test.zig");
 }
