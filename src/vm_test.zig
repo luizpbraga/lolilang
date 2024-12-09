@@ -1,3 +1,13 @@
+const std = @import("std");
+const ast = @import("ast.zig");
+const Parser = @import("Parser.zig");
+const code = @import("code.zig");
+const object = @import("object.zig");
+const Lexer = @import("Lexer.zig");
+const Compiler = @import("Compiler.zig");
+const Vm = @import("Vm.zig");
+const talloc = std.testing.allocator;
+
 test "Integer Arithmetic" {
     const tests: []const struct {
         input: []const u8,
@@ -55,15 +65,11 @@ fn runVmTests(alloc: anytype, tests: anytype) !void {
         var b = try compiler.bytecode();
         defer b.deinit(&compiler);
 
-        const fmt = try code.formatInstruction(alloc, b.instructions);
-        defer alloc.free(fmt);
+        // const fmt = try code.formatInstruction(alloc, b.instructions);
+        // defer alloc.free(fmt);
+        // std.debug.print("input:'{s}'\nfmt:'{s}'\n", .{ t.input, fmt });
 
-        std.debug.print("input:'{s}'\nfmt:'{s}'\n", .{ t.input, fmt });
-
-        var vm: Vm = .init(&b);
-        try vm.run();
-
-        const obj = vm.lastPoped();
+        const obj = try Vm.runVm(&b);
         try expectedObject(t.expected, obj);
     }
 }
@@ -93,13 +99,3 @@ fn expectedObject(expected: anytype, actual: object.Object) !void {
         else => {},
     }
 }
-
-const std = @import("std");
-const ast = @import("../ast.zig");
-const Parser = @import("../Parser.zig");
-const code = @import("../code.zig");
-const object = @import("../object.zig");
-const Lexer = @import("../Lexer.zig");
-const Compiler = @import("../Compiler.zig");
-const Vm = @import("../Vm.zig");
-const talloc = std.testing.allocator;

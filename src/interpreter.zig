@@ -11,5 +11,5 @@ pub fn main() !void {
     const input: []const u8 = try std.fs.cwd().readFileAlloc(allocator, file_name, 1024);
     defer allocator.free(input);
 
-    try loli.runVm(allocator, input);
+    try loli.runInterpreter(allocator, input);
 }

@@ -15,22 +15,23 @@ pub fn init(input: []const u8) Self {
     return lexer;
 }
 
-fn readNumber(self: *Self) struct { []const u8, bool } {
+// TODO: support Hexadecimal
+fn readNumber(self: *Self) Token {
     const position = self.position;
 
     while (isDigit(self.ch)) {
         self.readChar();
     }
 
-    if (self.ch != '.') return .{ self.input[position..self.position], false };
+    if (self.ch != '.') return .{ .literal = self.input[position..self.position], .type = .int };
 
-    if (self.peekChar() == '.') return .{ self.input[position..self.position], false };
+    if (self.peekChar() == '.') return .{ .literal = self.input[position..self.position], .type = .int };
 
     self.readChar();
 
     while (isDigit(self.ch)) self.readChar();
 
-    return .{ self.input[position..self.position], true };
+    return .{ .literal = self.input[position..self.position], .type = .float };
 }
 
 fn readChar(self: *Self) void {
@@ -197,8 +198,7 @@ pub fn nextToken(self: *Self) Token {
             return Token{ .type = token_type, .literal = literal };
         },
         '0'...'9' => {
-            const literal, const is_float = self.readNumber();
-            return Token{ .type = if (is_float) .float else .int, .literal = literal };
+            return self.readNumber();
         },
         else => newToken(.illegal),
     };

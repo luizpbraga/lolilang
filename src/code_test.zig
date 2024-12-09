@@ -3,6 +3,8 @@ const code = @import("code.zig");
 const Opcode = code.Opcode;
 const Instructions = code.Instructions;
 const makeBytecode = code.makeBytecode;
+const readOperands = code.readOperands;
+const formatInstruction = code.formatInstruction;
 const talloc = std.testing.allocator;
 
 test makeBytecode {
@@ -58,26 +60,6 @@ test readOperands {
     }
 }
 
-/// Decode the instructions (Reverse of makeBytecode)
-/// retuns the decoded operands and the readed bytes to decode;
-fn readOperands(alloc: anytype, widths: Opcode.OperandWidth, ins: Instructions) !struct { []usize, usize } {
-    const operands = try alloc.alloc(usize, widths.len);
-    var offset: usize = 0;
-
-    for (widths, 0..) |w, i| {
-        switch (w) {
-            2 => {
-                // u16: 2 bytes
-                operands[i] = @intCast(std.mem.readInt(u16, ins[offset..][0..2], .big));
-            },
-            else => {},
-        }
-        offset += @intCast(w);
-    }
-
-    return .{ operands, offset };
-}
-
 test "Instructions String" {
     const instructions: []const Instructions = &.{
         try makeBytecode(talloc, .add, &.{}),
@@ -103,38 +85,4 @@ test "Instructions String" {
         std.log.err("expect:'{s}'\ngot:'{s}'\n", .{ expected, formatted_string });
         return error.InstructionsWronglyFormatted;
     }
-}
-
-/// Dissemble the bytecodes
-fn formatInstruction(alloc: anytype, ins: Instructions) ![]const u8 {
-    var out: std.ArrayList(u8) = .init(alloc);
-    errdefer out.deinit();
-
-    var i: usize = 0;
-    while (i < ins.len) {
-        const op_int = ins[i];
-        const w = Opcode.lookUp(op_int) catch |err| {
-            try out.writer().print("error: {s}\n", .{@errorName(err)});
-            continue;
-        };
-        const op: Opcode = @enumFromInt(op_int);
-
-        const operands, const read = try readOperands(alloc, w, ins[i + 1 ..]);
-        defer alloc.free(operands);
-
-        const operand_count = w.len;
-        if (operands.len != operand_count) {
-            try out.writer().print("{} Error: openand lenght {} does not match definied {}\n", .{ i, operands.len, operand_count });
-        }
-
-        switch (operand_count) {
-            0 => try out.writer().print("{:0>4} {s}\n", .{ i, @tagName(op) }),
-            1 => try out.writer().print("{:0>4} {s} {d}\n", .{ i, @tagName(op), operands[0] }),
-            else => try out.writer().print("{d} Error: operand len {d} does not match defined {d}\n", .{ i, operands.len, operand_count }),
-        }
-
-        i += 1 + read;
-    }
-
-    return try out.toOwnedSlice();
 }

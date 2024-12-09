@@ -18,7 +18,7 @@ pub const Opcode = enum(u8) {
     // boolean values: add boolean values to the stack
     true,
     false,
-    // comparison operators
+    // compare the two topmost op on the stack
     eq,
     gt,
     neq,
@@ -28,30 +28,13 @@ pub const Opcode = enum(u8) {
 
     /// numbers of operands (bytes) for a given upcode
     /// optimize: use a single small integer
-    const OperandWidth = []const usize;
+    pub const OperandWidth = []const usize;
 
     /// Debug propose, []const usize represents the operand width
-    const definitions: std.EnumMap(Opcode, OperandWidth) = .init(.{
+    pub const definitions: std.EnumMap(Opcode, OperandWidth) = .initFullWithDefault(&.{}, .{
         // 2 bytes long -> u16 (max of 65535 contants defined)
         // bytecode with 3 bytes long
         .constant = &.{2},
-        // operates in the two top most elements on the stack
-        .add = &.{},
-        .sub = &.{},
-        .mul = &.{},
-        .div = &.{},
-        // pop's the last element
-        .pop = &.{},
-        // gen a boolean obj
-        .true = &.{},
-        .false = &.{},
-        // compare the two to most elements on the stack
-        .eq = &.{},
-        .gt = &.{},
-        .neq = &.{},
-        // infix
-        .min = &.{},
-        .not = &.{},
     });
 
     pub fn lookUp(op: u8) !OperandWidth {
@@ -62,9 +45,7 @@ pub const Opcode = enum(u8) {
 /// TODO: maybe a comptime functions
 /// caller owns the memory
 pub fn makeBytecode(alloc: anytype, op: Opcode, operands: []const usize) ![]u8 {
-    const widths = Opcode.definitions.get(op) orelse {
-        return error.EmptyDefinition;
-    };
+    const widths = Opcode.definitions.get(op) orelse return error.UndefinedOpcode;
 
     var instruction_len: usize = 1;
     for (widths) |w| {
@@ -96,62 +77,9 @@ pub fn makeBytecode(alloc: anytype, op: Opcode, operands: []const usize) ![]u8 {
     return instructions;
 }
 
-test makeBytecode {
-    const tests: []const struct {
-        op: Opcode,
-        operands: []const usize,
-        expected: []const u8,
-    } = &.{
-        .{ .op = .constant, .operands = &.{65534}, .expected = &.{ @intFromEnum(Opcode.constant), 255, 254 } },
-        .{ .op = .add, .operands = &.{}, .expected = &.{@intFromEnum(Opcode.add)} },
-    };
-
-    for (tests) |t| {
-        const instruction = try makeBytecode(talloc, t.op, t.operands);
-        defer talloc.free(instruction);
-
-        if (instruction.len != t.expected.len) {
-            std.log.err("instruction has wrong lenght. Want={}, got={}\n", .{ t.expected.len, instruction.len });
-            return error.UnexpendedInstructiosLenght;
-        }
-
-        for (instruction, t.expected, 0..) |ins, bytes, i| {
-            if (ins != bytes) {
-                std.log.err("wrong bytes at {}. wand={}, got={}\n", .{ i, bytes, ins });
-                return error.WrongByte;
-            }
-        }
-    }
-}
-
-test readOperands {
-    const tests: []const struct {
-        op: Opcode,
-        operands: []const usize,
-        bytes_read: usize,
-    } = &.{
-        .{ .op = .constant, .operands = &.{65535}, .bytes_read = 2 },
-    };
-
-    for (tests) |t| {
-        const instruction = try makeBytecode(talloc, t.op, t.operands);
-        defer talloc.free(instruction);
-
-        const widths = try Opcode.lookUp(@intFromEnum(t.op));
-
-        const operands_read, const n = try readOperands(talloc, widths, instruction[1..]);
-        defer talloc.free(operands_read);
-        if (n != t.bytes_read) return error.WrongBytesRed;
-
-        for (t.operands, operands_read) |want, read| {
-            if (read != want) return error.OperandWrong;
-        }
-    }
-}
-
 /// Decode the instructions (Reverse of makeBytecode)
 /// retuns the decoded operands and the readed bytes to decode;
-fn readOperands(alloc: anytype, widths: Opcode.OperandWidth, ins: Instructions) !struct { []usize, usize } {
+pub fn readOperands(alloc: anytype, widths: Opcode.OperandWidth, ins: Instructions) !struct { []usize, usize } {
     const operands = try alloc.alloc(usize, widths.len);
     var offset: usize = 0;
 
@@ -169,35 +97,8 @@ fn readOperands(alloc: anytype, widths: Opcode.OperandWidth, ins: Instructions) 
     return .{ operands, offset };
 }
 
-test "Instructions String" {
-    const instructions: []const Instructions = &.{
-        try makeBytecode(talloc, .add, &.{}),
-        try makeBytecode(talloc, .constant, &.{2}),
-        try makeBytecode(talloc, .constant, &.{65535}),
-    };
-    defer for (instructions) |ins| talloc.free(ins);
-
-    const expected =
-        \\0000 add
-        \\0001 constant 2
-        \\0004 constant 65535
-        \\
-    ;
-
-    const concatted = try std.mem.concat(talloc, u8, instructions);
-    defer talloc.free(concatted);
-
-    const formatted_string = try formatInstruction(talloc, concatted);
-    defer talloc.free(formatted_string);
-
-    if (!std.mem.eql(u8, expected, formatted_string)) {
-        std.log.err("expect:'{s}'\ngot:'{s}'\n", .{ expected, formatted_string });
-        return error.InstructionsWronglyFormatted;
-    }
-}
-
 /// Dissemble the bytecodes
-fn formatInstruction(alloc: anytype, ins: Instructions) ![]const u8 {
+pub fn formatInstruction(alloc: anytype, ins: Instructions) ![]const u8 {
     var out: std.ArrayList(u8) = .init(alloc);
     errdefer out.deinit();
 
@@ -228,4 +129,8 @@ fn formatInstruction(alloc: anytype, ins: Instructions) ![]const u8 {
     }
 
     return try out.toOwnedSlice();
+}
+
+test {
+    _ = @import("./code_test.zig");
 }
