@@ -1,8 +1,8 @@
 const std = @import("std");
-const Lexer = @import("Lexer.zig");
-const Parser = @import("Parser.zig");
-const ast = @import("ast.zig");
-const TokenType = @import("Token.zig").TokenType;
+const Lexer = @import("../src/Lexer.zig");
+const Parser = @import("../src/Parser.zig");
+const ast = @import("../src/ast.zig");
+const TokenType = @import("../src/Token.zig").TokenType;
 
 const talloc = std.testing.allocator;
 
@@ -30,7 +30,7 @@ fn testIdentifier(exp: *ast.Expression, value: anytype) !void {
 
 fn testIntegerLiteral(exp: *ast.Expression, value: i64) !void {
     const integer = exp.integer_literal;
-    var buff: [10]u8 = undefined;
+    const buff: [10]u8 = undefined;
     const value_str = try std.fmt.bufPrint(&buff, "{d}", .{value});
 
     if (integer.value != value)
@@ -59,32 +59,17 @@ fn testInfixExpression(exp: *ast.Expression, left: anytype, op: []const u8, righ
     try testLiteralExpression(opExp.right, right);
 }
 
-test "func statement" {
-    var lexer = Lexer.init(
-        \\func foo(x, y) { return x + y }
-    );
-    var parser = try Parser.new(talloc, &lexer);
-    defer parser.deinit();
-
-    const program = try parser.parseProgram();
-
-    if (program.statements.items.len != 1) {
-        std.log.err("len: {d}", .{program.statements.items.len});
-        return error.NotEnoughStatements;
-    }
-}
-
 test "switch" {
-    var lexer = Lexer.init(
-        \\var x = 0
+    const lexer = Lexer.init(
+        \\const x = 0
         \\switch x {
-        \\  0    => { 0 }
-        \\  1    => { 1 }
+        \\  0    => { 0 },
+        \\  1    => { 1 },
         \\  else => { 2 }
         \\}
         \\print(x)
     );
-    var parser = try Parser.new(talloc, &lexer);
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -96,9 +81,9 @@ test "switch" {
 }
 
 test "for in loop" {
-    for ([_][]const u8{"for i, idx in list { var y = 10 }"}) |x| {
-        var lexer = Lexer.init(x);
-        var parser = try Parser.new(talloc, &lexer);
+    for ([_][]const u8{"for i,idx in list { const y = 10 }"}) |x| {
+        const lexer = Lexer.init(x);
+        const parser = try Parser.new(talloc, &lexer);
         defer parser.deinit();
 
         const program = try parser.parseProgram();
@@ -117,9 +102,9 @@ test "for in loop" {
 }
 
 test "for loop" {
-    for ([_][]const u8{"for true { var y = 10 }"}) |x| {
-        var lexer = Lexer.init(x);
-        var parser = try Parser.new(talloc, &lexer);
+    for ([_][]const u8{"for { const y = 10 }"}) |x| {
+        const lexer = Lexer.init(x);
+        const parser = try Parser.new(talloc, &lexer);
         defer parser.deinit();
 
         const program = try parser.parseProgram();
@@ -138,10 +123,10 @@ test "for loop" {
 }
 
 test "hash array" {
-    var lexer = Lexer.init(
-        \\{ true : false }
+    const lexer = Lexer.init(
+        \\{ true: false, 1: 0 }
     );
-    var parser = try Parser.new(talloc, &lexer);
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -150,17 +135,17 @@ test "hash array" {
         std.log.err("len: {d}", .{program.statements.items.len});
         return error.NotEnoughStatements;
     }
-    const stmt = program.statements.items[0].expression_statement.expression.hash_literal.pairs;
+    const stmt = program.statements.items[0].expression_statement.expression.hash_literal.elements;
     _ = stmt;
 }
 
 test "method call" {
-    var lexer = Lexer.init(
+    const lexer = Lexer.init(
         \\const str = "ola mundo"
         \\const y = str.len + 1
-        \\var x = 10
+        \\const x = 10
     );
-    var parser = try Parser.new(talloc, &lexer);
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -172,25 +157,25 @@ test "method call" {
 
     const stmt = program.statements.items[1].const_statement;
     _ = stmt;
-    // var len = stmt.value.?.method_expression.method.value;
+    // const len = stmt.value.?.method_expression.method.value;
     // _ = len;
 }
-//
-test "const/var block" {
-    var lexer = Lexer.init(
-        \\var (
+
+test "const/const block" {
+    const lexer = Lexer.init(
+        \\const {
         \\  x = 10 + 1
         \\  y = "ola"
-        \\)
+        \\}
         \\
-        \\const (
+        \\const {
         \\  x = 10
         \\  y = "ola"
         \\  z = "ola" + "mundo"
-        \\  w = [1,2,3,4]
-        \\)
+        \\  w = {1,2,3,4}
+        \\}
     );
-    var parser = try Parser.new(talloc, &lexer);
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -199,15 +184,15 @@ test "const/var block" {
         std.log.err("len: {d}", .{program.statements.items.len});
         return error.NotEnoughStatements;
     }
-    // var stmt = program.statements.items[0].expression_statement;
+    // const stmt = program.statements.items[0].expression_statement;
 
-    // var exp = stmt.expression.call_expression;
+    // const exp = stmt.expression.call_expression;
     // _ = exp;
 }
 
 test "Function Call 3" {
-    var lexer = Lexer.init("(func(){ \"1\" + \"2\" })();");
-    var parser = try Parser.new(talloc, &lexer);
+    const lexer = Lexer.init("fn(){ \"1\" + \"2\" }();");
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -221,10 +206,9 @@ test "Function Call 3" {
     const exp = stmt.expression.call_expression;
     _ = exp;
 }
-
 test "Function Call 2" {
-    var lexer = Lexer.init("(func(x, y){ 1 + 2 })(1,2);");
-    var parser = try Parser.new(talloc, &lexer);
+    const lexer = Lexer.init("fn(x, y){ 1 + 2 }(1,2);");
+    const parser = try Parser.new(talloc, &lexer);
 
     defer parser.deinit();
 
@@ -236,7 +220,7 @@ test "Function Call 2" {
     }
     const stmt = program.statements.items[0].expression_statement;
 
-    var exp = stmt.expression.call_expression;
+    const exp = stmt.expression.call_expression;
 
     if (exp.arguments.len != 2)
         return error.WrongNumberOfArguments;
@@ -248,10 +232,10 @@ test "Function Call 2" {
 }
 
 test "parse String" {
-    var lexer = Lexer.init(
+    const lexer = Lexer.init(
         \\"bruh"
     );
-    var parser = try Parser.new(talloc, &lexer);
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -268,10 +252,10 @@ test "parse String" {
 }
 
 test "array literal" {
-    var lexer = Lexer.init(
-        \\[ 1, true, "Ola", func(){ return 0 }() ];
+    const lexer = Lexer.init(
+        \\{ 1, true, "Ola", fn(){ return 0; }() };
     );
-    var parser = try Parser.new(talloc, &lexer);
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -292,10 +276,10 @@ test "array literal" {
 }
 
 test "Index" {
-    var lexer = Lexer.init(
+    const lexer = Lexer.init(
         \\myArray[1];
     );
-    var parser = try Parser.new(talloc, &lexer);
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -308,13 +292,14 @@ test "Index" {
     const stmt = program.statements.items[0].expression_statement;
     const exp = stmt.expression.index_expression;
 
+    // TODO: fix
     try testIdentifier(exp.left, "myArray");
     try testIntegerLiteral(exp.index, 1);
 }
 
 test "Function Call" {
-    var lexer = Lexer.init("add(x, 1 + 2);");
-    var parser = try Parser.new(talloc, &lexer);
+    const lexer = Lexer.init("add(x, 1 + 2);");
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -323,7 +308,6 @@ test "Function Call" {
         std.log.err("len: {d}", .{program.statements.items.len});
         return error.NotEnoughStatements;
     }
-
     const stmt = program.statements.items[0].expression_statement;
 
     const exp = stmt.expression.call_expression;
@@ -337,53 +321,53 @@ test "Function Call" {
     try testIdentifier(exp.function, "add");
 }
 
-// test "Function Literal" {
-//     const tests = [_]struct {
-//         input: []const u8,
-//         len: usize,
-//     }{
-//         .{ .input = "(func(){})", .len = 0 },
-//         .{ .input = "(func(x, y){ x + y })", .len = 2 },
-//         .{ .input = "(func(x, y, z){})", .len = 3 },
-//         .{ .input = "(func(x, y, z){ var x = 10 })", .len = 3 },
-//     };
-//
-//     for (tests) |x| {
-//         var lexer = Lexer.init(x.input);
-//         var parser = try Parser.new(talloc, &lexer);
-//         defer parser.deinit();
-//
-//         const program = try parser.parseProgram();
-//
-//         if (program.statements.items.len != 1) {
-//             std.log.err("len: {d}", .{program.statements.items.len});
-//             return error.NotEnoughStatements;
-//         }
-//
-//         const stmt = program.statements.items[0].expression_statement;
-//
-//         const func = stmt.expression.function_literal;
-//
-//         if (func.parameters.len != x.len) {
-//             std.log.err("\n{s}\n", .{x.input});
-//             return error.WrongParmeterLengh;
-//         }
-//
-//         if (!std.mem.eql(u8, func.parameters[0].value, "x"))
-//             return error.UnexpectedValue;
-//
-//         if (func.body.statements.len != 1)
-//             return error.WrongFunctionBody;
-//
-//         const body_stmt = func.body.statements[0].expression_statement;
-//
-//         try testInfixExpression(body_stmt.expression, "x", "+", "y");
-//     }
-// }
+test "Function Literal" {
+    const tests = [_]struct {
+        input: []const u8,
+        len: usize,
+    }{
+        // .{ .input = "fn(){};", .len = 0 },
+        .{ .input = "fn(x, y){ x + y; };", .len = 2 },
+        // .{ .input = "fn(x, y, z){};", .len = 3 },
+        // .{ .input = "fn(x, y, z){ const x = 10; };", .len = 3 },
+    };
 
-//// test "var x = (((( 10 ))))" {
-////     var lexer = Lexer.init("var x = 10;");
-////     var parser =try Parser.new(talloc, &lexer);
+    for (tests) |x| {
+        const lexer = Lexer.init(x.input);
+        const parser = try Parser.new(talloc, &lexer);
+        defer parser.deinit();
+
+        const program = try parser.parseProgram();
+
+        if (program.statements.items.len != 1) {
+            std.log.err("len: {d}", .{program.statements.items.len});
+            return error.NotEnoughStatements;
+        }
+
+        const stmt = program.statements.items[0].expression_statement;
+
+        const func = stmt.expression.function_literal;
+
+        if (func.parameters.len != x.len) {
+            std.log.err("\n{s}\n", .{x.input});
+            return error.WrongParmeterLengh;
+        }
+
+        if (!std.mem.eql(u8, func.parameters[0].value, "x"))
+            return error.UnexpectedValue;
+
+        if (func.body.statements.len != 1)
+            return error.WrongFunctionBody;
+
+        const body_stmt = func.body.statements[0].expression_statement;
+
+        try testInfixExpression(body_stmt.expression, "x", "+", "y");
+    }
+}
+
+//// test "const x = (((( 10 ))))" {
+////     const lexer = Lexer.init("const x = 10;");
+////     const parser =try Parser.new(talloc, &lexer);
 
 ////     const program = try parser.parseProgram();
 
@@ -392,18 +376,17 @@ test "Function Call" {
 ////         return error.NotEnoughStatements;
 ////     }
 
-////     var stmt = program.statements.items[0].var_statement;
+////     const stmt = program.statements.items[0].var_statement;
 ////     std.debug.print("\n{s}\n", .{stmt.tokenLiteral()});
 ////     std.debug.print("\n{s} {s}\n", .{ stmt.tokenLiteral(), stmt.name.value });
 //// }
-
 test "assignment list (=)" {
-    var lexer = Lexer.init(
-        \\var x = [1,2,3];
+    const lexer = Lexer.init(
+        \\const x = {1,2,3};
         \\x [0 + 1] = 0
         \\x[0];
     );
-    var parser = try Parser.new(talloc, &lexer);
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -413,12 +396,12 @@ test "assignment list (=)" {
 }
 
 test "assignment expression (=)" {
-    var lexer = Lexer.init(
-        \\var x = 10;
+    const lexer = Lexer.init(
+        \\const x = 10;
         \\x = if (x == x) { 2 * x } else { null };
         \\x;
     );
-    var parser = try Parser.new(talloc, &lexer);
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -428,12 +411,12 @@ test "assignment expression (=)" {
 }
 
 test "assignment statement (+=)" {
-    var lexer = Lexer.init(
-        \\var x = 10;
+    const lexer = Lexer.init(
+        \\const x = 10;
         \\x += if (x == x) { 2 * x } else { null };
         \\x;
     );
-    var parser = try Parser.new(talloc, &lexer);
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -441,12 +424,11 @@ test "assignment statement (+=)" {
 
     // std.debug.print("{}", .{program.statements.items[2].expression_statement});
 }
-
 test "If Else Expression" {
-    var lexer = Lexer.init(
+    const lexer = Lexer.init(
         \\return if x < y {x} else {y};
     );
-    var parser = try Parser.new(talloc, &lexer);
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -456,7 +438,7 @@ test "If Else Expression" {
         return error.NotEnoughStatements;
     }
 
-    const ret = program.statements.items[0].return_statement.value;
+    const ret = program.statements.items[0].return_statement.value.?;
     const exp = ret.if_expression;
 
     try testInfixExpression(exp.condition, "x", "<", "y");
@@ -476,8 +458,8 @@ test "If Else Expression" {
 }
 
 test "If Expression" {
-    var lexer = Lexer.init("return if x < y { x };");
-    var parser = try Parser.new(talloc, &lexer);
+    const lexer = Lexer.init("return if (x < y) { x };");
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -487,7 +469,7 @@ test "If Expression" {
         return error.NotEnoughStatements;
     }
 
-    const stmt = program.statements.items[0].return_statement.value;
+    const stmt = program.statements.items[0].return_statement.value.?;
 
     const exp = stmt.if_expression;
 
@@ -504,8 +486,8 @@ test "If Expression" {
 }
 
 test "Group Exp" {
-    var lexer = Lexer.init("((-(5 + 5) * 5) == 10) != !true");
-    var parser = try Parser.new(talloc, &lexer);
+    const lexer = Lexer.init("((-(5 + 5) * 5) == 10) != !true");
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -521,8 +503,8 @@ test "Group Exp" {
 }
 
 test "eval Boolean" {
-    var lexer = Lexer.init("false");
-    var parser = try Parser.new(talloc, &lexer);
+    const lexer = Lexer.init("false");
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -551,8 +533,8 @@ test "Boolean" {
     };
 
     for (tests) |x| {
-        var lexer = Lexer.init(x.input);
-        var parser = try Parser.new(talloc, &lexer);
+        const lexer = Lexer.init(x.input);
+        const parser = try Parser.new(talloc, &lexer);
         defer parser.deinit();
 
         const program = try parser.parseProgram();
@@ -597,8 +579,8 @@ test "Parse Infix OP " {
     };
 
     for (tests) |x| {
-        var lexer = Lexer.init(x.input);
-        var parser = try Parser.new(talloc, &lexer);
+        const lexer = Lexer.init(x.input);
+        const parser = try Parser.new(talloc, &lexer);
         defer parser.deinit();
 
         const program = try parser.parseProgram();
@@ -629,8 +611,8 @@ test "Parse Prefix OP (!)" {
     const input = "!5;";
     const output = 5;
 
-    var lexer = Lexer.init(input);
-    var parser = try Parser.new(talloc, &lexer);
+    const lexer = Lexer.init(input);
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -657,14 +639,14 @@ test "Parse Prefix OP (!)" {
 
 test "Comment (bruh)" {
     const input =
-        \\#loli gos brrr
+        \\//loli gos brrr
         \\-5
     ;
 
     const output = -5;
 
-    var lexer = Lexer.init(input);
-    var parser = try Parser.new(talloc, &lexer);
+    const lexer = Lexer.init(input);
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -693,8 +675,8 @@ test "parse Prefix OP (-)" {
     const input = "-5;";
     const output = -5;
 
-    var lexer = Lexer.init(input);
-    var parser = try Parser.new(talloc, &lexer);
+    const lexer = Lexer.init(input);
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -722,9 +704,9 @@ test "parse Prefix OP (-)" {
 test "Eval Integer Literal Expression" {
     const input = "5;";
 
-    var lexer = Lexer.init(input);
+    const lexer = Lexer.init(input);
 
-    var parser = try Parser.new(talloc, &lexer);
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -754,9 +736,9 @@ test "Eval Integer Literal Expression" {
 test "eval Expression" {
     const input = "return foobar;";
 
-    var lexer = Lexer.init(input);
+    const lexer = Lexer.init(input);
 
-    var parser = try Parser.new(talloc, &lexer);
+    const parser = try Parser.new(talloc, &lexer);
     defer parser.deinit();
 
     const program = try parser.parseProgram();
@@ -770,7 +752,7 @@ test "eval Expression" {
 
     const ret = stmt.return_statement;
 
-    const ident = ret.value.identifier;
+    const ident = ret.value.?.identifier;
 
     const value = ident.value;
 
@@ -784,14 +766,14 @@ test "eval Expression" {
 }
 
 test "eval Program" {
-    var stmts = std.ArrayList(ast.Statement).init(talloc);
+    const stmts = std.ArrayList(ast.Statement).init(talloc);
     defer stmts.deinit();
 
     const stmt = ast.Statement{
         .var_statement = .{
             .token = .{
-                .type = .@"var",
-                .literal = "var",
+                .type = .@"const",
+                .literal = "const",
             },
             .name = .{
                 .token = .{
@@ -817,7 +799,7 @@ test "eval Program" {
     const program = ast.Program{ .statements = stmts };
     _ = program;
     // std.debug.print("{s}", .{program.tokenLiteral()});
-    // try std.testing.expect( std.mem.eql(u8, "var myVar = anotherVar;", program.tokenLiteral()) );
+    // try std.testing.expect( std.mem.eql(u8, "const myVar = anotherVar;", program.tokenLiteral()) );
 }
 
 test "Parse RETURN statements: Size" {
@@ -832,9 +814,9 @@ test "Parse RETURN statements: Size" {
     };
 
     inline for (tests, expected_value) |x, k| {
-        var lexer = Lexer.init(x.input);
+        const lexer = Lexer.init(x.input);
 
-        var p = try Parser.new(talloc, &lexer);
+        const p = try Parser.new(talloc, &lexer);
         defer p.deinit();
 
         const program = try p.parseProgram();
@@ -842,25 +824,28 @@ test "Parse RETURN statements: Size" {
         try std.testing.expect(program.statements.items.len == 1);
         const stmt = program.statements.items[0];
 
-        var val = stmt.return_statement.value;
+        const val = stmt.return_statement.value.?;
 
         try testLiteralExpression(&val, k);
     }
 }
 
-test "Parse VAR statements" {
+test "Parse const statements" {
     const expected_value = struct { i64, bool, []const u8 }{ 5, true, "y" };
 
-    const tests = [_]struct { input: []const u8, expected_indetifier: []const u8 }{
-        .{ .input = "var x = 5;", .expected_indetifier = "x" },
-        .{ .input = "var x = true;", .expected_indetifier = "x" },
-        .{ .input = "var x = y;", .expected_indetifier = "x" },
+    const tests = [_]struct {
+        input: []const u8,
+        expected_indetifier: []const u8,
+    }{
+        .{ .input = "const x = 5;", .expected_indetifier = "x" },
+        .{ .input = "const x = true;", .expected_indetifier = "x" },
+        .{ .input = "const x = y;", .expected_indetifier = "x" },
     };
 
     inline for (tests, expected_value) |x, k| {
-        var lexer = Lexer.init(x.input);
+        const lexer = Lexer.init(x.input);
 
-        var p = try Parser.new(talloc, &lexer);
+        const p = try Parser.new(talloc, &lexer);
         defer p.deinit();
 
         const program = try p.parseProgram();
@@ -868,7 +853,7 @@ test "Parse VAR statements" {
         try std.testing.expect(program.statements.items.len == 1);
         const stmt = program.statements.items[0];
 
-        var val = stmt.var_statement.value;
+        const val = stmt.var_statement.value.?;
 
         try testLiteralExpression(&val, k);
     }
@@ -876,16 +861,16 @@ test "Parse VAR statements" {
 
 test "Token test" {
     const input =
-        \\var x = 100 + if (!true) 5 else -10;
+        \\const x = 100 + if (!true) 5 else -10;
         \\-5;
         \\"ola mundo";
         \\+=
     ;
 
-    const tokens = [_]TokenType{ .@"var", .identifier, .@"=", .int, .@"+", .@"if", .@"(", .@"!", .true, .@")", .int, .@"else", .@"-", .int, .@";", .@"-", .int, .@";", .string, .@";", .@"+=" };
+    const tokens = [_]TokenType{ .@"const", .identifier, .@"=", .int, .@"+", .@"if", .@"(", .@"!", .true, .@")", .int, .@"else", .@"-", .int, .@";", .@"-", .int, .@";", .string, .@";", .@"+=" };
 
-    var lexer = Lexer.init(input);
-    var tok = lexer.nextToken();
+    const lexer = Lexer.init(input);
+    const tok = lexer.nextToken();
 
     var i: usize = 0;
     while (tok.type != .eof) {
