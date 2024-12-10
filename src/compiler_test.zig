@@ -1,5 +1,4 @@
 const std = @import("std");
-const ast = @import("ast.zig");
 const Parser = @import("Parser.zig");
 const code = @import("code.zig");
 const object = @import("object.zig");
@@ -12,6 +11,45 @@ const CompilerTestCase = struct {
     expected_constants: []const usize,
     expected_instructions: []const []u8,
 };
+
+test "Global Var Statement" {
+    const tests: []const CompilerTestCase = &.{
+        .{
+            .input = "var one = 1; var two = 2;",
+            .expected_constants = &.{ 1, 2 },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .setgv, &.{0}),
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                try code.makeBytecode(talloc, .setgv, &.{1}),
+            },
+        },
+        .{
+            .input = "var one = 1; one;",
+            .expected_constants = &.{1},
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .setgv, &.{0}),
+                try code.makeBytecode(talloc, .getgv, &.{0}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+        .{
+            .input = "var one = 1; var two = one; two;",
+            .expected_constants = &.{1},
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .setgv, &.{0}),
+                try code.makeBytecode(talloc, .getgv, &.{0}), // ?
+                try code.makeBytecode(talloc, .setgv, &.{1}),
+                try code.makeBytecode(talloc, .getgv, &.{1}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+    };
+    defer for (tests) |t| for (t.expected_instructions) |bytes| talloc.free(bytes);
+    try runCompilerTest(talloc, tests);
+}
 
 test "Conditionals" {
     const tests: []const CompilerTestCase = &.{
@@ -44,14 +82,18 @@ test "Conditionals" {
                 // 0000
                 try code.makeBytecode(talloc, .true, &.{}),
                 // 0001
-                try code.makeBytecode(talloc, .jumpifnottrue, &.{7}),
+                try code.makeBytecode(talloc, .jumpifnottrue, &.{10}),
                 // 0004
                 try code.makeBytecode(talloc, .constant, &.{0}),
                 // 0007
-                try code.makeBytecode(talloc, .pop, &.{}),
+                try code.makeBytecode(talloc, .jump, &.{11}),
                 // 0008
-                try code.makeBytecode(talloc, .constant, &.{1}),
+                try code.makeBytecode(talloc, .null, &.{}),
                 // 0011
+                try code.makeBytecode(talloc, .pop, &.{}),
+                // 0012
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                // 0015
                 try code.makeBytecode(talloc, .pop, &.{}),
             },
         },

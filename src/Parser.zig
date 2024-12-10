@@ -473,6 +473,11 @@ pub fn parseProgram(self: *Parser) !ast.Program {
     return program;
 }
 
+pub fn parse(self: *Parser) !ast.Node {
+    const program = try self.parseProgram();
+    return .{ .statement = .{ .program_statement = program } };
+}
+
 fn parseFloatLiteral(self: *Parser) anyerror!ast.Expression {
     return .{
         .float_literal = .{

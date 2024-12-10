@@ -1,14 +1,17 @@
 const Vm = @This();
 
 const STACK_SIZE = 2048;
+/// max(u16)
+const GLOBALS_SIZE = 65536;
 
 stack: [STACK_SIZE]object.Object,
+globals: [GLOBALS_SIZE]object.Object,
 bcode: *Compiler.Bytecode,
 // points to the next value. top is stack[sp - 1]
-sp: usize = 0,
+sp: usize,
 
 pub fn init(b: *Compiler.Bytecode) Vm {
-    return .{ .bcode = b, .stack = undefined };
+    return .{ .bcode = b, .stack = undefined, .globals = undefined, .sp = 0 };
 }
 
 pub fn runVm(b: *Compiler.Bytecode) !object.Object {
@@ -24,6 +27,18 @@ pub fn run(vm: *Vm) !void {
     while (ip < instructions.len) : (ip += 1) {
         const op: code.Opcode = @enumFromInt(instructions[ip]);
         switch (op) {
+            .setgv => {
+                const global_index = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
+                ip += 2;
+                vm.globals[global_index] = vm.pop();
+            },
+
+            .getgv => {
+                const global_index = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
+                ip += 2;
+                try vm.push(vm.globals[global_index]);
+            },
+
             .constant => {
                 const const_index = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
                 ip += 2;
@@ -36,7 +51,12 @@ pub fn run(vm: *Vm) !void {
 
             .not, .min => try vm.executePrefixOperation(op),
 
-            .true, .false => try vm.push(.{ .boolean = .{ .value = if (op == .true) true else false } }),
+            .true, .false => {
+                const obj: Object = if (op == .true) object.TRUE else object.FALSE;
+                try vm.push(obj);
+            },
+
+            .null => try vm.push(object.NULL),
 
             .jump => {
                 // get the operand located right afther the opcode
@@ -77,9 +97,24 @@ fn executePrefixOperation(vm: *Vm, op: code.Opcode) !void {
             }
             return error.UnknowIntegerOperation;
         },
+
+        .float => {
+            if (op == .min) {
+                return try vm.push(.{ .float = .{ .value = -obj.float.value } });
+            }
+            return error.UnknowIntegerOperation;
+        },
+
         .boolean => {
             if (op == .not) {
                 return try vm.push(.{ .boolean = .{ .value = !obj.boolean.value } });
+            }
+            return error.UnknowBooleanOperation;
+        },
+
+        .null => {
+            if (op == .not) {
+                return try vm.push(.{ .boolean = .{ .value = true } });
             }
             return error.UnknowBooleanOperation;
         },
@@ -103,9 +138,22 @@ fn executeBinaryOperation(vm: *Vm, op: code.Opcode) !void {
             .sub => left_val - right_val,
             .mul => left_val * right_val,
             .div => @divTrunc(left_val, right_val),
-            else => return error.UnknowIntegerOperation,
+            else => unreachable,
         };
         return try vm.push(.{ .integer = .{ .value = result } });
+    }
+
+    if (rtype == .float and ltype == .float) {
+        const right_val = right.float.value;
+        const left_val = left.float.value;
+        const result = switch (op) {
+            .add => left_val + right_val,
+            .sub => left_val - right_val,
+            .mul => left_val * right_val,
+            .div => left_val / right_val,
+            else => unreachable,
+        };
+        return try vm.push(.{ .float = .{ .value = result } });
     }
 
     return error.UnsupportedOperation;
@@ -129,6 +177,15 @@ fn executeComparison(vm: *Vm, op: code.Opcode) !void {
         return try vm.push(.{ .boolean = .{ .value = result } });
     }
 
+    if (rtype == .null or ltype == .null) {
+        const result = switch (op) {
+            .eq => rtype == .null and ltype == .null,
+            .neq => rtype != .null or ltype != .null,
+            else => return error.UnknowBooleanOperation,
+        };
+        return try vm.push(.{ .boolean = .{ .value = result } });
+    }
+
     if (rtype == .integer and ltype == .integer) {
         const right_val = right.integer.value;
         const left_val = left.integer.value;
@@ -140,6 +197,55 @@ fn executeComparison(vm: *Vm, op: code.Opcode) !void {
         };
         return try vm.push(.{ .boolean = .{ .value = result } });
     }
+
+    if (rtype == .float and ltype == .float) {
+        const right_val = right.float.value;
+        const left_val = left.float.value;
+        const result = switch (op) {
+            .eq => left_val == right_val,
+            .neq => left_val != right_val,
+            .gt => left_val > right_val,
+            else => return error.UnknowfloatOperation,
+        };
+        return try vm.push(.{ .boolean = .{ .value = result } });
+    }
+
+    // if ((rtype == .float or rtype == .integer) and (ltype == .float or rtype == .integer)) {
+    //     const result: bool = switch (left) {
+    //         .float => |l| switch (right) {
+    //             .float => |r| switch (op) {
+    //                 .eq => l.value == r.value,
+    //                 .neq => l.value != r.value,
+    //                 .gt => l.value > r.value,
+    //                 else => unreachable,
+    //             },
+    //             .integer => |r| switch (op) {
+    //                 .eq => l.value == r.value,
+    //                 .neq => l.value != r.value,
+    //                 .gt => l.value > r.value,
+    //                 else => unreachable,
+    //             },
+    //             else => unreachable,
+    //         },
+    //         .integer => |l| switch (right) {
+    //             .float => |r| switch (op) {
+    //                 .eq => l.value == r.value,
+    //                 .neq => l.value != r.value,
+    //                 .gt => l.value > r.value,
+    //                 else => unreachable,
+    //             },
+    //             .integer => |r| switch (op) {
+    //                 .eq => l.value == r.value,
+    //                 .neq => l.value != r.value,
+    //                 .gt => l.value > r.value,
+    //                 else => unreachable,
+    //             },
+    //             else => unreachable,
+    //         },
+    //         else => unreachable,
+    //     };
+    //     return try vm.push(.{ .boolean = .{ .value = result } });
+    // }
 
     return error.UnsupportedOperation;
 }
@@ -173,6 +279,7 @@ const object = @import("object.zig");
 const Lexer = @import("Lexer.zig");
 const Compiler = @import("Compiler.zig");
 const talloc = std.testing.allocator;
+const Object = object.Object;
 
 test {
     _ = @import("vm_test.zig");

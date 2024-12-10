@@ -8,6 +8,10 @@ pub const Instructions = []u8;
 pub const Opcode = enum(u8) {
     /// comptime values
     constant,
+    /// set a global constant on the stack
+    setgv,
+    /// get a global constant on the stack
+    getgv,
     /// remove the topmost elements of the stack and add it
     add,
     /// remove the topmost elements of the stack and sub it
@@ -22,6 +26,8 @@ pub const Opcode = enum(u8) {
     true,
     /// boolean values: add boolean value 'true' to the stack
     false,
+    /// puts a null object on the stack
+    null,
     /// compare the two topmost op on the stack (==)
     eq,
     /// compare the two topmost op on the stack (> and <)
@@ -46,6 +52,8 @@ pub const Opcode = enum(u8) {
         // 2 bytes long -> u16 (max of 65535 contants defined)
         // bytecode with 3 bytes long
         .constant = &.{2},
+        .setgv = &.{2},
+        .getgv = &.{2},
         .jumpifnottrue = &.{2},
         .jump = &.{2},
     });

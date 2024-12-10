@@ -6,17 +6,14 @@ constants: std.ArrayList(object.Object),
 instructions: std.ArrayList(code.Instructions),
 last_ins: EmittedInstruction,
 prev_ins: EmittedInstruction,
-
-const EmittedInstruction = struct {
-    opcode: code.Opcode,
-    pos: usize,
-};
+symbols: SymbolTable,
 
 pub fn init(alloc: anytype) Compiler {
     return .{
         .allocator = alloc,
         .constants = .init(alloc),
         .instructions = .init(alloc),
+        .symbols = .init(alloc),
         .last_ins = undefined,
         .prev_ins = undefined,
     };
@@ -27,6 +24,7 @@ pub fn deinit(c: *Compiler) void {
     for (c.instructions.items) |ins| c.allocator.free(ins);
     c.constants.deinit();
     c.instructions.deinit();
+    c.symbols.deinit();
 }
 
 /// Walks the AST recursively and evaluate the node, and add it the the pool
@@ -50,10 +48,24 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 }
             },
 
+            .var_statement => |var_stmt| {
+                // var [var_stmt.name :: identifier] = [var_stmt.value :: *expression]
+                // var_stmt.value is the right side expression
+                try c.compile(.{ .expression = var_stmt.value });
+                //const identifier = var_stmt.name;
+                const symbol = try c.symbols.define(var_stmt.name.value);
+                try c.emit(.setgv, &.{symbol.index});
+            },
+
             else => return error.InvalidStatemend,
         },
 
         .expression => |exp| switch (exp.*) {
+            .identifier => |ident| {
+                const symbol = c.symbols.resolve(ident.value) orelse return error.UndefinedVariable;
+                try c.emit(.getgv, &.{symbol.index});
+            },
+
             .infix_expression => |infix| {
                 const token = infix.token.type;
 
@@ -87,7 +99,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 switch (token) {
                     .@"!" => try c.emit(.not, &.{}),
                     .@"-" => try c.emit(.min, &.{}),
-                    else => return error.UnknowOperator,
+                    else => unreachable,
                 }
             },
 
@@ -98,9 +110,27 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(.constant, &.{pos});
             },
 
+            .float_literal => |float| {
+                const pos = try c.addConstants(.{
+                    .float = .{ .value = float.value },
+                });
+                try c.emit(.constant, &.{pos});
+            },
+
+            .string_literal => |str| {
+                const pos = try c.addConstants(.{
+                    .string = .{ .value = str.value },
+                });
+                try c.emit(.constant, &.{pos});
+            },
+
             .boolean => |boolean| {
                 const op: code.Opcode = if (boolean.value) .true else .false;
                 try c.emit(op, &.{});
+            },
+
+            .null_literal => {
+                try c.emit(.null, &.{});
             },
 
             .if_expression => |ifexp| {
@@ -117,32 +147,53 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 // statements add a pop in the end, wee drop the last pop (if return)
                 c.ifLastInstructionIsPopcodeThenPopIt();
 
+                // always jumb: null is returned
+                const jum_pos = try c.emitPos(.jump, &.{9999});
+
+                const after_consequence_position = c.insLen();
+                // replases the 9999 (.jump_if_not_true_pos) to the correct operand (after_consequence_position);
+                try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
+
                 if (ifexp.alternative) |alt| {
-                    const jum_pos = try c.emitPos(.jump, &.{9999});
-
-                    const after_consequence_position = c.insLen();
-                    // replases the 9999 (.jump_if_not_true_pos) to the correct operand (after_consequence_position);
-                    try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
-
                     try c.compile(.{ .statement = .{ .block_statement = alt } });
-
                     // statements add a pop in the end, wee drop the last pop (if return)
                     c.ifLastInstructionIsPopcodeThenPopIt();
-
-                    const after_alternative_pos = c.insLen();
-                    // replases the 9999 (.jump) to the correct operand (after_alternative_pos);
-                    try c.changeOperand(jum_pos, after_alternative_pos);
-
-                    return;
+                } else {
+                    try c.compile(.{ .expression = &NULL_EXP });
                 }
 
-                // after_alternative_pos - jump_if_not_true_pos gives the offset
-                const after_consequence_position = c.insLen();
-                // replases the 999 to the correct operand (after_consequence_position);
-                try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
+                const after_alternative_pos = c.insLen();
+                // replases the 9999 (.jump) to the correct operand (after_alternative_pos);
+                try c.changeOperand(jum_pos, after_alternative_pos);
+
+                // if (ifexp.alternative) |alt| {
+                //     const jum_pos = try c.emitPos(.jump, &.{9999});
+                //
+                //     const after_consequence_position = c.insLen();
+                //     // replases the 9999 (.jump_if_not_true_pos) to the correct operand (after_consequence_position);
+                //     try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
+                //
+                //     try c.compile(.{ .statement = .{ .block_statement = alt } });
+                //
+                //     // statements add a pop in the end, wee drop the last pop (if return)
+                //     c.ifLastInstructionIsPopcodeThenPopIt();
+                //
+                //     const after_alternative_pos = c.insLen();
+                //     // replases the 9999 (.jump) to the correct operand (after_alternative_pos);
+                //     try c.changeOperand(jum_pos, after_alternative_pos);
+                //
+                //     return;
+                // }
+                // // after_alternative_pos - jump_if_not_true_pos gives the offset
+                // const after_consequence_position = c.insLen();
+                // // replases the 999 to the correct operand (after_consequence_position);
+                // try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
             },
 
-            else => return error.InvalidExpression,
+            else => |e| {
+                std.log.err("find an invalid/not handled Expression: {}\n", .{e});
+                return error.InvalidExpression;
+            },
         },
     }
 }
@@ -219,241 +270,109 @@ pub const Bytecode = struct {
 
 const std = @import("std");
 const ast = @import("ast.zig");
-const Parser = @import("Parser.zig");
 const code = @import("code.zig");
 const object = @import("object.zig");
-const Lexer = @import("Lexer.zig");
-const talloc = std.testing.allocator;
 
-const CompilerTestCase = struct {
-    input: []const u8,
-    expected_constants: []const usize,
-    expected_instructions: []const []u8,
+var NULL_EXP: ast.Expression = .null_literal;
+
+const EmittedInstruction = struct {
+    opcode: code.Opcode,
+    pos: usize,
 };
 
-test "Integer Arithmetic" {
-    const tests: []const CompilerTestCase = &.{
-        .{
-            .input = "-1",
-            .expected_constants = &.{1},
-            .expected_instructions = &.{
-                try code.makeBytecode(talloc, .constant, &.{0}),
-                try code.makeBytecode(talloc, .min, &.{}),
-                try code.makeBytecode(talloc, .pop, &.{}),
-            },
-        },
-        .{
-            .input = "1 + 2",
-            .expected_constants = &.{ 1, 2 },
-            .expected_instructions = &.{
-                try code.makeBytecode(talloc, .constant, &.{0}),
-                try code.makeBytecode(talloc, .constant, &.{1}),
-                try code.makeBytecode(talloc, .add, &.{}),
-                try code.makeBytecode(talloc, .pop, &.{}),
-            },
-        },
-        .{
-            .input = "1 - 2",
-            .expected_constants = &.{ 1, 2 },
-            .expected_instructions = &.{
-                try code.makeBytecode(talloc, .constant, &.{0}),
-                try code.makeBytecode(talloc, .constant, &.{1}),
-                try code.makeBytecode(talloc, .sub, &.{}),
-                try code.makeBytecode(talloc, .pop, &.{}),
-            },
-        },
-        .{
-            .input = "1 * 2",
-            .expected_constants = &.{ 1, 2 },
-            .expected_instructions = &.{
-                try code.makeBytecode(talloc, .constant, &.{0}),
-                try code.makeBytecode(talloc, .constant, &.{1}),
-                try code.makeBytecode(talloc, .mul, &.{}),
-                try code.makeBytecode(talloc, .pop, &.{}),
-            },
-        },
-        .{
-            .input = "1 / 2",
-            .expected_constants = &.{ 1, 2 },
-            .expected_instructions = &.{
-                try code.makeBytecode(talloc, .constant, &.{0}),
-                try code.makeBytecode(talloc, .constant, &.{1}),
-                try code.makeBytecode(talloc, .div, &.{}),
-                try code.makeBytecode(talloc, .pop, &.{}),
-            },
-        },
-        .{
-            .input = "1;2",
-            .expected_constants = &.{ 1, 2 },
-            .expected_instructions = &.{
-                try code.makeBytecode(talloc, .constant, &.{0}),
-                try code.makeBytecode(talloc, .pop, &.{}),
-                try code.makeBytecode(talloc, .constant, &.{1}),
-                try code.makeBytecode(talloc, .pop, &.{}),
-            },
-        },
+/// symbles (identifier table)
+/// Information such as its location, its scope, whether it was previously declared or not
+const SymbolTable = struct {
+    /// identifier name to scope map
+    store: std.StringArrayHashMap(Symbol),
+    def_number: usize,
+
+    const Symbol = struct {
+        name: []const u8,
+        scope: Scope,
+        index: usize,
     };
 
-    try runCompilerTest(talloc, tests);
-}
-
-test "Boolean Expression" {
-    const tests: []const CompilerTestCase = &.{
-        .{
-            .input = "!true",
-            .expected_constants = &.{},
-            .expected_instructions = &.{
-                try code.makeBytecode(talloc, .true, &.{}),
-                try code.makeBytecode(talloc, .not, &.{}),
-                try code.makeBytecode(talloc, .pop, &.{}),
-            },
-        },
-        .{
-            .input = "true",
-            .expected_constants = &.{},
-            .expected_instructions = &.{
-                try code.makeBytecode(talloc, .true, &.{}),
-                try code.makeBytecode(talloc, .pop, &.{}),
-            },
-        },
-        .{
-            .input = "false",
-            .expected_constants = &.{},
-            .expected_instructions = &.{
-                try code.makeBytecode(talloc, .false, &.{}),
-                try code.makeBytecode(talloc, .pop, &.{}),
-            },
-        },
-        .{
-            .input = "1 > 2",
-            .expected_constants = &.{ 1, 2 },
-            .expected_instructions = &.{
-                try code.makeBytecode(talloc, .constant, &.{0}),
-                try code.makeBytecode(talloc, .constant, &.{1}),
-                try code.makeBytecode(talloc, .gt, &.{}),
-                try code.makeBytecode(talloc, .pop, &.{}),
-            },
-        },
-        .{
-            .input = "1 < 2",
-            .expected_constants = &.{ 2, 1 }, // ATTENTION!!
-            .expected_instructions = &.{
-                try code.makeBytecode(talloc, .constant, &.{0}),
-                try code.makeBytecode(talloc, .constant, &.{1}),
-                try code.makeBytecode(talloc, .gt, &.{}),
-                try code.makeBytecode(talloc, .pop, &.{}),
-            },
-        },
-        .{
-            .input = "1 != 2",
-            .expected_constants = &.{ 1, 2 },
-            .expected_instructions = &.{
-                try code.makeBytecode(talloc, .constant, &.{0}),
-                try code.makeBytecode(talloc, .constant, &.{1}),
-                try code.makeBytecode(talloc, .neq, &.{}),
-                try code.makeBytecode(talloc, .pop, &.{}),
-            },
-        },
-        .{
-            .input = "1 == 2",
-            .expected_constants = &.{ 1, 2 },
-            .expected_instructions = &.{
-                try code.makeBytecode(talloc, .constant, &.{0}),
-                try code.makeBytecode(talloc, .constant, &.{1}),
-                try code.makeBytecode(talloc, .eq, &.{}),
-                try code.makeBytecode(talloc, .pop, &.{}),
-            },
-        },
-
-        .{
-            .input = "true != false",
-            .expected_constants = &.{},
-            .expected_instructions = &.{
-                try code.makeBytecode(talloc, .true, &.{}),
-                try code.makeBytecode(talloc, .false, &.{}),
-                try code.makeBytecode(talloc, .neq, &.{}),
-                try code.makeBytecode(talloc, .pop, &.{}),
-            },
-        },
-        .{
-            .input = "true == false",
-            .expected_constants = &.{},
-            .expected_instructions = &.{
-                try code.makeBytecode(talloc, .true, &.{}),
-                try code.makeBytecode(talloc, .false, &.{}),
-                try code.makeBytecode(talloc, .eq, &.{}),
-                try code.makeBytecode(talloc, .pop, &.{}),
-            },
-        },
+    const Scope = enum {
+        global,
+        local,
     };
 
-    try runCompilerTest(talloc, tests);
-}
-
-fn runCompilerTest(alloc: anytype, tests: anytype) !void {
-    for (tests) |t| {
-        defer for (t.expected_instructions) |bytes| {
-            alloc.free(bytes);
+    pub fn init(alloc: std.mem.Allocator) SymbolTable {
+        return .{
+            .store = .init(alloc),
+            .def_number = 0,
         };
-
-        var lexer = Lexer.init(t.input);
-        var parser = Parser.new(alloc, &lexer);
-        defer parser.deinit();
-        const program = try parser.parseProgram();
-
-        var compiler = Compiler.init(alloc);
-        defer compiler.deinit();
-        try compiler.compile(.{
-            .statement = .{ .program_statement = program },
-        });
-        // // assert the bytecodes
-        var b = try compiler.bytecode();
-        defer b.deinit(&compiler);
-
-        try checkInstructions(alloc, t.expected_instructions, b.instructions);
-        try checkConstants(t.expected_constants, b.constants);
-    }
-}
-
-fn checkInstructions(alloc: anytype, expected: []const code.Instructions, actual: code.Instructions) !void {
-    const concatted = try std.mem.concat(alloc, u8, expected);
-    defer alloc.free(concatted);
-
-    if (actual.len != concatted.len) {
-        std.log.err("want='{s}'\ngot='{s}'\n", .{ actual, concatted });
-        return error.WrongInstructionLenght;
     }
 
-    for (actual, concatted) |act, ins| {
-        if (act != ins) return error.WrongInstruction;
+    pub fn deinit(t: *SymbolTable) void {
+        t.store.deinit();
     }
-}
 
-fn checkConstants(expected: anytype, actual: []object.Object) !void {
-    if (expected.len != actual.len) return error.WrongNumberOfConstants;
+    pub fn define(t: *SymbolTable, name: []const u8) !Symbol {
+        const symbol: Symbol = .{
+            .name = name,
+            .scope = .global,
+            .index = t.def_number,
+        };
+        try t.store.put(name, symbol);
+        t.def_number += 1;
+        return symbol;
+    }
 
-    for (actual, expected) |act, con| {
-        switch (@typeInfo(@TypeOf(expected)).pointer.child) {
-            usize, i32, i64 => {
-                try checkIntegerObject(@intCast(con), act);
-            },
-            else => {},
+    pub fn resolve(t: *SymbolTable, name: []const u8) ?*Symbol {
+        return t.store.getPtr(name);
+    }
+
+    test define {
+        const talloc = std.testing.allocator;
+
+        var expected: std.StringHashMap(Symbol) = .init(talloc);
+        defer expected.deinit();
+
+        try expected.put("a", .{ .name = "a", .scope = .global, .index = 0 });
+        try expected.put("b", .{ .name = "b", .scope = .global, .index = 1 });
+
+        var global = SymbolTable.init(talloc);
+        defer global.deinit();
+
+        const a = try global.define("a");
+        const aexp = expected.get("a").?;
+        if (!std.meta.eql(a, aexp)) {
+            return error.UnexpendedSymbol;
+        }
+
+        const b = try global.define("b");
+        const bexp = expected.get("b").?;
+        if (!std.meta.eql(b, bexp)) {
+            return error.UnexpendedSymbol;
         }
     }
-}
 
-fn checkIntegerObject(exp: i64, act: object.Object) !void {
-    const result = switch (act) {
-        .integer => |i| i,
-        else => return error.NotAInteger,
-    };
+    test resolve {
+        const talloc = std.testing.allocator;
 
-    if (result.value != exp) {
-        std.log.err("Expect: {} Got: {}\n", .{ exp, result.value });
-        return error.WrongIntegerValue;
+        const expected: [2]Symbol = .{
+            .{ .name = "a", .scope = .global, .index = 0 },
+            .{ .name = "b", .scope = .global, .index = 1 },
+        };
+
+        var global = SymbolTable.init(talloc);
+        defer global.deinit();
+
+        _ = try global.define("a");
+        _ = try global.define("b");
+
+        for (expected) |sym| {
+            const result = global.resolve(sym.name).?.*;
+            if (!std.meta.eql(sym, result)) {
+                return error.UnexpendedSymbol;
+            }
+        }
     }
-}
+};
 
 test {
     _ = @import("compiler_test.zig");
+    _ = SymbolTable;
 }

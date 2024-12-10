@@ -8,8 +8,27 @@ const Compiler = @import("Compiler.zig");
 const Vm = @import("Vm.zig");
 const talloc = std.testing.allocator;
 
-test "Conditionals" {
+test "Globals Var Statements" {
     const tests: []const struct {
+        input: []const u8,
+        expected: usize,
+    } = &.{
+        .{ .input = "var one = 1; one", .expected = 1 },
+        .{ .input = "var one = 1; var two = 2; one + two", .expected = 3 },
+        .{ .input = "var one = 10; var two = one + one; one + two", .expected = 30 },
+        .{ .input = 
+        \\var one = 10
+        \\var two = one + one 
+        \\var z = if true { one + two } else { 0 }
+        \\z + one + two
+        , .expected = 30 + 10 + 10 + 10 },
+    };
+
+    try runVmTests(talloc, tests);
+}
+
+test "Conditional If" {
+    const tests1: []const struct {
         input: []const u8,
         expected: isize,
     } = &.{
@@ -17,9 +36,20 @@ test "Conditionals" {
         .{ .input = "if true { -1 } else { 2 }", .expected = -1 },
         .{ .input = "if false { -1 } else { 2 }", .expected = 2 },
         .{ .input = "if (1 < 2) { -1 } else { 2 }", .expected = -1 },
+        .{ .input = "if (!!(if (false) { 10 })) { 10 } else { 20 }", .expected = 20 },
     };
 
-    try runVmTests(talloc, tests);
+    try runVmTests(talloc, tests1);
+
+    const tests2: []const struct {
+        input: []const u8,
+        expected: object.Object,
+    } = &.{
+        .{ .input = "if false { -1 }", .expected = object.NULL },
+        .{ .input = "if (1 > 2) { -1 }", .expected = object.NULL },
+    };
+
+    try runVmTests(talloc, tests2);
 }
 
 test "Integer Arithmetic" {
@@ -79,6 +109,7 @@ fn runVmTests(alloc: anytype, tests: anytype) !void {
         var b = try compiler.bytecode();
         defer b.deinit(&compiler);
 
+        // DEBUG
         // const fmt = try code.formatInstruction(alloc, b.instructions);
         // defer alloc.free(fmt);
         // std.debug.print("input:'{s}'\nfmt:'{s}'\n", .{ t.input, fmt });
@@ -110,6 +141,9 @@ fn expectedObject(expected: anytype, actual: object.Object) !void {
     switch (@typeInfo(@TypeOf(expected))) {
         .int => try checkIntegerObject(@intCast(expected), actual),
         .bool => try checkBooleanObject(expected, actual),
+        .null => if (actual.null.value != null) {
+            return error.ExpectNullObject;
+        },
         else => {},
     }
 }

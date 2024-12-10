@@ -2,29 +2,6 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const Environment = @import("Environment.zig");
 
-pub const NULL = Object{ .null = Null{} };
-
-const LolliType = enum {
-    @"enum",
-    enum_tag,
-    enum_pair,
-    float,
-    integer,
-    string,
-    array,
-    hash,
-    hash_key,
-    hash_pair,
-    boolean,
-    null,
-    @"return",
-    @"break",
-    err,
-    function,
-    builtin,
-    builtin_method,
-};
-
 pub const Float = struct {
     value: f64,
 
@@ -249,6 +226,31 @@ pub const BuiltinMethod = struct {
     pub fn objType(_: *const @This()) LolliType {
         return .builtin_method;
     }
+};
+
+pub const NULL = Object{ .null = Null{} };
+pub const TRUE: Object = .{ .boolean = .{ .value = true } };
+pub const FALSE: Object = .{ .boolean = .{ .value = false } };
+
+const LolliType = enum {
+    @"enum",
+    enum_tag,
+    enum_pair,
+    float,
+    integer,
+    string,
+    array,
+    hash,
+    hash_key,
+    hash_pair,
+    boolean,
+    null,
+    @"return",
+    @"break",
+    err,
+    function,
+    builtin,
+    builtin_method,
 };
 
 pub const Object = union(enum) {
