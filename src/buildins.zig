@@ -26,7 +26,7 @@ pub const buildins = std.StaticStringMap(object.Builtin).initComptime(.{
 //     return object.NULL;
 // }
 
-fn pprint(arg: *const object.Object) void {
+pub fn pprint(arg: *const object.Object) void {
     switch (arg.*) {
         .null => std.debug.print("null", .{}),
         .float => |n| std.debug.print("{d}", .{n.value}),

@@ -12,6 +12,81 @@ const CompilerTestCase = struct {
     expected_instructions: []const []u8,
 };
 
+test "Index Expression" {
+    const tests: []const struct {
+        input: []const u8,
+        expected_constants: []const usize,
+        expected_instructions: []const []u8,
+    } = &.{
+        .{
+            .input = "[1, 2, 3][1 + 1]",
+            .expected_constants = &.{ 1, 2, 3, 1, 1 },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                try code.makeBytecode(talloc, .constant, &.{2}),
+                try code.makeBytecode(talloc, .array, &.{3}),
+                try code.makeBytecode(talloc, .constant, &.{3}),
+                try code.makeBytecode(talloc, .constant, &.{4}),
+                try code.makeBytecode(talloc, .add, &.{}),
+                try code.makeBytecode(talloc, .index, &.{}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+    };
+
+    defer for (tests) |t| for (t.expected_instructions) |bytes| talloc.free(bytes);
+    try runCompilerTest(talloc, tests);
+}
+
+test "Arrays" {
+    const tests: []const struct {
+        input: []const u8,
+        expected_constants: []const usize,
+        expected_instructions: []const []u8,
+    } = &.{
+        .{
+            .input = "[]",
+            .expected_constants = &.{},
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .array, &.{0}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+        .{
+            .input = "[1, 2, 3]",
+            .expected_constants = &.{ 1, 2, 3 },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                try code.makeBytecode(talloc, .constant, &.{2}),
+                try code.makeBytecode(talloc, .array, &.{3}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+        .{
+            .input = "[1 + 2, 3 - 4, 5 * 6]",
+            .expected_constants = &.{ 1, 2, 3, 4, 5, 6 },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                try code.makeBytecode(talloc, .add, &.{}),
+                try code.makeBytecode(talloc, .constant, &.{2}),
+                try code.makeBytecode(talloc, .constant, &.{3}),
+                try code.makeBytecode(talloc, .sub, &.{}),
+                try code.makeBytecode(talloc, .constant, &.{4}),
+                try code.makeBytecode(talloc, .constant, &.{5}),
+                try code.makeBytecode(talloc, .mul, &.{}),
+                try code.makeBytecode(talloc, .array, &.{3}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+    };
+
+    defer for (tests) |t| for (t.expected_instructions) |bytes| talloc.free(bytes);
+    try runCompilerTest(talloc, tests);
+}
+
 test "String Expression" {
     const tests: []const struct {
         input: []const u8,

@@ -3,18 +3,15 @@ const Lexer = @import("Lexer.zig");
 const Parser = @import("Parser.zig");
 const Environment = @import("Environment.zig");
 const Compiler = @import("Compiler.zig");
+const buildins = @import("buildins.zig");
 const Vm = @import("Vm.zig");
 
 pub fn startRepl(allocator: anytype) !void {
     const stdin = std.io.getStdIn();
     const stdout = std.io.getStdOut();
     var writer = stdout.writer();
-
     var compiler: Compiler = .init(allocator);
     defer compiler.deinit();
-
-    var vm: Vm = undefined;
-    vm.sp = 0;
 
     var buffer: [500]u8 = undefined;
     try stdout.writeAll(">>> ");
@@ -50,26 +47,13 @@ pub fn startRepl(allocator: anytype) !void {
         var b = try compiler.bytecode();
         defer b.deinit(&compiler);
 
-        vm.bcode = &b;
-
+        var vm = Vm.init(&b);
         try vm.run();
 
         const obj = vm.lastPopped();
 
-        vm.sp = 0;
-
-        switch (obj) {
-            inline .float, .integer, .boolean => |boo| try writer.print("{}\n>>> ", .{boo.value}),
-
-            .string => |str| try writer.print("{s}\n>>> ", .{str.value}),
-
-            else => {
-                try writer.print("{}\n>>> ", .{obj});
-            },
-        }
-
-        compiler.last_ins = undefined;
-        compiler.prev_ins = undefined;
+        buildins.pprint(&obj);
+        try writer.writeAll("\n>> ");
         // for (compiler.instructions.items) |ins| compiler.allocator.free(ins);
     }
 }
@@ -106,5 +90,7 @@ pub fn runVm(allocator: std.mem.Allocator, input: []const u8) !void {
     defer code.deinit(&compiler);
 
     var vm: Vm = .init(&code);
+    defer vm.deinit();
+
     try vm.run();
 }

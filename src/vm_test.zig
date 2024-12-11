@@ -8,6 +8,32 @@ const Compiler = @import("Compiler.zig");
 const Vm = @import("Vm.zig");
 const talloc = std.testing.allocator;
 
+test "Index" {
+    const tests: []const struct {
+        input: []const u8,
+        expected: []const usize,
+    } = &.{
+        .{ .input = "[1][0]", .expected = &.{1} },
+        .{ .input = "[1, 2][1]", .expected = &.{2} },
+        .{ .input = "[0, 1, 2 + 2][2]", .expected = &.{4} },
+    };
+
+    try runVmTests(talloc, tests);
+}
+
+test "Array" {
+    const tests: []const struct {
+        input: []const u8,
+        expected: []const usize,
+    } = &.{
+        .{ .input = "[]", .expected = &.{} },
+        .{ .input = "[1, 2]", .expected = &.{ 1, 2 } },
+        .{ .input = "[1, 2 + 2]", .expected = &.{ 1, 4 } },
+    };
+
+    try runVmTests(talloc, tests);
+}
+
 test "String Expression" {
     const tests: []const struct {
         input: []const u8,
@@ -15,6 +41,10 @@ test "String Expression" {
     } = &.{
         .{ .input = 
         \\"lolilang"
+        , .expected = "lolilang" },
+
+        .{ .input = 
+        \\"loli" + "lang"
         , .expected = "lolilang" },
     };
 
@@ -159,6 +189,20 @@ fn checkStringObject(exp: []const u8, act: object.Object) !void {
     if (!std.mem.eql(u8, result.value, exp)) return error.WrongStringValue;
 }
 
+fn checkArrayObject(exp: []const usize, act: object.Object) !void {
+    const result = switch (act) {
+        .array => |i| i,
+        else => return error.NotAArray,
+    };
+
+    if (exp.len != result.elements.len) {
+        return error.WrongArrayLenght;
+    }
+
+    for (exp, result.elements) |e, element|
+        try try checkIntegerObject(e, element);
+}
+
 fn expectedObject(expected: anytype, actual: object.Object) !void {
     switch (@typeInfo(@TypeOf(expected))) {
         .int => try checkIntegerObject(@intCast(expected), actual),
@@ -166,6 +210,8 @@ fn expectedObject(expected: anytype, actual: object.Object) !void {
         .null => if (actual.null.value != null) {
             return error.ExpectNullObject;
         },
+        .array => try checkArrayObject(expected, actual),
+
         else => {},
     }
 }

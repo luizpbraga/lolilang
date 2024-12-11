@@ -103,6 +103,19 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 }
             },
 
+            .array => |array| {
+                for (array.elements) |element| {
+                    try c.compile(.{ .expression = element });
+                }
+                try c.emit(.array, &.{array.elements.len});
+            },
+
+            .index => |index| {
+                try c.compile(.{ .expression = index.left });
+                try c.compile(.{ .expression = index.index });
+                try c.emit(.index, &.{});
+            },
+
             .integer => |int| {
                 const pos = try c.addConstants(.{
                     .integer = .{ .value = int.value },
@@ -165,29 +178,6 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 const after_alternative_pos = c.insLen();
                 // replases the 9999 (.jump) to the correct operand (after_alternative_pos);
                 try c.changeOperand(jum_pos, after_alternative_pos);
-
-                // if (ifexp.alternative) |alt| {
-                //     const jum_pos = try c.emitPos(.jump, &.{9999});
-                //
-                //     const after_consequence_position = c.insLen();
-                //     // replases the 9999 (.jump_if_not_true_pos) to the correct operand (after_consequence_position);
-                //     try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
-                //
-                //     try c.compile(.{ .statement = .{ .block_statement = alt } });
-                //
-                //     // statements add a pop in the end, wee drop the last pop (if return)
-                //     c.ifLastInstructionIsPopcodeThenPopIt();
-                //
-                //     const after_alternative_pos = c.insLen();
-                //     // replases the 9999 (.jump) to the correct operand (after_alternative_pos);
-                //     try c.changeOperand(jum_pos, after_alternative_pos);
-                //
-                //     return;
-                // }
-                // // after_alternative_pos - jump_if_not_true_pos gives the offset
-                // const after_consequence_position = c.insLen();
-                // // replases the 999 to the correct operand (after_consequence_position);
-                // try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
             },
 
             else => |e| {

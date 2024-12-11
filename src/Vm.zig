@@ -3,15 +3,22 @@ const Vm = @This();
 const STACK_SIZE = 2048;
 /// max(u16)
 const GLOBALS_SIZE = 65536;
-
+/// in scope objects
+/// WARN: use pointers?
 stack: [STACK_SIZE]object.Object,
 globals: [GLOBALS_SIZE]object.Object,
 bcode: *Compiler.Bytecode,
 // points to the next value. top is stack[sp - 1]
 sp: usize,
+/// TODO: When the GC is implemented, this must be deleted
+arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator),
 
 pub fn init(b: *Compiler.Bytecode) Vm {
     return .{ .bcode = b, .stack = undefined, .globals = undefined, .sp = 0 };
+}
+
+pub fn deinit(vm: *Vm) void {
+    vm.arena.deinit();
 }
 
 pub fn runVm(b: *Compiler.Bytecode) !object.Object {
@@ -27,6 +34,26 @@ pub fn run(vm: *Vm) !void {
     while (ip < instructions.len) : (ip += 1) {
         const op: code.Opcode = @enumFromInt(instructions[ip]);
         switch (op) {
+            .array => {
+                const num_elements = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
+                ip += 2;
+                const start_index = vm.sp - num_elements;
+                const allocator = vm.arena.allocator();
+                var elements: std.ArrayList(Object) = .init(allocator);
+                errdefer elements.deinit();
+                for (start_index..vm.sp) |i| {
+                    try elements.append(vm.stack[i]);
+                }
+                vm.sp = vm.sp - num_elements;
+                try vm.push(.{ .array = .{ .elements = try elements.toOwnedSlice() } });
+            },
+
+            .index => {
+                const index = vm.pop();
+                const left = vm.pop();
+                try vm.executeIndexOperation(left, index);
+            },
+
             .setgv => {
                 const global_index = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
                 ip += 2;
@@ -83,6 +110,34 @@ pub fn run(vm: *Vm) !void {
             .pop => _ = vm.pop(),
         }
     }
+}
+
+fn executeIndexOperation(vm: *Vm, left: Object, index: Object) !void {
+    if (index.objType() == .integer) {
+        if (left.objType() == .array) {
+            const array = left.array;
+            const i = index.integer.value;
+            const len = array.elements.len;
+
+            if (i >= 0 and i < len) {
+                return try vm.push(left.array.elements[@intCast(i)]);
+            }
+        }
+
+        if (left.objType() == .string) {
+            const string = left.string;
+            const i = index.integer.value;
+            const len = string.value.len;
+
+            if (i >= 0 and i < len) {
+                const char = left.string.value[@intCast(i)..@intCast(i)];
+                return try vm.push(.{ .string = .{ .value = char } });
+            }
+        }
+        return try vm.push(object.NULL);
+    }
+
+    return error.TypeMismatchInIndexOperation;
 }
 
 fn executePrefixOperation(vm: *Vm, op: code.Opcode) !void {
@@ -156,16 +211,16 @@ fn executeBinaryOperation(vm: *Vm, op: code.Opcode) !void {
         return try vm.push(.{ .float = .{ .value = result } });
     }
 
-    // if (rtype == .string and ltype == .string) {
-    //     const right_val = right.string.value;
-    //     const left_val = left.string.value;
-    //     if (op != .add) {
-    //         return error.UnsupportedStringOperation;
-    //     }
-    //     const buffer: [1024]u8 = undefined;
-    //     const n = try std.fmt.bufPrint(&buffer, "{s}{s}", .{ left_val, right_val });
-    //     return try vm.push(.{ .string = .{ .value = buffer[0..n.len] } });
-    // }
+    if (rtype == .string and ltype == .string) {
+        const right_val = right.string.value;
+        const left_val = left.string.value;
+        if (op != .add) {
+            return error.UnsupportedStringOperation;
+        }
+        const allocator = vm.arena.allocator();
+        const bytes = try std.mem.concat(allocator, u8, &.{ left_val, right_val });
+        return try vm.push(.{ .string = .{ .value = bytes } });
+    }
 
     return error.UnsupportedOperation;
 }

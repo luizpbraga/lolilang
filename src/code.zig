@@ -42,6 +42,10 @@ pub const Opcode = enum(u8) {
     jumpifnottrue,
     /// just jump bytecodes
     jump,
+    /// add an array
+    array,
+    /// index operation
+    index,
 
     /// numbers of operands (bytes) for a given upcode
     /// optimize: use a single small integer
@@ -56,6 +60,8 @@ pub const Opcode = enum(u8) {
         .getgv = &.{2},
         .jumpifnottrue = &.{2},
         .jump = &.{2},
+        // the array lenght is the with
+        .array = &.{2},
     });
 
     pub fn lookUp(op: u8) !OperandWidth {
