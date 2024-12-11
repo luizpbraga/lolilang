@@ -31,24 +31,24 @@ pub fn deinit(c: *Compiler) void {
 pub fn compile(c: *Compiler, node: ast.Node) !void {
     switch (node) {
         .statement => |stmt| switch (stmt) {
-            .program_statement => |program| {
+            .program => |program| {
                 for (program.statements.items) |s| {
                     try c.compile(.{ .statement = s });
                 }
             },
 
-            .expression_statement => |exp_stmt| {
+            .exp_statement => |exp_stmt| {
                 try c.compile(.{ .expression = exp_stmt.expression });
                 try c.emit(.pop, &.{});
             },
 
-            .block_statement => |block| {
+            .block => |block| {
                 for (block.statements) |_stmt| {
                     try c.compile(.{ .statement = _stmt });
                 }
             },
 
-            .var_statement => |var_stmt| {
+            .@"var" => |var_stmt| {
                 // var [var_stmt.name :: identifier] = [var_stmt.value :: *expression]
                 // var_stmt.value is the right side expression
                 try c.compile(.{ .expression = var_stmt.value });
@@ -66,7 +66,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(.getgv, &.{symbol.index});
             },
 
-            .infix_expression => |infix| {
+            .infix => |infix| {
                 const token = infix.token.type;
 
                 if (token == .@"<") {
@@ -91,7 +91,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(op, &.{});
             },
 
-            .prefix_expression => |prefix| {
+            .prefix => |prefix| {
                 const token = prefix.token.type;
 
                 try c.compile(.{ .expression = prefix.right });
@@ -103,21 +103,21 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 }
             },
 
-            .integer_literal => |int| {
+            .integer => |int| {
                 const pos = try c.addConstants(.{
                     .integer = .{ .value = int.value },
                 });
                 try c.emit(.constant, &.{pos});
             },
 
-            .float_literal => |float| {
+            .float => |float| {
                 const pos = try c.addConstants(.{
                     .float = .{ .value = float.value },
                 });
                 try c.emit(.constant, &.{pos});
             },
 
-            .string_literal => |str| {
+            .string => |str| {
                 const pos = try c.addConstants(.{
                     .string = .{ .value = str.value },
                 });
@@ -129,11 +129,11 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(op, &.{});
             },
 
-            .null_literal => {
+            .null => {
                 try c.emit(.null, &.{});
             },
 
-            .if_expression => |ifexp| {
+            .@"if" => |ifexp| {
                 // AST if (condition) { consequence } else { alternative }
                 //
                 // compiling the condition
@@ -142,7 +142,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
 
                 // compiling the consequence
-                try c.compile(.{ .statement = .{ .block_statement = ifexp.consequence } });
+                try c.compile(.{ .statement = .{ .block = ifexp.consequence } });
 
                 // statements add a pop in the end, wee drop the last pop (if return)
                 c.ifLastInstructionIsPopcodeThenPopIt();
@@ -155,7 +155,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
 
                 if (ifexp.alternative) |alt| {
-                    try c.compile(.{ .statement = .{ .block_statement = alt } });
+                    try c.compile(.{ .statement = .{ .block = alt } });
                     // statements add a pop in the end, wee drop the last pop (if return)
                     c.ifLastInstructionIsPopcodeThenPopIt();
                 } else {
@@ -273,7 +273,7 @@ const ast = @import("ast.zig");
 const code = @import("code.zig");
 const object = @import("object.zig");
 
-var NULL_EXP: ast.Expression = .null_literal;
+var NULL_EXP: ast.Expression = .null;
 
 const EmittedInstruction = struct {
     opcode: code.Opcode,

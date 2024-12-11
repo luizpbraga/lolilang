@@ -17,17 +17,23 @@ pub const Node = union(enum) {
 /// interface: {return, var, expression} statements
 pub const Statement = union(enum) {
     // implements Node,
-    var_statement: VarStatement,
-    var_block_statement: VarBlockStatement,
-    const_statement: ConstStatement,
-    const_block_statement: ConstBlockStatement,
-    return_statement: ReturnStatement,
-    break_statement: BreakStatement,
-    defer_statement: DeferStatement,
-    function_statement: FunctionStatement,
-    expression_statement: ExpressionStatement,
-    block_statement: BlockStatement,
-    program_statement: Program,
+    @"var": Var,
+    var_block: VarBlock,
+
+    con: Con,
+    con_block: ConBlock,
+
+    @"return": Return,
+
+    @"break": Break,
+    @"defer": Defer,
+
+    block: Block,
+
+    // function: FunctionStatement,
+    exp_statement: ExpStatement,
+
+    program: Program,
 
     fn statementNode(self: *const Statement) void {
         switch (self.*) {
@@ -50,31 +56,32 @@ pub const TypeLiteral = union(enum) {
 
 /// implements Node,
 pub const Expression = union(enum) {
-    null_literal,
-    type: TypeLiteral,
+    null,
+    // type: TypeLiteral,
     boolean: Boolean,
-    float_literal: FloatLiteral,
-    integer_literal: IntegerLiteral,
-    string_literal: StringLiteral,
-    array_literal: ArrayLiteral,
-    range: RangeExpression,
-    hash_literal: HashLiteral,
-    enum_literal: EnumLiteral,
-    enum_tag: EnumTag,
+    float: Float,
+    integer: Integer,
+    string: String,
+    array: Array,
+    range: Range,
+    hash: Hash,
+    // enum_literal: EnumLiteral,
+    // enum_tag: EnumTag,
     identifier: Identifier,
-    forloop_expression: ForLoopExpression,
-    forloop_range_expression: ForLoopRangeExpression,
-    multi_forloop_range_expression: MultiForLoopRangeExpression,
-    switch_expression: SwitchExpression,
-    function_literal: FunctionLiteral,
-    assignment_expression: AssignmentExpression,
+    // forloop_expression: ForLoopExpression,
+    // forloop_range_expression: ForLoopRangeExpression,
+    // multi_forloop_range_expression: MultiForLoopRangeExpression,
+    @"if": If,
+    match: Match,
+    function: Function,
 
-    prefix_expression: PrefixExpression,
-    infix_expression: InfixExpression,
-    if_expression: IfExpression,
-    call_expression: CallExpression,
-    method_expression: MethodExpression,
-    index_expression: IndexExpression,
+    prefix: Prefix,
+    infix: Infix,
+    assignment: Assignment,
+
+    call: Call,
+    method: Method,
+    index: Index,
 
     fn expressionNode(self: *const Expression) void {
         _ = self;
@@ -88,18 +95,18 @@ pub const Expression = union(enum) {
     }
 };
 
-pub const IfExpression = struct {
+pub const If = struct {
     token: Token,
     condition: *Expression,
-    consequence: BlockStatement,
-    alternative: ?BlockStatement = null,
+    consequence: Block,
+    alternative: ?Block = null,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
 
-pub const PrefixExpression = struct {
+pub const Prefix = struct {
     token: Token,
     operator: []const u8,
     right: *Expression,
@@ -111,7 +118,7 @@ pub const PrefixExpression = struct {
     }
 };
 
-pub const InfixExpression = struct {
+pub const Infix = struct {
     token: Token,
     left: *Expression,
     operator: []const u8,
@@ -122,7 +129,7 @@ pub const InfixExpression = struct {
     }
 };
 
-pub const IndexExpression = struct {
+pub const Index = struct {
     token: Token, // [
     left: *Expression,
     index: *Expression,
@@ -155,7 +162,7 @@ pub const Program = struct {
 };
 
 // ------------------------------------------------------------------------
-pub const ConstStatement = struct {
+pub const Con = struct {
     token: Token, //= .@"var",
     name: Identifier,
     value: *Expression,
@@ -169,17 +176,17 @@ pub const ConstStatement = struct {
     }
 };
 
-pub const VarBlockStatement = struct {
+pub const VarBlock = struct {
     token: Token, //= .@"var",
-    vars_decl: []VarStatement,
+    vars_decl: []Var,
 };
 
-pub const ConstBlockStatement = struct {
+pub const ConBlock = struct {
     token: Token, //= .@"var",
-    const_decl: []ConstStatement,
+    const_decl: []Con,
 };
 
-pub const VarStatement = struct {
+pub const Var = struct {
     token: Token, //= .@"var",
     name: Identifier,
     value: *Expression,
@@ -194,7 +201,7 @@ pub const VarStatement = struct {
     }
 };
 
-pub const ReturnStatement = struct {
+pub const Return = struct {
     token: Token,
     value: *Expression,
 
@@ -207,7 +214,7 @@ pub const ReturnStatement = struct {
     }
 };
 
-pub const BreakStatement = struct {
+pub const Break = struct {
     token: Token,
     value: *Expression,
 
@@ -222,7 +229,7 @@ pub const BreakStatement = struct {
 
 // identifier = expression
 //  = , +=, -=, *=, /=,
-pub const AssignmentExpression = struct {
+pub const Assignment = struct {
     token: Token,
     name: *Expression,
     operator: []const u8,
@@ -237,7 +244,7 @@ pub const AssignmentExpression = struct {
     }
 };
 
-pub const ExpressionStatement = struct {
+pub const ExpStatement = struct {
     token: Token, // fist token only
     expression: *Expression,
 
@@ -250,7 +257,7 @@ pub const ExpressionStatement = struct {
     }
 };
 
-pub const BlockStatement = struct {
+pub const Block = struct {
     token: Token,
     statements: []Statement,
 
@@ -265,7 +272,7 @@ pub const Type = struct {
     value: Identifier,
 };
 
-pub const FloatLiteral = struct {
+pub const Float = struct {
     token: Token,
     value: f64,
 
@@ -276,7 +283,7 @@ pub const FloatLiteral = struct {
     }
 };
 
-pub const IntegerLiteral = struct {
+pub const Integer = struct {
     token: Token,
     value: i64,
 
@@ -287,7 +294,7 @@ pub const IntegerLiteral = struct {
     }
 };
 
-pub const StringLiteral = struct {
+pub const String = struct {
     token: Token,
     value: []const u8,
 
@@ -311,7 +318,7 @@ pub const Boolean = struct {
     }
 };
 
-pub const ArrayLiteral = struct {
+pub const Array = struct {
     token: Token,
     elements: []*Expression,
 
@@ -320,7 +327,7 @@ pub const ArrayLiteral = struct {
     }
 };
 
-pub const RangeExpression = struct {
+pub const Range = struct {
     token: Token,
     start: *Expression,
     end: *Expression,
@@ -330,7 +337,7 @@ pub const RangeExpression = struct {
     }
 };
 
-pub const HashLiteral = struct {
+pub const Hash = struct {
     token: Token,
     pairs: std.AutoHashMap(*Expression, *Expression),
 
@@ -367,18 +374,18 @@ pub const FunctionStatement = struct {
     }
 };
 
-pub const DeferStatement = struct {
+pub const Defer = struct {
     token: Token,
-    body: BlockStatement,
+    body: Block,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
 
-pub const FunctionLiteral = struct {
+pub const Function = struct {
     parameters: []Identifier,
-    body: BlockStatement,
+    body: Block,
     token: Token,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
@@ -386,7 +393,7 @@ pub const FunctionLiteral = struct {
     }
 };
 
-pub const CallExpression = struct {
+pub const Call = struct {
     token: Token, // (
     function: *Expression, // Identifier or FunctionLiteral
     arguments: []*Expression,
@@ -396,7 +403,7 @@ pub const CallExpression = struct {
     }
 };
 
-pub const MethodExpression = struct {
+pub const Method = struct {
     token: Token, // .
     caller: *Expression, //
     method: Identifier,
@@ -411,7 +418,7 @@ pub const ForLoopExpression = struct {
     token: Token,
     //TODO: list of conditions
     condition: *Expression,
-    consequence: BlockStatement,
+    consequence: Block,
     mode: ForLoopMode = .infinity,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
@@ -419,7 +426,7 @@ pub const ForLoopExpression = struct {
     }
 };
 
-pub const MultiForLoopRangeExpression = struct {
+pub const MultiForLoopRange = struct {
     pub const LoopVars = struct {
         ident: []const u8,
         index: ?[]const u8 = null,
@@ -427,7 +434,7 @@ pub const MultiForLoopRangeExpression = struct {
     };
 
     loops: []LoopVars,
-    body: BlockStatement,
+    body: Block,
     token: Token,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
@@ -435,28 +442,28 @@ pub const MultiForLoopRangeExpression = struct {
     }
 };
 
-pub const ForLoopRangeExpression = struct {
+pub const ForLoopRange = struct {
     token: Token,
     ident: []const u8,
     index: ?[]const u8 = null,
     iterable: *Expression,
-    body: BlockStatement,
+    body: Block,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
     }
 };
 
-pub const SwitchChoices = struct {
+pub const MatchChoices = struct {
     token: Token, // =>
     exps: ?[]const Expression,
-    block: BlockStatement,
+    block: Block,
 };
 
-pub const SwitchExpression = struct {
+pub const Match = struct {
     token: Token,
     value: *Expression, // swtich (value)
-    choices: []SwitchChoices,
+    choices: []MatchChoices,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;

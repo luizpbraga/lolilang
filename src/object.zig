@@ -193,7 +193,7 @@ pub const Error = struct {
 
 pub const Function = struct {
     env: *Environment,
-    body: ast.BlockStatement,
+    body: ast.Block,
     parameters: []ast.Identifier,
 
     pub fn objType(_: *const @This()) LolliType {

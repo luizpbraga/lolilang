@@ -10,25 +10,25 @@ pub fn lookupIdentfier(ident: []const u8) Type {
 }
 
 pub const keywords = std.StaticStringMap(Type).initComptime(.{
-    .{ "in", .in },
-    .{ "or", .@"or" },
-    .{ "if", .@"if" },
-    .{ "null", .null },
-    .{ "fn", .func },
-    .{ "with", .with },
-    .{ "true", .true },
-    .{ "for", .@"for" },
     .{ "var", .@"var" },
-    .{ "and", .@"and" },
-    .{ "false", .false },
+    .{ "con", .con },
+    .{ "in", .in },
+    .{ "fn", .@"fn" },
+    .{ "match", .match },
+    .{ "if", .@"if" },
     .{ "else", .@"else" },
-    .{ "enum", .@"enum" },
+    .{ "continue", .@"continue" },
+    .{ "or", .@"or" },
+    .{ "and", .@"and" },
+    .{ "true", .true },
+    .{ "false", .false },
+    .{ "for", .@"for" },
+    .{ "null", .null },
     .{ "defer", .@"defer" },
-    .{ "con", .@"const" },
     .{ "break", .@"break" },
     .{ "return", .@"return" },
-    .{ "switch", .@"switch" },
-    .{ "continue", .@"continue" },
+    .{ "enum", .@"enum" },
+    .{ "with", .with },
 });
 
 pub const Type = enum {
@@ -38,7 +38,7 @@ pub const Type = enum {
     // identifiers + literals
     identifier, // add, foobar, x, y, ...
     float,
-    int, // 123678
+    integer, // 123678
     string, // "fuck u"
     null,
 
@@ -83,13 +83,13 @@ pub const Type = enum {
     @"...",
 
     // keywords
-    func,
+    @"fn",
     @"enum",
     @"for",
-    @"switch",
+    match,
     @"return",
     @"var",
-    @"const",
+    con,
     false,
     true,
     in,

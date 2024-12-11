@@ -19,13 +19,14 @@ pub fn init(input: []const u8) Self {
 fn readNumber(self: *Self) Token {
     const position = self.position;
 
+    // FIX: disallow multiples "_" in sequence on numbers literals
     while (isDigit(self.ch)) {
         self.readChar();
     }
 
-    if (self.ch != '.') return .{ .literal = self.input[position..self.position], .type = .int };
+    if (self.ch != '.') return .{ .literal = self.input[position..self.position], .type = .integer };
 
-    if (self.peekChar() == '.') return .{ .literal = self.input[position..self.position], .type = .int };
+    if (self.peekChar() == '.') return .{ .literal = self.input[position..self.position], .type = .integer };
 
     self.readChar();
 

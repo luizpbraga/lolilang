@@ -29,7 +29,7 @@ fn testIdentifier(exp: *ast.Expression, value: anytype) !void {
 }
 
 fn testIntegerLiteral(exp: *ast.Expression, value: i64) !void {
-    const integer = exp.integer_literal;
+    const integer = exp.integer;
     var buff: [10]u8 = undefined;
     const value_str = try std.fmt.bufPrint(&buff, "{d}", .{value});
 
@@ -49,7 +49,7 @@ fn testLiteralExpression(exp: *ast.Expression, expected: anytype) !void {
 }
 
 fn testInfixExpression(exp: *ast.Expression, left: anytype, op: []const u8, right: anytype) !void {
-    const opExp = exp.infix_expression;
+    const opExp = exp.infix;
 
     try testLiteralExpression(opExp.left, left);
 
@@ -92,11 +92,11 @@ fn testInfixExpression(exp: *ast.Expression, left: anytype, op: []const u8, righ
 //             std.log.err("len: {d}", .{program.statements.items.len});
 //             return error.NotEnoughStatements;
 //         }
-//         const stmt = program.statements.items[0].expression_statement.expression.forloop_range_expression;
+//         const stmt = program.statements.items[0].exp_statement.expression.forloop_range;
 //
 //         const con = stmt.body;
 //
-//         const v = con.statements[0].var_statement;
+//         const v = con.statements[0].@"var";
 //         _ = v;
 //     }
 // }
@@ -113,11 +113,11 @@ fn testInfixExpression(exp: *ast.Expression, left: anytype, op: []const u8, righ
 //             std.log.err("len: {d}", .{program.statements.items.len});
 //             return error.NotEnoughStatements;
 //         }
-//         const stmt = program.statements.items[0].expression_statement.expression.forloop_expression;
+//         const stmt = program.statements.items[0].exp_statement.expression.forloop_expression;
 //
 //         const con = stmt.consequence;
 //
-//         const v = con.statements[0].var_statement;
+//         const v = con.statements[0].@"var";
 //         _ = v;
 //     }
 // }
@@ -135,7 +135,7 @@ fn testInfixExpression(exp: *ast.Expression, left: anytype, op: []const u8, righ
 //         std.log.err("len: {d}", .{program.statements.items.len});
 //         return error.NotEnoughStatements;
 //     }
-//     const stmt = program.statements.items[0].expression_statement.expression.hash_literal.pairs;
+//     const stmt = program.statements.items[0].exp_statement.expression.hash.pairs;
 //     _ = stmt;
 // }
 
@@ -155,9 +155,9 @@ test "method call" {
         return error.NotEnoughStatements;
     }
 
-    const stmt = program.statements.items[1].const_statement;
+    const stmt = program.statements.items[1].con;
     _ = stmt;
-    // const len = stmt.value.?.method_expression.method.value;
+    // const len = stmt.value.?.method.method.value;
     // _ = len;
 }
 
@@ -184,9 +184,9 @@ test "method call" {
 //         std.log.err("len: {d}", .{program.statements.items.len});
 //         return error.NotEnoughStatements;
 //     }
-//     // const stmt = program.statements.items[0].expression_statement;
+//     // const stmt = program.statements.items[0].exp_statement;
 //
-//     // const exp = stmt.expression.call_expression;
+//     // const exp = stmt.expression.call;
 //     // _ = exp;
 // }
 //
@@ -201,9 +201,9 @@ test "Function Call 3" {
         std.log.err("len: {d}", .{program.statements.items.len});
         return error.NotEnoughStatements;
     }
-    const stmt = program.statements.items[0].expression_statement;
+    const stmt = program.statements.items[0].exp_statement;
 
-    const exp = stmt.expression.call_expression;
+    const exp = stmt.expression.call;
     _ = exp;
 }
 test "Function Call 2" {
@@ -218,9 +218,9 @@ test "Function Call 2" {
         std.log.err("len: {d}", .{program.statements.items.len});
         return error.NotEnoughStatements;
     }
-    const stmt = program.statements.items[0].expression_statement;
+    const stmt = program.statements.items[0].exp_statement;
 
-    const exp = stmt.expression.call_expression;
+    const exp = stmt.expression.call;
 
     if (exp.arguments.len != 2)
         return error.WrongNumberOfArguments;
@@ -245,8 +245,8 @@ test "parse String" {
         return error.NotEnoughStatements;
     }
 
-    const stmt = program.statements.items[0].expression_statement;
-    const exp = stmt.expression.string_literal;
+    const stmt = program.statements.items[0].exp_statement;
+    const exp = stmt.expression.string;
 
     try std.testing.expect(std.mem.eql(u8, "bruh", exp.value));
 }
@@ -265,15 +265,15 @@ test "array literal" {
         return error.NotEnoughStatements;
     }
 
-    const stmt = program.statements.items[0].expression_statement;
-    const exp = stmt.expression.array_literal;
+    const stmt = program.statements.items[0].exp_statement;
+    const exp = stmt.expression.array;
 
     try std.testing.expect(exp.elements.len == 4);
     // TODO
-    // try std.testing.expect(exp.elements[0] == .integer_literal);
+    // try std.testing.expect(exp.elements[0] == .integer);
     // try std.testing.expect(exp.elements[1] == .boolean);
-    // try std.testing.expect(exp.elements[2] == .string_literal);
-    // try std.testing.expect(exp.elements[3] == .call_expression);
+    // try std.testing.expect(exp.elements[2] == .string);
+    // try std.testing.expect(exp.elements[3] == .call);
 }
 
 test "Index" {
@@ -290,8 +290,8 @@ test "Index" {
         return error.NotEnoughStatements;
     }
 
-    const stmt = program.statements.items[0].expression_statement;
-    const exp = stmt.expression.index_expression;
+    const stmt = program.statements.items[0].exp_statement;
+    const exp = stmt.expression.index;
 
     // TODO: fix
     try testIdentifier(exp.left, "myArray");
@@ -309,9 +309,9 @@ test "Function Call" {
         std.log.err("len: {d}", .{program.statements.items.len});
         return error.NotEnoughStatements;
     }
-    const stmt = program.statements.items[0].expression_statement;
+    const stmt = program.statements.items[0].exp_statement;
 
-    const exp = stmt.expression.call_expression;
+    const exp = stmt.expression.call;
 
     if (exp.arguments.len != 2)
         return error.WrongNumberOfArguments;
@@ -345,9 +345,9 @@ test "Function Literal" {
             return error.NotEnoughStatements;
         }
 
-        const stmt = program.statements.items[0].expression_statement;
+        const stmt = program.statements.items[0].exp_statement;
 
-        const func = stmt.expression.function_literal;
+        const func = stmt.expression.function;
 
         if (func.parameters.len != x.len) {
             std.log.err("\n{s}\n", .{x.input});
@@ -360,7 +360,7 @@ test "Function Literal" {
         if (func.body.statements.len != 1)
             return error.WrongFunctionBody;
 
-        const body_stmt = func.body.statements[0].expression_statement;
+        const body_stmt = func.body.statements[0].exp_statement;
 
         try testInfixExpression(body_stmt.expression, "x", "+", "y");
     }
@@ -377,7 +377,7 @@ test "Function Literal" {
 ////         return error.NotEnoughStatements;
 ////     }
 
-////     const stmt = program.statements.items[0].var_statement;
+////     const stmt = program.statements.items[0].@"var";
 ////     std.debug.print("\n{s}\n", .{stmt.tokenLiteral()});
 ////     std.debug.print("\n{s} {s}\n", .{ stmt.tokenLiteral(), stmt.name.value });
 //// }
@@ -393,7 +393,7 @@ test "assignment list (=)" {
     const program = try parser.parseProgram();
     _ = program;
 
-    // std.debug.print("{}", .{program.statements.items[2].expression_statement});
+    // std.debug.print("{}", .{program.statements.items[2].exp_statement});
 }
 
 test "assignment expression (=)" {
@@ -408,7 +408,7 @@ test "assignment expression (=)" {
     const program = try parser.parseProgram();
     _ = program;
 
-    // std.debug.print("{}", .{program.statements.items[2].expression_statement});
+    // std.debug.print("{}", .{program.statements.items[2].exp_statement});
 }
 
 test "assignment statement (+=)" {
@@ -423,7 +423,7 @@ test "assignment statement (+=)" {
     const program = try parser.parseProgram();
     _ = program;
 
-    // std.debug.print("{}", .{program.statements.items[2].expression_statement});
+    // std.debug.print("{}", .{program.statements.items[2].exp_statement});
 }
 test "If Else Expression" {
     var lexer = Lexer.init(
@@ -439,22 +439,22 @@ test "If Else Expression" {
         return error.NotEnoughStatements;
     }
 
-    const ret = program.statements.items[0].return_statement.value;
-    const exp = ret.if_expression;
+    const ret = program.statements.items[0].@"return".value;
+    const exp = ret.@"if";
 
     try testInfixExpression(exp.condition, "x", "<", "y");
 
     if (exp.consequence.statements.len != 1)
         return error.ConsequenceIs1Statement;
 
-    const consequence = exp.consequence.statements[0].expression_statement;
+    const consequence = exp.consequence.statements[0].exp_statement;
 
     try testIdentifier(consequence.expression, "x");
 
     if (exp.alternative == null)
         return error.AlternativeStatementsWasNotNull;
 
-    const alternative = exp.alternative.?.statements[0].expression_statement;
+    const alternative = exp.alternative.?.statements[0].exp_statement;
     try testIdentifier(alternative.expression, "y");
 }
 
@@ -470,16 +470,16 @@ test "If Expression" {
         return error.NotEnoughStatements;
     }
 
-    const stmt = program.statements.items[0].return_statement.value;
+    const stmt = program.statements.items[0].@"return".value;
 
-    const exp = stmt.if_expression;
+    const exp = stmt.@"if";
 
     try testInfixExpression(exp.condition, "x", "<", "y");
 
     if (exp.consequence.statements.len != 1)
         return error.ConsequenceIs1Statement;
 
-    const consequence = exp.consequence.statements[0].expression_statement;
+    const consequence = exp.consequence.statements[0].exp_statement;
     _ = consequence;
 
     if (exp.alternative != null)
@@ -498,7 +498,7 @@ test "Group Exp" {
         return error.NotEnoughStatements;
     }
 
-    const stmt = program.statements.items[0].expression_statement;
+    const stmt = program.statements.items[0].exp_statement;
     const exp = stmt.expression;
     _ = exp;
 }
@@ -515,7 +515,7 @@ test "eval Boolean" {
         return error.NotEnoughStatements;
     }
 
-    const stmt = program.statements.items[0].expression_statement;
+    const stmt = program.statements.items[0].exp_statement;
     const exp = stmt.expression;
 
     try std.testing.expect(false == exp.boolean.value);
@@ -545,9 +545,9 @@ test "Boolean" {
             return error.NotEnoughStatements;
         }
 
-        const stmt = program.statements.items[0].expression_statement;
+        const stmt = program.statements.items[0].exp_statement;
 
-        const exp = stmt.expression.infix_expression;
+        const exp = stmt.expression.infix;
 
         const operator = exp.operator;
 
@@ -591,17 +591,17 @@ test "Parse Infix OP " {
             return error.NotEnoughStatements;
         }
 
-        const stmt = program.statements.items[0].expression_statement;
+        const stmt = program.statements.items[0].exp_statement;
 
-        const exp = stmt.expression.infix_expression;
+        const exp = stmt.expression.infix;
 
         const operator = exp.operator;
 
         if (!std.mem.eql(u8, operator, x.op))
             return error.UnexpectedOP;
 
-        const left = exp.left.integer_literal;
-        const right = exp.right.integer_literal;
+        const left = exp.left.integer;
+        const right = exp.right.integer;
 
         if (left.value != x.l or right.value != x.r)
             return error.UnexpectedValue;
@@ -623,15 +623,15 @@ test "Parse Prefix OP (!)" {
         return error.NotEnoughStatements;
     }
 
-    const stmt = program.statements.items[0].expression_statement;
+    const stmt = program.statements.items[0].exp_statement;
 
-    const exp = stmt.expression.prefix_expression;
+    const exp = stmt.expression.prefix;
 
     if (.@"!" != exp.token.type) {
         return error.UnexpecedOperator;
     }
 
-    const integer = exp.right.integer_literal;
+    const integer = exp.right.integer;
 
     if (output != integer.value) {
         return error.UnexpectedValue;
@@ -657,15 +657,15 @@ test "Comment (bruh)" {
         return error.NotEnoughStatements;
     }
 
-    const stmt = program.statements.items[0].expression_statement;
+    const stmt = program.statements.items[0].exp_statement;
 
-    const exp = stmt.expression.prefix_expression;
+    const exp = stmt.expression.prefix;
 
     if (.@"-" != exp.token.type) {
         return error.UnexpecedOperator;
     }
 
-    const integer = exp.right.integer_literal;
+    const integer = exp.right.integer;
 
     if (output != -integer.value) {
         return error.UnexpectedValue;
@@ -687,15 +687,15 @@ test "parse Prefix OP (-)" {
         return error.NotEnoughStatements;
     }
 
-    const stmt = program.statements.items[0].expression_statement;
+    const stmt = program.statements.items[0].exp_statement;
 
-    const exp = stmt.expression.prefix_expression;
+    const exp = stmt.expression.prefix;
 
     if (.@"-" != exp.token.type) {
         return error.UnexpecedOperator;
     }
 
-    const integer = exp.right.integer_literal;
+    const integer = exp.right.integer;
 
     if (output != -integer.value) {
         return error.UnexpectedValue;
@@ -719,11 +719,11 @@ test "Eval Integer Literal Expression" {
 
     const stmt = program.statements.items[0];
 
-    if (stmt != .expression_statement) {
+    if (stmt != .exp_statement) {
         return error.ExprectAnExpression;
     }
 
-    const literal = stmt.expression_statement.expression.integer_literal;
+    const literal = stmt.exp_statement.expression.integer;
 
     if (5 != literal.value) {
         return error.UnexpectedValue;
@@ -751,7 +751,7 @@ test "eval Expression" {
 
     const stmt = program.statements.items[0];
 
-    const ret = stmt.return_statement;
+    const ret = stmt.@"return";
 
     const ident = ret.value.identifier;
 
@@ -771,9 +771,9 @@ test "eval Expression" {
 //     defer stmts.deinit();
 //
 //     const stmt = ast.Statement{
-//         .var_statement = .{
+//         .@"var" = .{
 //             .token = .{
-//                 .type = .@"const",
+//                 .type = .con,
 //                 .literal = "con",
 //             },
 //             .name = .{
@@ -825,7 +825,7 @@ test "Parse RETURN statements: Size" {
         try std.testing.expect(program.statements.items.len == 1);
         const stmt = program.statements.items[0];
 
-        const val = stmt.return_statement.value;
+        const val = stmt.@"return".value;
 
         try testLiteralExpression(val, k);
     }
@@ -854,7 +854,7 @@ test "Parse const statements" {
         try std.testing.expect(program.statements.items.len == 1);
         const stmt = program.statements.items[0];
 
-        const val = stmt.const_statement.value;
+        const val = stmt.con.value;
 
         try testLiteralExpression(val, k);
     }
@@ -868,7 +868,7 @@ test "Token test" {
         \\+=
     ;
 
-    const tokens = [_]Type{ .@"const", .identifier, .@"=", .int, .@"+", .@"if", .@"(", .@"!", .true, .@")", .int, .@"else", .@"-", .int, .@";", .@"-", .int, .@";", .string, .@";", .@"+=" };
+    const tokens = [_]Type{ .con, .identifier, .@"=", .integer, .@"+", .@"if", .@"(", .@"!", .true, .@")", .integer, .@"else", .@"-", .integer, .@";", .@"-", .integer, .@";", .string, .@";", .@"+=" };
 
     var lexer = Lexer.init(input);
     var tok = lexer.nextToken();

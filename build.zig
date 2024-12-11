@@ -7,7 +7,7 @@ pub fn build(b: *std.Build) void {
     // TODO: override the installation dir
     const infos: []const struct { name: []const u8, path: []const u8 } = &.{
         .{ .name = "loli", .path = "src/main.zig" },
-        .{ .name = "loli_inter", .path = "src/interpreter.zig" },
+        // .{ .name = "loli_inter", .path = "src/interpreter.zig" },
     };
 
     for (infos) |info| {
@@ -20,6 +20,8 @@ pub fn build(b: *std.Build) void {
         });
 
         b.installArtifact(exe);
+
+        // exe.linkSystemLibrary("gc");
     }
 
     const unit_tests = b.addTest(.{

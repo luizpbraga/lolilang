@@ -156,6 +156,17 @@ fn executeBinaryOperation(vm: *Vm, op: code.Opcode) !void {
         return try vm.push(.{ .float = .{ .value = result } });
     }
 
+    // if (rtype == .string and ltype == .string) {
+    //     const right_val = right.string.value;
+    //     const left_val = left.string.value;
+    //     if (op != .add) {
+    //         return error.UnsupportedStringOperation;
+    //     }
+    //     const buffer: [1024]u8 = undefined;
+    //     const n = try std.fmt.bufPrint(&buffer, "{s}{s}", .{ left_val, right_val });
+    //     return try vm.push(.{ .string = .{ .value = buffer[0..n.len] } });
+    // }
+
     return error.UnsupportedOperation;
 }
 
@@ -210,39 +221,26 @@ fn executeComparison(vm: *Vm, op: code.Opcode) !void {
         return try vm.push(.{ .boolean = .{ .value = result } });
     }
 
-    // if ((rtype == .float or rtype == .integer) and (ltype == .float or rtype == .integer)) {
-    //     const result: bool = switch (left) {
-    //         .float => |l| switch (right) {
-    //             .float => |r| switch (op) {
-    //                 .eq => l.value == r.value,
-    //                 .neq => l.value != r.value,
-    //                 .gt => l.value > r.value,
-    //                 else => unreachable,
-    //             },
-    //             .integer => |r| switch (op) {
-    //                 .eq => l.value == r.value,
-    //                 .neq => l.value != r.value,
-    //                 .gt => l.value > r.value,
-    //                 else => unreachable,
-    //             },
-    //             else => unreachable,
-    //         },
-    //         .integer => |l| switch (right) {
-    //             .float => |r| switch (op) {
-    //                 .eq => l.value == r.value,
-    //                 .neq => l.value != r.value,
-    //                 .gt => l.value > r.value,
-    //                 else => unreachable,
-    //             },
-    //             .integer => |r| switch (op) {
-    //                 .eq => l.value == r.value,
-    //                 .neq => l.value != r.value,
-    //                 .gt => l.value > r.value,
-    //                 else => unreachable,
-    //             },
-    //             else => unreachable,
-    //         },
-    //         else => unreachable,
+    // if (rtype == .float and ltype == .integer) {
+    //     const right_val = right.float.value;
+    //     const left_val = left.integer.value;
+    //     const result = switch (op) {
+    //         .eq => left_val == right_val,
+    //         .neq => left_val != right_val,
+    //         .gt => left_val > right_val,
+    //         else => return error.UnknowfloatOperation,
+    //     };
+    //     return try vm.push(.{ .boolean = .{ .value = result } });
+    // }
+    //
+    // if (rtype == .integer and ltype == .float) {
+    //     const right_val = right.integer.value;
+    //     const left_val = left.float.value;
+    //     const result = switch (op) {
+    //         .eq => left_val == right_val,
+    //         .neq => left_val != right_val,
+    //         .gt => left_val > right_val,
+    //         else => return error.UnknowfloatOperation,
     //     };
     //     return try vm.push(.{ .boolean = .{ .value = result } });
     // }

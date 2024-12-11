@@ -8,6 +8,19 @@ const Compiler = @import("Compiler.zig");
 const Vm = @import("Vm.zig");
 const talloc = std.testing.allocator;
 
+test "String Expression" {
+    const tests: []const struct {
+        input: []const u8,
+        expected: []const u8,
+    } = &.{
+        .{ .input = 
+        \\"lolilang"
+        , .expected = "lolilang" },
+    };
+
+    try runVmTests(talloc, tests);
+}
+
 test "Globals Var Statements" {
     const tests: []const struct {
         input: []const u8,
@@ -99,12 +112,12 @@ fn runVmTests(alloc: anytype, tests: anytype) !void {
         var parser: Parser = .new(alloc, &lexer);
         defer parser.deinit();
 
-        const program = try parser.parseProgram();
+        const node = try parser.parse();
 
         var compiler: Compiler = .init(alloc);
         defer compiler.deinit();
 
-        try compiler.compile(.{ .statement = .{ .program_statement = program } });
+        try compiler.compile(node);
         // // assert the bytecodes
         var b = try compiler.bytecode();
         defer b.deinit(&compiler);
@@ -135,6 +148,15 @@ fn checkBooleanObject(exp: bool, act: object.Object) !void {
     };
 
     if (result.value != exp) return error.WrongBooleanValue;
+}
+
+fn checkStringObject(exp: []const u8, act: object.Object) !void {
+    const result = switch (act) {
+        .string => |i| i,
+        else => return error.NotAString,
+    };
+
+    if (!std.mem.eql(u8, result.value, exp)) return error.WrongStringValue;
 }
 
 fn expectedObject(expected: anytype, actual: object.Object) !void {

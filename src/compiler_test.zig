@@ -12,6 +12,37 @@ const CompilerTestCase = struct {
     expected_instructions: []const []u8,
 };
 
+test "String Expression" {
+    const tests: []const struct {
+        input: []const u8,
+        expected_constants: []const []const u8,
+        expected_instructions: []const []u8,
+    } = &.{
+        .{
+            .input = "\"loli\"",
+            .expected_constants = &.{"loli"},
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+
+        .{
+            .input = "\"lo\" + \"li\"",
+            .expected_constants = &.{ "lo", "li" },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                try code.makeBytecode(talloc, .add, &.{}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+    };
+
+    defer for (tests) |t| for (t.expected_instructions) |bytes| talloc.free(bytes);
+    try runCompilerTest(talloc, tests);
+}
+
 test "Global Var Statement" {
     const tests: []const CompilerTestCase = &.{
         .{
@@ -272,13 +303,13 @@ fn runCompilerTest(alloc: anytype, tests: anytype) !void {
         var lexer = Lexer.init(t.input);
         var parser = Parser.new(alloc, &lexer);
         defer parser.deinit();
-        const program = try parser.parseProgram();
+
+        const node = try parser.parse();
 
         var compiler = Compiler.init(alloc);
         defer compiler.deinit();
-        try compiler.compile(.{
-            .statement = .{ .program_statement = program },
-        });
+
+        try compiler.compile(node);
         // // assert the bytecodes
         var b = try compiler.bytecode();
         defer b.deinit(&compiler);
@@ -321,8 +352,23 @@ fn checkConstants(expected: anytype, actual: []object.Object) !void {
             usize, i32, i64 => {
                 try checkIntegerObject(@intCast(con), act);
             },
+            []u8, []const u8 => {
+                try checkStringObject(con, act);
+            },
             else => {},
         }
+    }
+}
+
+fn checkStringObject(exp: []const u8, act: object.Object) !void {
+    const result = switch (act) {
+        .string => |i| i,
+        else => return error.NotAString,
+    };
+
+    if (!std.mem.eql(u8, result.value, exp)) {
+        std.log.err("Expect: {s} Got: {s}\n", .{ exp, result.value });
+        return error.WrongStringValue;
     }
 }
 

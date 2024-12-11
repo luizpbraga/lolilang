@@ -66,7 +66,7 @@ pub const Opcode = enum(u8) {
 /// TODO: maybe a comptime functions
 /// caller owns the memory
 pub fn makeBytecode(alloc: anytype, op: Opcode, operands: []const usize) ![]u8 {
-    const widths = Opcode.definitions.get(op) orelse return error.UndefinedOpcode;
+    const widths = Opcode.definitions.get(op).?;
 
     var instruction_len: usize = 1;
     for (widths) |w| {
