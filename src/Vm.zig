@@ -71,12 +71,6 @@ pub fn deinit(vm: *Vm) void {
     vm.freeObjects();
 }
 
-pub fn runVm(b: *Compiler.Bytecode) !Value {
-    var vm: Vm = .init(b);
-    try vm.run();
-    return vm.lastPopped();
-}
-
 pub fn run(vm: *Vm) !void {
     // decode cycle
     const instructions = vm.bcode.instructions;
