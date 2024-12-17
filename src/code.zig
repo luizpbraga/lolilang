@@ -46,6 +46,12 @@ pub const Opcode = enum(u8) {
     array,
     /// index operation
     index,
+    /// get the function and execute it on the top of the stack
+    call,
+    /// return a value on top of the stack
+    retv,
+    /// return nothing (null), just go back
+    retn,
 
     /// numbers of operands (bytes) for a given upcode
     /// optimize: use a single small integer

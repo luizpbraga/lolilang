@@ -1,30 +1,98 @@
+const std = @import("std");
+const ast = @import("ast.zig");
+const code = @import("code.zig");
+const Object = @import("Object.zig");
+const Value = Object.Value;
+const memory = @import("memory.zig");
+
+var NULL_EXP: ast.Expression = .null;
+
 /// compiler: transverse the AST, find the ast nodes and evakueate then to objects, and add it to the pool
 const Compiler = @This();
-/// constants pool
 allocator: std.mem.Allocator,
-constants: std.ArrayList(object.Object),
-instructions: std.ArrayList(code.Instructions),
-last_ins: EmittedInstruction,
-prev_ins: EmittedInstruction,
+
+/// constants pool
+constants: std.ArrayList(Value),
 symbols: SymbolTable,
 
-pub fn init(alloc: anytype) Compiler {
+scopes: std.ArrayList(Scope),
+scope_index: usize,
+
+const Scope = struct {
+    instructions: std.ArrayList(code.Instructions),
+    last_ins: EmittedInstruction,
+    prev_ins: EmittedInstruction,
+
+    test "Scope" {
+        const talloc = std.testing.allocator;
+        var compiler: Compiler = try .init(talloc);
+        defer compiler.deinit();
+
+        if (compiler.scope_index != 0) {
+            std.log.err("Expect 0, found {}", .{compiler.scope_index});
+            return error.WrongScopeIndex;
+        }
+
+        try compiler.emit(.mul, &.{});
+
+        try compiler.enterScope();
+
+        if (compiler.scope_index != 1) {
+            std.log.err("Expect 1, found {}", .{compiler.scope_index});
+            return error.WrongScopeIndex;
+        }
+
+        try compiler.emit(.sub, &.{});
+    }
+};
+
+pub fn init(alloc: std.mem.Allocator) !Compiler {
+    const main_scope: Scope = .{
+        .instructions = .init(alloc),
+        .last_ins = undefined,
+        .prev_ins = undefined,
+    };
+
+    var scopes: std.ArrayList(Scope) = .init(alloc);
+    try scopes.append(main_scope);
+
     return .{
         .allocator = alloc,
         .constants = .init(alloc),
-        .instructions = .init(alloc),
         .symbols = .init(alloc),
-        .last_ins = undefined,
-        .prev_ins = undefined,
+        .scopes = scopes,
+        .scope_index = 0,
     };
 }
 
 pub fn deinit(c: *Compiler) void {
-    // std.debug.print("{x}\n", .{c.instructions.items});
-    for (c.instructions.items) |ins| c.allocator.free(ins);
+    for (c.scopes.items) |scope| {
+        for (scope.instructions.items) |ins| c.allocator.free(ins);
+        scope.instructions.deinit();
+    }
+
+    c.scopes.deinit();
     c.constants.deinit();
-    c.instructions.deinit();
     c.symbols.deinit();
+}
+
+fn enterScope(c: *Compiler) !void {
+    try c.scopes.append(.{
+        .prev_ins = undefined,
+        .last_ins = undefined,
+        .instructions = .init(c.allocator),
+    });
+    c.scope_index += 1;
+}
+
+fn leaveScope(c: *Compiler) !code.Instructions {
+    c.scope_index -= 1;
+    var last_scope = c.scopes.pop();
+    defer {
+        for (last_scope.instructions.items) |ins| c.allocator.free(ins);
+        last_scope.instructions.deinit();
+    }
+    return try std.mem.concat(c.allocator, u8, last_scope.instructions.items);
 }
 
 /// Walks the AST recursively and evaluate the node, and add it the the pool
@@ -62,14 +130,22 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
         .expression => |exp| switch (exp.*) {
             .identifier => |ident| {
-                const symbol = c.symbols.resolve(ident.value) orelse return error.UndefinedVariable;
+                const symbol = c.symbols.resolve(ident.value) orelse {
+                    std.log.err("-> {s}", .{ident.value});
+                    return error.UndefinedVariable;
+                };
                 try c.emit(.getgv, &.{symbol.index});
             },
 
-            .infix => |infix| {
-                const token = infix.token.type;
+            // .method => |method| {
+            //     const ident = method.method;
+            //     const caller = method.caller;
+            // },
 
-                if (token == .@"<") {
+            .infix => |infix| {
+                const operator = infix.operator;
+
+                if (operator == .@"<") {
                     try c.compile(.{ .expression = infix.right });
                     try c.compile(.{ .expression = infix.left });
                     try c.emit(.gt, &.{});
@@ -78,7 +154,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
                 try c.compile(.{ .expression = infix.left });
                 try c.compile(.{ .expression = infix.right });
-                const op: code.Opcode = switch (token) {
+                const op: code.Opcode = switch (operator) {
                     .@"+" => .add,
                     .@"-" => .sub,
                     .@"*" => .mul,
@@ -92,22 +168,15 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             .prefix => |prefix| {
-                const token = prefix.token.type;
+                const operator = prefix.operator;
 
                 try c.compile(.{ .expression = prefix.right });
 
-                switch (token) {
+                switch (operator) {
                     .@"!" => try c.emit(.not, &.{}),
                     .@"-" => try c.emit(.min, &.{}),
                     else => unreachable,
                 }
-            },
-
-            .array => |array| {
-                for (array.elements) |element| {
-                    try c.compile(.{ .expression = element });
-                }
-                try c.emit(.array, &.{array.elements.len});
             },
 
             .index => |index| {
@@ -118,22 +187,40 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
             .integer => |int| {
                 const pos = try c.addConstants(.{
-                    .integer = .{ .value = int.value },
+                    .integer = int.value,
                 });
                 try c.emit(.constant, &.{pos});
             },
 
             .float => |float| {
                 const pos = try c.addConstants(.{
-                    .float = .{ .value = float.value },
+                    .float = float.value,
                 });
                 try c.emit(.constant, &.{pos});
             },
 
             .string => |str| {
-                const pos = try c.addConstants(.{
-                    .string = .{ .value = str.value },
-                });
+                const cvalue = try c.allocator.dupe(u8, str.value);
+                const obj = try c.allocator.create(Object);
+                obj.type = .{ .string = cvalue };
+                const pos = try c.addConstants(.{ .obj = obj });
+                try c.emit(.constant, &.{pos});
+            },
+
+            .array => |array| {
+                for (array.elements) |element| {
+                    try c.compile(.{ .expression = element });
+                }
+                try c.emit(.array, &.{array.elements.len});
+            },
+
+            .function => |func| {
+                try c.enterScope();
+                try c.compile(.{ .statement = .{ .block = func.body } });
+                const instruction = try c.leaveScope();
+                const obj = try c.allocator.create(Object);
+                obj.type = .{ .function = instruction };
+                const pos = try c.addConstants(.{ .obj = obj });
                 try c.emit(.constant, &.{pos});
             },
 
@@ -146,6 +233,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(.null, &.{});
             },
 
+            // BUG: if (true) { var x = 0 } overflows sthe stack
             .@"if" => |ifexp| {
                 // AST if (condition) { consequence } else { alternative }
                 //
@@ -172,7 +260,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     // statements add a pop in the end, wee drop the last pop (if return)
                     c.ifLastInstructionIsPopcodeThenPopIt();
                 } else {
-                    try c.compile(.{ .expression = &NULL_EXP });
+                    try c.emit(.null, &.{});
                 }
 
                 const after_alternative_pos = c.insLen();
@@ -190,36 +278,45 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
 fn insLen(c: *Compiler) usize {
     var len: usize = 0;
-    for (c.instructions.items) |ins| len += ins.len;
+    for (c.currentInstruction().items) |ins| len += ins.len;
     return len;
 }
 
+fn currentInstruction(c: *Compiler) *std.ArrayList(code.Instructions) {
+    return &c.scopes.items[c.scope_index].instructions;
+}
+
+/// FIX
 fn ifLastInstructionIsPopcodeThenPopIt(c: *Compiler) void {
-    if (c.last_ins.opcode == .pop) {
-        c.allocator.free(c.instructions.pop());
-        c.last_ins = c.prev_ins;
+    if (c.scopes.items[c.scope_index].last_ins.opcode == .pop) {
+        // const last = c.scopes.items[c.scope_index].last_ins;
+        // for (last.pos..c.currentInstruction().items.len) |i| {
+        //     c.allocator.free(c.currentInstruction().orderedRemove(i));
+        // }
+        c.allocator.free(c.currentInstruction().pop());
+        c.scopes.items[c.scope_index].last_ins = c.scopes.items[c.scope_index].prev_ins;
     }
 }
 
-fn addConstants(c: *Compiler, obj: object.Object) !usize {
-    try c.constants.append(obj);
+fn addConstants(c: *Compiler, val: Value) !usize {
+    try c.constants.append(val);
     return c.constants.items.len - 1;
 }
 
 fn addInstruction(c: *Compiler, ins: code.Instructions) !usize {
-    const pos_new_ins = c.instructions.items.len;
-    try c.instructions.append(ins);
+    const pos_new_ins = c.currentInstruction().items.len;
+    try c.currentInstruction().append(ins);
     return pos_new_ins;
 }
 
 fn replaceInstruction(c: *Compiler, pos: usize, new_ins: []u8) !void {
-    c.allocator.free(c.instructions.orderedRemove(pos));
-    try c.instructions.insert(pos, new_ins);
+    c.allocator.free(c.currentInstruction().orderedRemove(pos));
+    try c.currentInstruction().insert(pos, new_ins);
 }
 
 /// replaces the instruction
 fn changeOperand(c: *Compiler, op_pos: usize, operand: usize) !void {
-    const op: code.Opcode = @enumFromInt(c.instructions.items[op_pos][0]);
+    const op: code.Opcode = @enumFromInt(c.currentInstruction().items[op_pos][0]);
     const new_ins = try code.makeBytecode(c.allocator, op, &.{operand});
     try c.replaceInstruction(op_pos, new_ins);
 }
@@ -239,31 +336,24 @@ pub fn emitPos(c: *Compiler, op: code.Opcode, operants: []const usize) !usize {
 }
 
 fn setLastInstruction(c: *Compiler, op: code.Opcode, pos: usize) void {
-    c.prev_ins = c.last_ins;
-    c.last_ins = .{ .opcode = op, .pos = pos };
+    c.scopes.items[c.scope_index].prev_ins = c.scopes.items[c.scope_index].last_ins;
+    c.scopes.items[c.scope_index].last_ins = .{ .opcode = op, .pos = pos };
 }
 
 pub fn bytecode(c: *Compiler) !Bytecode {
-    const ins = try std.mem.concat(c.allocator, u8, c.instructions.items);
+    const ins = try std.mem.concat(c.allocator, u8, c.currentInstruction().items);
     return .{ .constants = c.constants.items, .instructions = ins };
 }
 
 /// compiler generated bytecode
 pub const Bytecode = struct {
-    constants: []object.Object,
+    constants: []Value,
     instructions: code.Instructions,
 
     pub fn deinit(b: *Bytecode, c: *const Compiler) void {
         c.allocator.free(b.instructions);
     }
 };
-
-const std = @import("std");
-const ast = @import("ast.zig");
-const code = @import("code.zig");
-const object = @import("object.zig");
-
-var NULL_EXP: ast.Expression = .null;
 
 const EmittedInstruction = struct {
     opcode: code.Opcode,
@@ -279,11 +369,11 @@ const SymbolTable = struct {
 
     const Symbol = struct {
         name: []const u8,
-        scope: Scope,
+        scope: ScopeType,
         index: usize,
     };
 
-    const Scope = enum {
+    const ScopeType = enum {
         global,
         local,
     };

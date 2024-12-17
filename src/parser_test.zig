@@ -627,7 +627,7 @@ test "Parse Prefix OP (!)" {
 
     const exp = stmt.expression.prefix;
 
-    if (.@"!" != exp.token.type) {
+    if (.@"!" != exp.operator) {
         return error.UnexpecedOperator;
     }
 
@@ -661,7 +661,7 @@ test "Comment (bruh)" {
 
     const exp = stmt.expression.prefix;
 
-    if (.@"-" != exp.token.type) {
+    if (.@"-" != exp.operator) {
         return error.UnexpecedOperator;
     }
 
@@ -691,7 +691,7 @@ test "parse Prefix OP (-)" {
 
     const exp = stmt.expression.prefix;
 
-    if (.@"-" != exp.token.type) {
+    if (.@"-" != exp.operator) {
         return error.UnexpecedOperator;
     }
 

@@ -18,6 +18,23 @@ pub const Integer = struct {
     }
 };
 
+pub const Boolean = struct {
+    value: bool,
+
+    pub fn objType(_: *const @This()) LolliType {
+        return .boolean;
+    }
+};
+
+pub const Null = struct {
+    // NOTE: this fix the error "union depend on itself" (something like that)
+    comptime value: @TypeOf(null) = null,
+
+    pub fn objType(_: *const @This()) LolliType {
+        return .null;
+    }
+};
+
 pub const String = struct {
     value: []const u8,
     offset: usize = 0,
@@ -47,14 +64,6 @@ pub const String = struct {
 
     pub fn reset(self: *String) void {
         self.offset = 0;
-    }
-};
-
-pub const Boolean = struct {
-    value: bool,
-
-    pub fn objType(_: *const @This()) LolliType {
-        return .boolean;
     }
 };
 
@@ -156,15 +165,6 @@ pub const Enum = struct {
     };
 };
 
-pub const Null = struct {
-    // NOTE: this fix the error "union depend on itself" (something like that)
-    comptime value: @TypeOf(null) = null,
-
-    pub fn objType(_: *const @This()) LolliType {
-        return .null;
-    }
-};
-
 pub const Break = struct {
     value: *const Object,
 
@@ -228,10 +228,6 @@ pub const BuiltinMethod = struct {
     }
 };
 
-pub const NULL = Object{ .null = Null{} };
-pub const TRUE: Object = .{ .boolean = .{ .value = true } };
-pub const FALSE: Object = .{ .boolean = .{ .value = false } };
-
 const LolliType = enum {
     @"enum",
     enum_tag,
@@ -253,32 +249,50 @@ const LolliType = enum {
     builtin_method,
 };
 
+pub const Value = union(enum) {
+    null,
+    integer: i64,
+    float: f64,
+};
+
+pub const VMObject = struct {
+    value: Object = .{ .null = NULL },
+    next: ?*Object = null,
+    index: usize = 0,
+    marked: bool = false,
+};
+
+pub const NULL: Object = .null; // = Object{ .null = Null{} };
+pub const TRUE: Object = .{ .boolean = .{ .value = true } };
+pub const FALSE: Object = .{ .boolean = .{ .value = false } };
+
 pub const Object = union(enum) {
     err: Error,
-    null: Null,
+    null,
+    float: Float,
+    integer: Integer,
+    boolean: Boolean,
+    // @"return": Return,
+    // @"break": Break,
     hash: Hash,
     array: Array,
-    float: Float,
     string: String,
-    integer: Integer,
-    enumerator: Enum,
     builtin: Builtin,
-    boolean: Boolean,
-    @"return": Return,
-    @"break": Break,
+    // enum_tag: Enum.Tag,
+    // enumerator: Enum,
     function: Function,
-    enum_tag: Enum.Tag,
     builtin_method: BuiltinMethod,
 
-    pub fn wasAllocated(self: *const @This()) bool {
-        return switch (self.*) {
-            .boolean, .identifier, .err, .null, .string, .integer, .float, .builtin => false,
-            else => true,
-        };
-    }
+    // pub fn wasAllocated(self: *const @This()) bool {
+    //     return switch (self.*) {
+    //         .boolean, .identifier, .err, .null, .string, .integer, .float, .builtin => false,
+    //         else => true,
+    //     };
+    // }
 
     pub fn objType(self: *const Object) LolliType {
         return switch (self.*) {
+            .null => .null,
             inline else => |x| x.objType(),
         };
     }

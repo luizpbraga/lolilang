@@ -1,16 +1,51 @@
 const std = @import("std");
 const Parser = @import("Parser.zig");
 const code = @import("code.zig");
-const object = @import("object.zig");
 const Lexer = @import("Lexer.zig");
 const Compiler = @import("Compiler.zig");
 const talloc = std.testing.allocator;
+const Value = @import("Object.zig").Value;
 
 const CompilerTestCase = struct {
     input: []const u8,
     expected_constants: []const usize,
     expected_instructions: []const []u8,
 };
+
+test "Function Expression" {
+    const tests: []const struct {
+        input: []const u8,
+        expected_constants: []const struct { usize, usize, []const []u8 },
+        expected_instructions: []const []u8,
+    } = &.{
+        .{
+            .input = "fn() { return 5 + 10;}",
+            .expected_constants = &.{.{
+                5,
+                10,
+                &.{
+                    try code.makeBytecode(talloc, .constant, &.{0}),
+                    try code.makeBytecode(talloc, .constant, &.{1}),
+                    try code.makeBytecode(talloc, .add, &.{}),
+                    try code.makeBytecode(talloc, .retv, &.{}),
+                },
+            }},
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{2}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+    };
+
+    defer for (tests) |t| {
+        for (t.expected_instructions) |bytes| talloc.free(bytes);
+        for (t.expected_constants) |constatnts| {
+            const ins = constatnts[2];
+            for (ins) |in| talloc.free(in);
+        }
+    };
+    try runCompilerTest(talloc, tests);
+}
 
 test "Index Expression" {
     const tests: []const struct {
@@ -381,13 +416,18 @@ fn runCompilerTest(alloc: anytype, tests: anytype) !void {
 
         const node = try parser.parse();
 
-        var compiler = Compiler.init(alloc);
+        const Vm = @import("Vm.zig");
+
+        var compiler = try Compiler.init(alloc);
         defer compiler.deinit();
 
         try compiler.compile(node);
         // // assert the bytecodes
         var b = try compiler.bytecode();
         defer b.deinit(&compiler);
+
+        var vm: Vm = try .init(alloc, &b);
+        defer vm.deinit();
 
         try checkInstructions(alloc, t.expected_instructions, b.instructions);
         try checkConstants(t.expected_constants, b.constants);
@@ -419,7 +459,7 @@ fn logBytecode(alloc: anytype, concatted: []u8, actual: []u8) !void {
     std.log.err("\nExpected:'{s}'\nGot:'{s}'\n", .{ exp_fmt, act_fmt });
 }
 
-fn checkConstants(expected: anytype, actual: []object.Object) !void {
+fn checkConstants(expected: anytype, actual: []Value) !void {
     if (expected.len != actual.len) return error.WrongNumberOfConstants;
 
     for (actual, expected) |act, con| {
@@ -430,31 +470,37 @@ fn checkConstants(expected: anytype, actual: []object.Object) !void {
             []u8, []const u8 => {
                 try checkStringObject(con, act);
             },
+
+            // function test
+            struct { usize, usize, []const []u8 } => {},
             else => {},
         }
     }
 }
 
-fn checkStringObject(exp: []const u8, act: object.Object) !void {
+fn checkStringObject(exp: []const u8, act: Value) !void {
     const result = switch (act) {
-        .string => |i| i,
+        .obj => |ob| switch (ob.type) {
+            .string => |i| i,
+            else => return error.NotAString,
+        },
         else => return error.NotAString,
     };
 
-    if (!std.mem.eql(u8, result.value, exp)) {
-        std.log.err("Expect: {s} Got: {s}\n", .{ exp, result.value });
+    if (!std.mem.eql(u8, result, exp)) {
+        std.log.err("Expect: {s} Got: {s}\n", .{ exp, result });
         return error.WrongStringValue;
     }
 }
 
-fn checkIntegerObject(exp: i64, act: object.Object) !void {
+fn checkIntegerObject(exp: i64, act: Value) !void {
     const result = switch (act) {
         .integer => |i| i,
         else => return error.NotAInteger,
     };
 
-    if (result.value != exp) {
-        std.log.err("Expect: {} Got: {}\n", .{ exp, result.value });
+    if (result != exp) {
+        std.log.err("Expect: {} Got: {}\n", .{ exp, result });
         return error.WrongIntegerValue;
     }
 }

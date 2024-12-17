@@ -2,19 +2,19 @@ const std = @import("std");
 const loli = @import("loli.zig");
 
 pub fn main() !void {
-    const allocator = std.heap.c_allocator;
+    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
+    defer {
+        _ = gpa.detectLeaks();
+        _ = gpa.deinit();
+    }
+    const allocator = gpa.allocator();
 
     var args = std.process.args();
     _ = args.next();
 
     const file_name = if (args.next()) |file| file else {
-        var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
-        const alloc = gpa.allocator();
-        defer {
-            _ = gpa.detectLeaks();
-            _ = gpa.deinit();
-        }
-        return try loli.startRepl(alloc);
+        // FIX: return try loli.startRepl(allocator);
+        return error.MissingFile;
     };
 
     if (!std.mem.endsWith(u8, file_name, ".loli")) {
