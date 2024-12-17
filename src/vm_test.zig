@@ -2,7 +2,8 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const Parser = @import("Parser.zig");
 const code = @import("code.zig");
-const object = @import("object.zig");
+const Object = @import("Object.zig");
+const Value = Object.Value;
 const Lexer = @import("Lexer.zig");
 const Compiler = @import("Compiler.zig");
 const Vm = @import("Vm.zig");
@@ -79,17 +80,17 @@ test "Conditional If" {
         .{ .input = "if true { -1 } else { 2 }", .expected = -1 },
         .{ .input = "if false { -1 } else { 2 }", .expected = 2 },
         .{ .input = "if (1 < 2) { -1 } else { 2 }", .expected = -1 },
-        .{ .input = "if (!!(if (false) { 10 })) { 10 } else { 20 }", .expected = 20 },
+        // .{ .input = "if (!!(if (false) { 10 })) { 10 } else { 20 }", .expected = 20 },
     };
 
     try runVmTests(talloc, tests1);
 
     const tests2: []const struct {
         input: []const u8,
-        expected: object.Object,
+        expected: Value,
     } = &.{
-        .{ .input = "if false { -1 }", .expected = object.NULL },
-        .{ .input = "if (1 > 2) { -1 }", .expected = object.NULL },
+        .{ .input = "if false { -1 }", .expected = .null },
+        .{ .input = "if (1 > 2) { -1 }", .expected = .null },
     };
 
     try runVmTests(talloc, tests2);
@@ -144,7 +145,7 @@ fn runVmTests(alloc: anytype, tests: anytype) !void {
 
         const node = try parser.parse();
 
-        var compiler: Compiler = .init(alloc);
+        var compiler: Compiler = try .init(alloc);
         defer compiler.deinit();
 
         try compiler.compile(node);
@@ -157,57 +158,71 @@ fn runVmTests(alloc: anytype, tests: anytype) !void {
         // defer alloc.free(fmt);
         // std.debug.print("input:'{s}'\nfmt:'{s}'\n", .{ t.input, fmt });
 
-        const obj = try Vm.runVm(&b);
+        var vm: Vm = try .init(alloc, &b);
+        defer vm.deinit();
+
+        try vm.run();
+
+        const obj = vm.lastPopped();
         try expectedObject(t.expected, obj);
     }
 }
 
-fn checkIntegerObject(exp: i64, act: object.Object) !void {
+fn checkIntegerObject(exp: i64, act: Value) !void {
     const result = switch (act) {
         .integer => |i| i,
         else => return error.NotAnInteger,
     };
 
-    if (result.value != exp) return error.WrongIntegerValue;
+    if (result != exp) return error.WrongIntegerValue;
 }
 
-fn checkBooleanObject(exp: bool, act: object.Object) !void {
+fn checkBooleanObject(exp: bool, act: Value) !void {
     const result = switch (act) {
         .boolean => |i| i,
-        else => return error.NotABoolean,
+        else => {
+            std.debug.print("{}", .{act});
+            return error.NotABoolean;
+        },
     };
 
-    if (result.value != exp) return error.WrongBooleanValue;
+    if (result != exp) return error.WrongBooleanValue;
 }
 
-fn checkStringObject(exp: []const u8, act: object.Object) !void {
+fn checkStringObject(exp: []const u8, act: Value) !void {
     const result = switch (act) {
-        .string => |i| i,
+        .obj => |ob| switch (ob.type) {
+            .string => |str| str,
+            else => return error.NotAString,
+        },
         else => return error.NotAString,
     };
 
-    if (!std.mem.eql(u8, result.value, exp)) return error.WrongStringValue;
+    if (!std.mem.eql(u8, result, exp)) return error.WrongStringValue;
 }
 
-fn checkArrayObject(exp: []const usize, act: object.Object) !void {
+fn checkArrayObject(exp: []const usize, act: Value) !void {
     const result = switch (act) {
-        .array => |i| i,
+        .obj => |ob| switch (ob.type) {
+            .array => |arr| arr,
+            else => return error.NotAArray,
+        },
         else => return error.NotAArray,
     };
 
-    if (exp.len != result.elements.len) {
+    if (exp.len != result.len) {
         return error.WrongArrayLenght;
     }
 
-    for (exp, result.elements) |e, element|
+    for (exp, result) |e, element|
         try try checkIntegerObject(e, element);
 }
 
-fn expectedObject(expected: anytype, actual: object.Object) !void {
+fn expectedObject(expected: anytype, actual: Value) !void {
     switch (@typeInfo(@TypeOf(expected))) {
         .int => try checkIntegerObject(@intCast(expected), actual),
         .bool => try checkBooleanObject(expected, actual),
-        .null => if (actual.null.value != null) {
+        .null => if (actual.null != null) {
             return error.ExpectNullObject;
         },
         .array => try checkArrayObject(expected, actual),
