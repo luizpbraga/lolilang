@@ -12,12 +12,60 @@ const CompilerTestCase = struct {
     expected_instructions: []const []u8,
 };
 
-const UUS = struct { usize, usize, []const []u8 };
+test "Function Call" {
+    const tests: []const struct {
+        input: []const u8,
+        expected_constants: struct { usize, []const []u8 },
+        expected_instructions: []const []u8,
+    } = &.{
+        .{
+            .input = "fn(){ 10 }()",
+            .expected_constants = .{
+                10,
+                &.{
+                    try code.makeBytecode(talloc, .constant, &.{0}),
+                    try code.makeBytecode(talloc, .retv, &.{}),
+                },
+            },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                try code.makeBytecode(talloc, .call, &.{}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+
+        .{
+            .input = "var foo = fn(){ 10 }; foo()",
+            .expected_constants = .{
+                10,
+                &.{
+                    try code.makeBytecode(talloc, .constant, &.{0}), // literal 10
+                    try code.makeBytecode(talloc, .retv, &.{}),
+                },
+            },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{1}), // the fn
+                try code.makeBytecode(talloc, .setgv, &.{0}),
+                try code.makeBytecode(talloc, .getgv, &.{0}),
+                try code.makeBytecode(talloc, .call, &.{}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+    };
+
+    defer for (tests) |t| {
+        for (t.expected_instructions) |bytes| talloc.free(bytes);
+        const ins = t.expected_constants[1];
+        for (ins) |in| talloc.free(in);
+    };
+
+    try runCompilerTestInline(talloc, tests);
+}
 
 test "Function Expression" {
     const tests: []const struct {
         input: []const u8,
-        expected_constants: UUS,
+        expected_constants: struct { usize, usize, []const []u8 },
         expected_instructions: []const []u8,
     } = &.{
         .{
