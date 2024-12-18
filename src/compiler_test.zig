@@ -12,15 +12,17 @@ const CompilerTestCase = struct {
     expected_instructions: []const []u8,
 };
 
+const UUS = struct { usize, usize, []const []u8 };
+
 test "Function Expression" {
     const tests: []const struct {
         input: []const u8,
-        expected_constants: []const struct { usize, usize, []const []u8 },
+        expected_constants: UUS,
         expected_instructions: []const []u8,
     } = &.{
         .{
             .input = "fn() { return 5 + 10;}",
-            .expected_constants = &.{.{
+            .expected_constants = .{
                 5,
                 10,
                 &.{
@@ -29,7 +31,43 @@ test "Function Expression" {
                     try code.makeBytecode(talloc, .add, &.{}),
                     try code.makeBytecode(talloc, .retv, &.{}),
                 },
-            }},
+            },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{2}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+
+        .{
+            .input = "fn() { 5 + 10 }",
+            .expected_constants = .{
+                5,
+                10,
+                &.{
+                    try code.makeBytecode(talloc, .constant, &.{0}),
+                    try code.makeBytecode(talloc, .constant, &.{1}),
+                    try code.makeBytecode(talloc, .add, &.{}),
+                    try code.makeBytecode(talloc, .retv, &.{}),
+                },
+            },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{2}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+
+        .{
+            .input = "fn() { 5; 10 }",
+            .expected_constants = .{
+                5,
+                10,
+                &.{
+                    try code.makeBytecode(talloc, .constant, &.{0}),
+                    try code.makeBytecode(talloc, .pop, &.{}),
+                    try code.makeBytecode(talloc, .constant, &.{1}),
+                    try code.makeBytecode(talloc, .retv, &.{}),
+                },
+            },
             .expected_instructions = &.{
                 try code.makeBytecode(talloc, .constant, &.{2}),
                 try code.makeBytecode(talloc, .pop, &.{}),
@@ -39,12 +77,11 @@ test "Function Expression" {
 
     defer for (tests) |t| {
         for (t.expected_instructions) |bytes| talloc.free(bytes);
-        for (t.expected_constants) |constatnts| {
-            const ins = constatnts[2];
-            for (ins) |in| talloc.free(in);
-        }
+        const ins = t.expected_constants[2];
+        for (ins) |in| talloc.free(in);
     };
-    try runCompilerTest(talloc, tests);
+
+    try runCompilerTestInline(talloc, tests);
 }
 
 test "Index Expression" {
@@ -406,10 +443,6 @@ test "Boolean Expression" {
 
 fn runCompilerTest(alloc: anytype, tests: anytype) !void {
     for (tests) |t| {
-        // defer for (t.expected_instructions) |bytes| {
-        //     alloc.free(bytes);
-        // };
-
         var lexer = Lexer.init(t.input);
         var parser = Parser.new(alloc, &lexer);
         defer parser.deinit();
@@ -431,6 +464,32 @@ fn runCompilerTest(alloc: anytype, tests: anytype) !void {
 
         try checkInstructions(alloc, t.expected_instructions, b.instructions);
         try checkConstants(t.expected_constants, b.constants);
+    }
+}
+
+fn runCompilerTestInline(alloc: anytype, tests: anytype) !void {
+    for (tests) |t| {
+        var lexer = Lexer.init(t.input);
+        var parser = Parser.new(alloc, &lexer);
+        defer parser.deinit();
+
+        const node = try parser.parse();
+
+        const Vm = @import("Vm.zig");
+
+        var compiler = try Compiler.init(alloc);
+        defer compiler.deinit();
+
+        try compiler.compile(node);
+        // // assert the bytecodes
+        var b = try compiler.bytecode();
+        defer b.deinit(&compiler);
+
+        var vm: Vm = try .init(alloc, &b);
+        defer vm.deinit();
+
+        try checkInstructions(alloc, t.expected_instructions, b.instructions);
+        try checkConstantsInline(t.expected_constants, b.constants);
     }
 }
 
@@ -463,19 +522,61 @@ fn checkConstants(expected: anytype, actual: []Value) !void {
     if (expected.len != actual.len) return error.WrongNumberOfConstants;
 
     for (actual, expected) |act, con| {
-        switch (@typeInfo(@TypeOf(expected)).pointer.child) {
-            usize, i32, i64 => {
-                try checkIntegerObject(@intCast(con), act);
-            },
-            []u8, []const u8 => {
-                try checkStringObject(con, act);
-            },
+        const info = @typeInfo(@TypeOf(expected));
+        switch (info) {
+            .pointer => |p| {
+                switch (p.child) {
+                    usize, i32, i64 => {
+                        try checkIntegerObject(@intCast(con), act);
+                    },
+                    []u8, []const u8 => {
+                        try checkStringObject(con, act);
+                    },
 
-            // function test
-            struct { usize, usize, []const []u8 } => {},
-            else => {},
+                    else => {},
+                }
+            },
+            else => {
+                std.debug.print("{} not supported \n\n", .{info});
+            },
         }
     }
+}
+
+fn checkConstantsInline(expected: anytype, actual: []Value) !void {
+    if (expected.len != actual.len) return error.WrongNumberOfConstants;
+
+    const info = @typeInfo(@TypeOf(expected));
+    switch (info) {
+        .@"struct" => |fields| {
+            inline for (fields.fields, actual, expected) |field, act, con| {
+                switch (field.type) {
+                    usize, i32, i64 => {
+                        try checkIntegerObject(@intCast(con), act);
+                    },
+
+                    []u8, []const u8 => {
+                        try checkStringObject(con, act);
+                    },
+
+                    []const []u8 => {
+                        // HOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
+                        try checkInstructions(talloc, con, act.obj.type.function);
+                    },
+
+                    else => |t| {
+                        std.debug.print("{} not supported \n\n", .{t});
+                        return error.UnkowType;
+                    },
+                }
+            }
+        },
+
+        else => {
+            std.debug.print("{} not supported \n\n", .{info});
+        },
+    }
+    // }
 }
 
 fn checkStringObject(exp: []const u8, act: Value) !void {
