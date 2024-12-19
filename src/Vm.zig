@@ -1,39 +1,45 @@
 const Vm = @This();
 
 pub const GC_MAX = 2 * 1024;
+
+const FRAME_SIZE = 1024;
+
 const STACK_SIZE = 2048;
 /// max(u16)
 const GLOBALS_SIZE = 65536;
+
+constants: []Value,
 /// in scope objects
-/// WARN: use pointers?
 stack: [STACK_SIZE]Value,
-
-gray_stack: std.ArrayList(*Object),
-gray_count: usize = 0,
-
+/// points to the next value. top is stack[sp - 1]
+sp: usize = 0,
+/// Global Declared
 globals: [GLOBALS_SIZE]?Value,
-
-bcode: *Compiler.Bytecode,
-
-/// allocated objects list
-objects: ?*Object = null,
+// frames: std.ArrayList(Frame),
+frames: [FRAME_SIZE]Frame,
+frames_index: usize = 1,
 
 allocator: std.mem.Allocator,
-
+gray_stack: std.ArrayList(*Object),
+gray_count: usize = 0,
 bytes_allocated: usize = 0,
-// points to the next value. top is stack[sp - 1]
-sp: usize = 0,
+/// GC: allocated objects linked list
+objects: ?*Object = null,
 
 pub fn init(allocator: anytype, b: *Compiler.Bytecode) !Vm {
     var vm: Vm = .{
-        .bcode = b,
+        .constants = b.constants,
         .allocator = allocator,
-        .gray_stack = .init(allocator),
-        .stack = undefined,
+        .gray_stack = try .initCapacity(allocator, 100),
+        .stack = .{.null} ** STACK_SIZE,
         .globals = .{null} ** GLOBALS_SIZE,
         .sp = 0,
         .bytes_allocated = 0,
+        .frames = undefined,
     };
+
+    // main frame
+    vm.frames[0] = .init(.{ .instructions = b.instructions }, 0);
 
     for (b.constants) |value| {
         switch (value) {
@@ -66,21 +72,40 @@ fn freeObjects(vm: *Vm) void {
 }
 
 pub fn deinit(vm: *Vm) void {
-    // std.debug.print("\ndebug: allocated bytes: {}\n", .{vm.bytes_allocated});
     vm.gray_stack.deinit();
     vm.freeObjects();
 }
 
+fn currentFrame(vm: *Vm) *Frame {
+    return &vm.frames[vm.frames_index - 1];
+}
+
+fn pushFrame(vm: *Vm, f: Frame) void {
+    vm.frames[vm.frames_index] = f;
+    vm.frames_index += 1;
+}
+
+fn popFrame(vm: *Vm) *Frame {
+    vm.frames_index -= 1;
+    return &vm.frames[vm.frames_index];
+}
+
+/// decode cycle
 pub fn run(vm: *Vm) !void {
-    // decode cycle
-    const instructions = vm.bcode.instructions;
     var ip: usize = 0;
-    while (ip < instructions.len) : (ip += 1) {
-        const op: code.Opcode = @enumFromInt(instructions[ip]);
+    var instructions: code.Instructions = undefined;
+    var op: code.Opcode = undefined;
+
+    while (vm.currentFrame().ip + 1 < vm.currentFrame().instructions().len) {
+        vm.currentFrame().ip += 1;
+        ip = @intCast(vm.currentFrame().ip);
+        instructions = vm.currentFrame().instructions();
+        op = @enumFromInt(instructions[ip]);
+
         switch (op) {
             .array => {
                 const num_elements = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-                ip += 2;
+                vm.currentFrame().ip += 2;
                 const start_index = vm.sp - num_elements;
                 var array = try vm.allocator.alloc(Value, num_elements);
                 for (start_index..vm.sp) |i| {
@@ -88,38 +113,68 @@ pub fn run(vm: *Vm) !void {
                 }
                 vm.sp = vm.sp - num_elements;
                 const obj = try memory.allocateObject(vm, .{ .array = array });
+                errdefer vm.allocator.destroy(obj);
+
                 try vm.push(.{ .obj = obj });
             },
 
             .index => {
                 const index = vm.pop();
                 const left = vm.pop();
-                try vm.executeIndexOperation(left, index);
+                try operation.executeIndex(vm, left, index);
             },
 
             .setgv => {
                 const global_index = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-                ip += 2;
+                vm.currentFrame().ip += 2;
                 vm.globals[global_index] = vm.pop();
+            },
+
+            .setlv => {
+                const local_index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
+                vm.currentFrame().ip += 1;
+                const frame = vm.currentFrame();
+                vm.stack[@as(usize, @intCast(frame.bp)) + local_index] = vm.pop();
             },
 
             .getgv => {
                 const global_index = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-                ip += 2;
+                vm.currentFrame().ip += 2;
                 try vm.push(vm.globals[global_index].?);
+            },
+
+            .getlv => {
+                const local_index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
+                vm.currentFrame().ip += 1;
+                const frame = vm.currentFrame();
+                try vm.push(vm.stack[@as(usize, @intCast(frame.bp)) + local_index]);
             },
 
             .constant => {
                 const const_index = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-                ip += 2;
-                try vm.push(vm.bcode.constants[const_index]);
+                vm.currentFrame().ip += 2;
+                try vm.push(vm.constants[const_index]);
             },
 
-            .add, .sub, .mul, .div => try vm.executeBinaryOperation(op),
+            .retv => {
+                const returned_value = vm.pop(); // get the return value
+                const frame = vm.popFrame(); // return to the calle frame
+                vm.sp = @intCast(frame.bp - 1); // pop the fn
+                // _ = vm.pop(); // pop the fn
+                try vm.push(returned_value); // push the return value
+            },
 
-            .eq, .neq, .gt => try vm.executeComparison(op),
+            .retn => {
+                const frame = vm.popFrame(); // return to the calle frame
+                vm.sp = @intCast(frame.bp - 1); // pop the fn
+                try vm.push(.null); // push the return value
+            },
 
-            .not, .min => try vm.executePrefixOperation(op),
+            .add, .sub, .mul, .div => try operation.executeBinary(vm, op),
+
+            .eq, .neq, .gt => try operation.executeComparison(vm, op),
+
+            .not, .min => try operation.executePrefix(vm, op),
 
             .true, .false => {
                 try vm.push(.{ .boolean = if (op == .true) true else false });
@@ -131,12 +186,12 @@ pub fn run(vm: *Vm) !void {
                 // get the operand located right afther the opcode
                 const pos = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
                 // move ip to the target out of jump
-                ip = pos - 1;
+                vm.currentFrame().ip = pos - 1;
             },
 
             .jumpifnottrue => {
                 const pos = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-                ip += 2;
+                vm.currentFrame().ip += 2;
 
                 const condition = vm.pop();
 
@@ -145,24 +200,67 @@ pub fn run(vm: *Vm) !void {
                 }
 
                 if (!condition.boolean) {
-                    ip = pos - 1;
+                    vm.currentFrame().ip = pos - 1;
                 }
             },
 
             .pop => _ = vm.pop(),
 
-            else => {},
+            .getbf => {
+                const builtin_index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
+                vm.currentFrame().ip += 1;
+                const builtin = builtins.list[builtin_index];
+                try vm.push(.{ .builtin = builtin });
+            },
+
+            .call => {
+                const args_number = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
+                vm.currentFrame().ip += 1;
+                const value = vm.stack[vm.sp - 1 - args_number];
+
+                switch (value) {
+                    .obj => |ob| {
+                        if (ob.type != .function) {
+                            return error.CallerIsNoFunction;
+                        }
+
+                        const func = ob.type.function;
+
+                        if (args_number != func.num_parameters) {
+                            return error.ArgumentsMismatch;
+                        }
+
+                        const frame: Frame = .init(func, @intCast(vm.sp - args_number));
+                        vm.pushFrame(frame);
+                        // the call stack space allocation
+                        vm.sp = @as(usize, @intCast(frame.bp)) + func.num_locals;
+                    },
+
+                    .builtin => |bui| {
+                        const args = vm.stack[vm.sp - args_number .. vm.sp];
+                        vm.sp = vm.sp - args_number - 1;
+                        try vm.push(bui.function(args));
+                    },
+
+                    else => return error.ValueNotCallable,
+                }
+            },
+
+            // else => {
+            //     std.debug.print("opcode: {}", .{op});
+            //     return error.UnkowOpcode;
+            // },
         }
     }
 }
 
-fn pop(vm: *Vm) Value {
+pub fn pop(vm: *Vm) Value {
     const o = vm.stack[vm.sp - 1];
     vm.sp -= 1;
     return o;
 }
 
-fn push(vm: *Vm, obj: Value) !void {
+pub fn push(vm: *Vm, obj: Value) !void {
     if (vm.sp >= STACK_SIZE) return error.VMStackOverflow;
     vm.stack[vm.sp] = obj;
     vm.sp += 1;
@@ -177,204 +275,15 @@ pub fn lastPopped(vm: *Vm) Value {
     return vm.stack[vm.sp];
 }
 
-fn executeIndexOperation(vm: *Vm, left: Value, index: Value) !void {
-    if (index == .integer) {
-        if (left == .obj and left.obj.type == .array) {
-            const array = left.obj.type.array;
-            const i = index.integer;
-            const len = array.len;
-
-            if (i >= 0 and i < len) {
-                return try vm.push(array[@intCast(i)]);
-            }
-        }
-
-        if (left == .obj and left.obj.type == .string) {
-            const string = left.obj.type.string;
-            const i = index.integer;
-            const len = string.len;
-
-            if (i >= 0 and i < len) {
-                const char = string[@intCast(i)];
-                const str = try vm.allocator.dupe(u8, &.{char});
-                const obj = try memory.allocateObject(vm, .{ .string = str });
-                return try vm.push(.{ .obj = obj });
-            }
-        }
-        return try vm.push(.null);
-    }
-
-    return error.TypeMismatchInIndexOperation;
-}
-
-fn executePrefixOperation(vm: *Vm, op: code.Opcode) !void {
-    const obj = vm.pop();
-
-    switch (obj) {
-        .integer => |integer| {
-            if (op == .min) {
-                return try vm.push(.{ .integer = -integer });
-            }
-            return error.UnknowIntegerOperation;
-        },
-
-        .float => |float| {
-            if (op == .min) {
-                return try vm.push(.{ .float = -float });
-            }
-            return error.UnknowIntegerOperation;
-        },
-
-        .boolean => |boolean| {
-            if (op == .not) {
-                return try vm.push(.{ .boolean = !boolean });
-            }
-            return error.UnknowBooleanOperation;
-        },
-
-        .null => {
-            if (op == .not) {
-                return try vm.push(.null);
-            }
-            return error.UnknowBooleanOperation;
-        },
-
-        else => return error.UnsupportedOperation,
-    }
-}
-
-fn executeBinaryOperation(vm: *Vm, op: code.Opcode) !void {
-    const right = vm.pop();
-    const left = vm.pop();
-
-    if (right == .integer and left == .integer) {
-        const right_val = right.integer;
-        const left_val = left.integer;
-        const result = switch (op) {
-            .add => left_val + right_val,
-            .sub => left_val - right_val,
-            .mul => left_val * right_val,
-            .div => @divTrunc(left_val, right_val),
-            else => unreachable,
-        };
-        return try vm.push(.{ .integer = result });
-    }
-
-    if (right == .float and left == .float) {
-        const right_val = right.float;
-        const left_val = left.float;
-        const result = switch (op) {
-            .add => left_val + right_val,
-            .sub => left_val - right_val,
-            .mul => left_val * right_val,
-            .div => left_val / right_val,
-            else => unreachable,
-        };
-        return try vm.push(.{ .float = result });
-    }
-
-    if (right == .obj and left == .obj) {
-        if (right.obj.type == .string and left.obj.type == .string) {
-            const left_val = left.obj.type.string;
-            const right_val = right.obj.type.string;
-            if (op != .add) {
-                return error.UnsupportedStringOperation;
-            }
-            const string = try std.mem.concat(vm.allocator, u8, &.{ left_val, right_val });
-            const obj = try memory.allocateObject(vm, .{ .string = string });
-            return try vm.push(.{ .obj = obj });
-        }
-    }
-
-    return error.UnsupportedOperation;
-}
-
-fn executeComparison(vm: *Vm, op: code.Opcode) !void {
-    const right = vm.pop();
-    const left = vm.pop();
-
-    if (right == .boolean and left == .boolean) {
-        const right_val = right.boolean;
-        const left_val = left.boolean;
-        const result = switch (op) {
-            .eq => left_val == right_val,
-            .neq => left_val != right_val,
-            else => return error.UnknowBooleanOperation,
-        };
-        return try vm.push(.{ .boolean = result });
-    }
-
-    if (right == .null or left == .null) {
-        const result = switch (op) {
-            .eq => right == .null and left == .null,
-            .neq => right != .null or left != .null,
-            else => return error.UnknowBooleanOperation,
-        };
-        return try vm.push(.{ .boolean = result });
-    }
-
-    if (right == .integer and left == .integer) {
-        const right_val = right.integer;
-        const left_val = left.integer;
-        const result = switch (op) {
-            .eq => left_val == right_val,
-            .neq => left_val != right_val,
-            .gt => left_val > right_val,
-            else => return error.UnknowIntegerOperation,
-        };
-        return try vm.push(.{ .boolean = result });
-    }
-
-    if (right == .float and left == .float) {
-        const right_val = right.float;
-        const left_val = left.float;
-        const result = switch (op) {
-            .eq => left_val == right_val,
-            .neq => left_val != right_val,
-            .gt => left_val > right_val,
-            else => return error.UnknowfloatOperation,
-        };
-        return try vm.push(.{ .boolean = result });
-    }
-
-    // if (rtype == .float and ltype == .integer) {
-    //     const right_val = right.float.value;
-    //     const left_val = left.integer.value;
-    //     const result = switch (op) {
-    //         .eq => left_val == right_val,
-    //         .neq => left_val != right_val,
-    //         .gt => left_val > right_val,
-    //         else => return error.UnknowfloatOperation,
-    //     };
-    //     return try vm.push(.{ .boolean = .{ .value = result } });
-    // }
-    //
-    // if (rtype == .integer and ltype == .float) {
-    //     const right_val = right.integer.value;
-    //     const left_val = left.float.value;
-    //     const result = switch (op) {
-    //         .eq => left_val == right_val,
-    //         .neq => left_val != right_val,
-    //         .gt => left_val > right_val,
-    //         else => return error.UnknowfloatOperation,
-    //     };
-    //     return try vm.push(.{ .boolean = .{ .value = result } });
-    // }
-
-    return error.UnsupportedOperation;
-}
-
 const std = @import("std");
-const ast = @import("ast.zig");
-const Parser = @import("Parser.zig");
 const code = @import("code.zig");
-const object = @import("object.zig");
-const Lexer = @import("Lexer.zig");
 const Compiler = @import("Compiler.zig");
-const talloc = std.testing.allocator;
 const memory = @import("memory.zig");
 const Object = @import("Object.zig");
 const Value = Object.Value;
+const operation = @import("operation.zig");
+const Frame = @import("Frame.zig");
+const builtins = @import("builtins.zig");
 
 // test {
 //     _ = @import("vm_test.zig");

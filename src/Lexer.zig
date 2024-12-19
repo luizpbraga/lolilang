@@ -2,7 +2,6 @@ const Self = @This();
 input: []const u8,
 position: usize = 0,
 read_position: usize = 0,
-starting_line_position: usize = 0,
 ch: u8 = 0,
 
 const std = @import("std");
@@ -47,7 +46,6 @@ fn peekChar(self: *const Self) u8 {
 
 fn skipWhiteSpace(self: *Self) void {
     while (self.ch == ' ' or self.ch == '\n' or self.ch == '\t' or self.ch == '\r') {
-        if (self.ch == '\n') self.starting_line_position = self.read_position;
         self.readChar();
     }
 }
@@ -192,7 +190,7 @@ pub fn nextToken(self: *Self) Token {
         },
         0 => newToken(.eof),
         // identifiers
-        'a'...'z', 'A'...'Z', '_' => {
+        'a'...'z', 'A'...'Z', '_', '@' => {
             // TODO: handle error
             const literal = self.readIdentifier() catch unreachable;
             const token_type = Token.lookupIdentfier(literal);
@@ -210,7 +208,7 @@ pub fn nextToken(self: *Self) Token {
 }
 
 fn isLetter(ch: u8) bool {
-    return ('a' <= ch and ch <= 'z') or ('A' <= ch and ch <= 'Z') or ('_' == ch);
+    return ('a' <= ch and ch <= 'z') or ('A' <= ch and ch <= 'Z') or ('_' == ch) or (ch == '@');
 }
 
 fn isDigit(ch: u8) bool {

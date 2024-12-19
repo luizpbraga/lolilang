@@ -8,6 +8,8 @@ arena: std.heap.ArenaAllocator,
 infix_fns: std.EnumMap(Token.Type, InfixParseFn),
 prefix_fns: std.EnumMap(Token.Type, PrefixParseFn),
 
+var NULL: ast.Expression = .null;
+
 pub const Precedence = enum {
     lower,
     cond,
@@ -176,7 +178,10 @@ fn parseReturn(self: *Parser) anyerror!ast.Statement {
 
     self.nextToken();
 
-    return_stmt.value = try self.parseExpression(.lower);
+    return_stmt.value = self.parseExpression(.lower) catch b: {
+        // self.nextToken();
+        break :b &NULL;
+    };
 
     if (self.peekTokenIs(.@";")) {
         self.nextToken();
@@ -381,7 +386,7 @@ fn parseVar(self: *Parser) anyerror!ast.Statement {
         self.nextToken();
 
         if (!self.expectPeek(.@"=")) {
-            var_stmt.value.* = try self.parseNull();
+            var_stmt.value = &NULL;
 
             if (self.peekTokenIs(.@";")) {
                 self.nextToken();
@@ -435,14 +440,14 @@ fn parseExpStatement(self: *Parser) anyerror!ast.Statement {
     return .{ .exp_statement = exp_stmt };
 }
 
-fn parseType(self: *Parser) anyerror!*ast.Expression {
-    const value = try self.parseExpression(.lower);
-    return .{ .type = .{ .type = value.identifier } };
-}
+// fn parseType(self: *Parser) anyerror!*ast.Expression {
+//     const value = try self.parseExpression(.lower);
+//     return .{ .type = .{ .type = value.identifier } };
+// }
 
 fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
     const prefixFn = self.prefix_fns.get(self.cur_token.type) orelse {
-        std.log.warn("at token: {s}\n", .{self.cur_token.literal});
+        // std.log.warn("at token: {s}\n", .{self.cur_token.literal});
         return error.UnknowPrefixFn;
     };
 
@@ -625,20 +630,20 @@ fn parseBlock(self: *Parser) anyerror!ast.Block {
 // }
 
 fn parseFunction(self: *Parser) anyerror!ast.Expression {
-    var lit: ast.Function = .{
+    var func: ast.Function = .{
         .parameters = undefined,
         .body = undefined,
     };
 
     if (!self.expectPeek(.@"(")) return error.MissingParentese;
 
-    lit.parameters = try self.parseFunctionParameters();
+    func.parameters = try self.parseFunctionParameters();
 
     if (!self.expectPeek(.@"{")) return error.MissingBrance;
 
-    lit.body = try self.parseBlock();
+    func.body = try self.parseBlock();
 
-    return .{ .function = lit };
+    return .{ .function = func };
 }
 
 fn parseFunctionParameters(self: *Parser) anyerror![]ast.Identifier {

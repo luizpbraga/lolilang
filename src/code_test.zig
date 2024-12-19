@@ -15,6 +15,7 @@ test makeBytecode {
     } = &.{
         .{ .op = .constant, .operands = &.{65534}, .expected = &.{ @intFromEnum(Opcode.constant), 255, 254 } },
         .{ .op = .add, .operands = &.{}, .expected = &.{@intFromEnum(Opcode.add)} },
+        .{ .op = .getlv, .operands = &.{255}, .expected = &.{ @intFromEnum(Opcode.getlv), 255 } },
     };
 
     for (tests) |t| {
@@ -42,6 +43,7 @@ test readOperands {
         bytes_read: usize,
     } = &.{
         .{ .op = .constant, .operands = &.{65535}, .bytes_read = 2 },
+        .{ .op = .getlv, .operands = &.{255}, .bytes_read = 1 },
     };
 
     for (tests) |t| {
@@ -63,6 +65,7 @@ test readOperands {
 test "Instructions String" {
     const instructions: []const Instructions = &.{
         try makeBytecode(talloc, .add, &.{}),
+        try makeBytecode(talloc, .getlv, &.{1}),
         try makeBytecode(talloc, .constant, &.{2}),
         try makeBytecode(talloc, .constant, &.{65535}),
     };
@@ -70,8 +73,9 @@ test "Instructions String" {
 
     const expected =
         \\0000 add
-        \\0001 constant 2
-        \\0004 constant 65535
+        \\0001 getlv 1
+        \\0003 constant 2
+        \\0006 constant 65535
         \\
     ;
 

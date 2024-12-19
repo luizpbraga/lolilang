@@ -281,7 +281,8 @@ pub const Integer = struct {
     pub fn expressionNode() void {}
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
-        return self.token.literal;
+        var buf: [10]u8 = undefined;
+        return std.fmt.bufPrint(&buf, "{}", .{self.value}) catch "";
     }
 };
 
@@ -291,7 +292,7 @@ pub const String = struct {
     pub fn expressionNode() void {}
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
-        return self.token.literal;
+        return self.value;
     }
 };
 
@@ -303,7 +304,7 @@ pub const Boolean = struct {
     }
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
-        return self.token.literal;
+        return if (self.value) "true" else "false";
     }
 };
 

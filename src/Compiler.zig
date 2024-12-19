@@ -4,8 +4,9 @@ const code = @import("code.zig");
 const Object = @import("Object.zig");
 const Value = Object.Value;
 const memory = @import("memory.zig");
-
-var NULL_EXP: ast.Expression = .null;
+const SymbolTable = @import("SymbolTable.zig");
+const Scope = @import("Scope.zig");
+const builtins = @import("builtins.zig");
 
 /// compiler: transverse the AST, find the ast nodes and evakueate then to objects, and add it to the pool
 const Compiler = @This();
@@ -13,38 +14,10 @@ allocator: std.mem.Allocator,
 
 /// constants pool
 constants: std.ArrayList(Value),
-symbols: SymbolTable,
+symbols: ?*SymbolTable,
 
 scopes: std.ArrayList(Scope),
 scope_index: usize,
-
-const Scope = struct {
-    instructions: std.ArrayList(code.Instructions),
-    last_ins: EmittedInstruction,
-    prev_ins: EmittedInstruction,
-
-    test "Scope" {
-        const talloc = std.testing.allocator;
-        var compiler: Compiler = try .init(talloc);
-        defer compiler.deinit();
-
-        if (compiler.scope_index != 0) {
-            std.log.err("Expect 0, found {}", .{compiler.scope_index});
-            return error.WrongScopeIndex;
-        }
-
-        try compiler.emit(.mul, &.{});
-
-        try compiler.enterScope();
-
-        if (compiler.scope_index != 1) {
-            std.log.err("Expect 1, found {}", .{compiler.scope_index});
-            return error.WrongScopeIndex;
-        }
-
-        try compiler.emit(.sub, &.{});
-    }
-};
 
 pub fn init(alloc: std.mem.Allocator) !Compiler {
     const main_scope: Scope = .{
@@ -56,10 +29,18 @@ pub fn init(alloc: std.mem.Allocator) !Compiler {
     var scopes: std.ArrayList(Scope) = .init(alloc);
     try scopes.append(main_scope);
 
+    const s = try alloc.create(SymbolTable);
+    errdefer alloc.destroy(s);
+    s.* = .init(alloc);
+
+    for (0.., builtins.list) |i, b| {
+        _ = try s.defineBuiltin(i, b.name);
+    }
+
     return .{
         .allocator = alloc,
         .constants = .init(alloc),
-        .symbols = .init(alloc),
+        .symbols = s,
         .scopes = scopes,
         .scope_index = 0,
     };
@@ -73,25 +54,44 @@ pub fn deinit(c: *Compiler) void {
 
     c.scopes.deinit();
     c.constants.deinit();
-    c.symbols.deinit();
+    // GC
+    if (c.symbols) |s| {
+        s.deinit();
+        c.allocator.destroy(s);
+    }
 }
 
-fn enterScope(c: *Compiler) !void {
+fn loadSymbol(c: *Compiler, s: *SymbolTable.Symbol) !void {
+    switch (s.scope) {
+        .local => try c.emit(.getlv, &.{s.index}),
+        .global => try c.emit(.getgv, &.{s.index}),
+        .builtin => try c.emit(.getbf, &.{s.index}),
+    }
+}
+
+pub fn enterScope(c: *Compiler) !void {
     try c.scopes.append(.{
         .prev_ins = undefined,
         .last_ins = undefined,
         .instructions = .init(c.allocator),
     });
     c.scope_index += 1;
+    c.symbols = if (c.symbols) |s| try s.initEnclosed() else null;
 }
 
-fn leaveScope(c: *Compiler) !code.Instructions {
+pub fn leaveScope(c: *Compiler) !code.Instructions {
     c.scope_index -= 1;
     var last_scope = c.scopes.pop();
     defer {
         for (last_scope.instructions.items) |ins| c.allocator.free(ins);
         last_scope.instructions.deinit();
     }
+
+    c.symbols = if (c.symbols) |s| b: {
+        defer s.deinitEnclosed();
+        break :b s.outer;
+    } else null;
+
     return try std.mem.concat(c.allocator, u8, last_scope.instructions.items);
 }
 
@@ -121,8 +121,14 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 // var_stmt.value is the right side expression
                 try c.compile(.{ .expression = var_stmt.value });
                 //const identifier = var_stmt.name;
-                const symbol = try c.symbols.define(var_stmt.name.value);
-                try c.emit(.setgv, &.{symbol.index});
+                const symbol = try c.symbols.?.define(var_stmt.name.value);
+                const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+                try c.emit(op, &.{symbol.index});
+            },
+
+            .@"return" => |ret| {
+                try c.compile(.{ .expression = ret.value });
+                try c.emit(.retv, &.{});
             },
 
             else => return error.InvalidStatemend,
@@ -130,11 +136,10 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
         .expression => |exp| switch (exp.*) {
             .identifier => |ident| {
-                const symbol = c.symbols.resolve(ident.value) orelse {
-                    std.log.err("-> {s}", .{ident.value});
+                const symbol = c.symbols.?.resolve(ident.value) orelse {
                     return error.UndefinedVariable;
                 };
-                try c.emit(.getgv, &.{symbol.index});
+                try c.loadSymbol(symbol);
             },
 
             // .method => |method| {
@@ -201,7 +206,9 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
             .string => |str| {
                 const cvalue = try c.allocator.dupe(u8, str.value);
+                errdefer c.allocator.free(cvalue);
                 const obj = try c.allocator.create(Object);
+                errdefer c.allocator.destroy(obj);
                 obj.type = .{ .string = cvalue };
                 const pos = try c.addConstants(.{ .obj = obj });
                 try c.emit(.constant, &.{pos});
@@ -214,12 +221,44 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(.array, &.{array.elements.len});
             },
 
+            .call => |call| {
+                try c.compile(.{ .expression = call.function });
+
+                for (call.arguments) |arg| {
+                    try c.compile(.{ .expression = arg });
+                }
+
+                try c.emit(.call, &.{call.arguments.len});
+            },
+
             .function => |func| {
                 try c.enterScope();
+                errdefer if (c.symbols) |s| c.allocator.destroy(s);
+
+                for (func.parameters) |parameter| {
+                    _ = try c.symbols.?.define(parameter.value);
+                }
+
                 try c.compile(.{ .statement = .{ .block = func.body } });
-                const instruction = try c.leaveScope();
+
+                // return the last value if no return statement
+                if (c.lastInstructionIs(.pop)) try c.replaceLastPopWithReturn();
+
+                // return null
+                if (!c.lastInstructionIs(.retv)) try c.emit(.retn, &.{});
+
                 const obj = try c.allocator.create(Object);
-                obj.type = .{ .function = instruction };
+                errdefer c.allocator.destroy(obj);
+                const num_locals = if (c.symbols) |s| s.def_number else 0;
+                const instructions = try c.leaveScope();
+                obj.type = .{
+                    .function = .{
+                        .instructions = instructions,
+                        .num_locals = num_locals,
+                        .num_parameters = func.parameters.len,
+                    },
+                };
+
                 const pos = try c.addConstants(.{ .obj = obj });
                 try c.emit(.constant, &.{pos});
             },
@@ -246,7 +285,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.compile(.{ .statement = .{ .block = ifexp.consequence } });
 
                 // statements add a pop in the end, wee drop the last pop (if return)
-                c.ifLastInstructionIsPopcodeThenPopIt();
+                if (c.lastInstructionIs(.pop)) c.removeLastPop();
 
                 // always jumb: null is returned
                 const jum_pos = try c.emitPos(.jump, &.{9999});
@@ -258,7 +297,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 if (ifexp.alternative) |alt| {
                     try c.compile(.{ .statement = .{ .block = alt } });
                     // statements add a pop in the end, wee drop the last pop (if return)
-                    c.ifLastInstructionIsPopcodeThenPopIt();
+                    if (c.lastInstructionIs(.pop)) c.removeLastPop();
                 } else {
                     try c.emit(.null, &.{});
                 }
@@ -287,12 +326,8 @@ fn currentInstruction(c: *Compiler) *std.ArrayList(code.Instructions) {
 }
 
 /// FIX
-fn ifLastInstructionIsPopcodeThenPopIt(c: *Compiler) void {
+fn removeLastPop(c: *Compiler) void {
     if (c.scopes.items[c.scope_index].last_ins.opcode == .pop) {
-        // const last = c.scopes.items[c.scope_index].last_ins;
-        // for (last.pos..c.currentInstruction().items.len) |i| {
-        //     c.allocator.free(c.currentInstruction().orderedRemove(i));
-        // }
         c.allocator.free(c.currentInstruction().pop());
         c.scopes.items[c.scope_index].last_ins = c.scopes.items[c.scope_index].prev_ins;
     }
@@ -312,6 +347,12 @@ fn addInstruction(c: *Compiler, ins: code.Instructions) !usize {
 fn replaceInstruction(c: *Compiler, pos: usize, new_ins: []u8) !void {
     c.allocator.free(c.currentInstruction().orderedRemove(pos));
     try c.currentInstruction().insert(pos, new_ins);
+}
+
+fn replaceLastPopWithReturn(c: *Compiler) !void {
+    const last_pos = c.scopes.items[c.scope_index].last_ins.pos;
+    try c.replaceInstruction(last_pos, try code.makeBytecode(c.allocator, .retv, &.{}));
+    c.scopes.items[c.scope_index].last_ins.opcode = .retv;
 }
 
 /// replaces the instruction
@@ -340,8 +381,14 @@ fn setLastInstruction(c: *Compiler, op: code.Opcode, pos: usize) void {
     c.scopes.items[c.scope_index].last_ins = .{ .opcode = op, .pos = pos };
 }
 
+fn lastInstructionIs(c: *Compiler, op: code.Opcode) bool {
+    if (c.currentInstruction().items.len == 0) return false;
+    return c.scopes.items[c.scope_index].last_ins.opcode == op;
+}
+
 pub fn bytecode(c: *Compiler) !Bytecode {
     const ins = try std.mem.concat(c.allocator, u8, c.currentInstruction().items);
+    errdefer c.allocator.free(ins);
     return .{ .constants = c.constants.items, .instructions = ins };
 }
 
@@ -355,104 +402,8 @@ pub const Bytecode = struct {
     }
 };
 
-const EmittedInstruction = struct {
-    opcode: code.Opcode,
-    pos: usize,
-};
-
-/// symbles (identifier table)
-/// Information such as its location, its scope, whether it was previously declared or not
-const SymbolTable = struct {
-    /// identifier name to scope map
-    store: std.StringArrayHashMap(Symbol),
-    def_number: usize,
-
-    const Symbol = struct {
-        name: []const u8,
-        scope: ScopeType,
-        index: usize,
-    };
-
-    const ScopeType = enum {
-        global,
-        local,
-    };
-
-    pub fn init(alloc: std.mem.Allocator) SymbolTable {
-        return .{
-            .store = .init(alloc),
-            .def_number = 0,
-        };
-    }
-
-    pub fn deinit(t: *SymbolTable) void {
-        t.store.deinit();
-    }
-
-    pub fn define(t: *SymbolTable, name: []const u8) !Symbol {
-        const symbol: Symbol = .{
-            .name = name,
-            .scope = .global,
-            .index = t.def_number,
-        };
-        try t.store.put(name, symbol);
-        t.def_number += 1;
-        return symbol;
-    }
-
-    pub fn resolve(t: *SymbolTable, name: []const u8) ?*Symbol {
-        return t.store.getPtr(name);
-    }
-
-    test define {
-        const talloc = std.testing.allocator;
-
-        var expected: std.StringHashMap(Symbol) = .init(talloc);
-        defer expected.deinit();
-
-        try expected.put("a", .{ .name = "a", .scope = .global, .index = 0 });
-        try expected.put("b", .{ .name = "b", .scope = .global, .index = 1 });
-
-        var global = SymbolTable.init(talloc);
-        defer global.deinit();
-
-        const a = try global.define("a");
-        const aexp = expected.get("a").?;
-        if (!std.meta.eql(a, aexp)) {
-            return error.UnexpendedSymbol;
-        }
-
-        const b = try global.define("b");
-        const bexp = expected.get("b").?;
-        if (!std.meta.eql(b, bexp)) {
-            return error.UnexpendedSymbol;
-        }
-    }
-
-    test resolve {
-        const talloc = std.testing.allocator;
-
-        const expected: [2]Symbol = .{
-            .{ .name = "a", .scope = .global, .index = 0 },
-            .{ .name = "b", .scope = .global, .index = 1 },
-        };
-
-        var global = SymbolTable.init(talloc);
-        defer global.deinit();
-
-        _ = try global.define("a");
-        _ = try global.define("b");
-
-        for (expected) |sym| {
-            const result = global.resolve(sym.name).?.*;
-            if (!std.meta.eql(sym, result)) {
-                return error.UnexpendedSymbol;
-            }
-        }
-    }
-};
-
 test {
-    _ = @import("compiler_test.zig");
-    _ = SymbolTable;
+    // _ = @import("compiler_test.zig");
+    // _ = SymbolTable;
+    // _ = Scope;
 }

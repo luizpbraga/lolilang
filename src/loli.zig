@@ -1,9 +1,8 @@
 const std = @import("std");
 const Lexer = @import("Lexer.zig");
 const Parser = @import("Parser.zig");
-const Environment = @import("Environment.zig");
+// const Environment = @import("Environment.zig");
 const Compiler = @import("Compiler.zig");
-const buildins = @import("buildins.zig");
 const Vm = @import("Vm.zig");
 
 // pub fn startRepl(allocator: anytype) !void {
@@ -71,20 +70,6 @@ const Vm = @import("Vm.zig");
 //     }
 // }
 
-pub fn runInterpreter(allocator: std.mem.Allocator, input: []const u8) !void {
-    var lexer = Lexer.init(input);
-
-    var parser = Parser.new(allocator, &lexer);
-    defer parser.deinit();
-
-    const node = try parser.parse();
-
-    var env = Environment.init(allocator);
-    defer env.deinit();
-
-    _ = try env.eval(node);
-}
-
 pub fn runVm(allocator: std.mem.Allocator, input: []const u8) !void {
     var lexer = Lexer.init(input);
 
@@ -102,15 +87,23 @@ pub fn runVm(allocator: std.mem.Allocator, input: []const u8) !void {
     var code = try compiler.bytecode();
     defer code.deinit(&compiler);
 
+    // const fmt = try @import("code.zig").formatInstruction(allocator, code.instructions);
+    // defer allocator.free(fmt);
+    // std.log.info("bytecode instructions: {s}", .{fmt});
+
     var vm: Vm = try .init(allocator, &code);
     defer vm.deinit();
 
-    try vm.run();
+    vm.run() catch |err| {
+        std.log.err("{s}", .{@errorName(err)});
+        try @import("memory.zig").collectGarbage(&vm);
+        return err;
+    };
 
-    const obj = vm.lastPopped();
-
-    print(obj);
-    std.debug.print("\n", .{});
+    // const obj = vm.lastPopped();
+    //
+    // print(obj);
+    // std.debug.print("\n", .{});
 }
 
 fn print(obj: anytype) void {

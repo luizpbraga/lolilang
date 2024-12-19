@@ -9,14 +9,54 @@ const Compiler = @import("Compiler.zig");
 const Vm = @import("Vm.zig");
 const talloc = std.testing.allocator;
 
+test "Local Binding" {
+    const tests: []const struct {
+        input: []const u8,
+        expected: i64,
+    } = &.{
+        .{ .input = "var ten = fn(){ var ten = 10; return ten }; ten()", .expected = 10 },
+    };
+
+    try runVmTests(talloc, tests);
+}
+
+test "Function Without Arguments" {
+    {
+        const tests: []const struct {
+            input: []const u8,
+            expected: i64,
+        } = &.{
+            .{ .input = "var foo = fn(){ 10 }; foo()", .expected = 10 },
+            .{ .input = "var foo = fn(){ 10 }; var bar = fn(){ foo() + 20 }; bar()", .expected = 30 },
+            .{ .input = "var foo = fn(){ 10 }; var bar = fn(){ foo() + 20 }; foo() + bar()", .expected = 40 },
+            .{ .input = "var foo = fn(){ return 40; 10 }; foo()", .expected = 40 },
+            .{ .input = "var foo = fn(){ return 40; 10 }; var bar = fn(){ foo }; bar()()", .expected = 40 },
+        };
+
+        try runVmTests(talloc, tests);
+    }
+
+    {
+        const tests: []const struct {
+            input: []const u8,
+            expected: Value,
+        } = &.{
+            .{ .input = "var foo = fn(){ }; foo()", .expected = .null },
+            .{ .input = "var foo = fn(){ return null }; foo()", .expected = .null },
+        };
+
+        try runVmTests(talloc, tests);
+    }
+}
+
 test "Index" {
     const tests: []const struct {
         input: []const u8,
-        expected: []const usize,
+        expected: i64,
     } = &.{
-        .{ .input = "[1][0]", .expected = &.{1} },
-        .{ .input = "[1, 2][1]", .expected = &.{2} },
-        .{ .input = "[0, 1, 2 + 2][2]", .expected = &.{4} },
+        .{ .input = "[1][0]", .expected = 1 },
+        .{ .input = "[1, 2][1]", .expected = 2 },
+        .{ .input = "[0, 1, 2 + 2][2]", .expected = 4 },
     };
 
     try runVmTests(talloc, tests);
@@ -25,7 +65,7 @@ test "Index" {
 test "Array" {
     const tests: []const struct {
         input: []const u8,
-        expected: []const usize,
+        expected: []const i64,
     } = &.{
         .{ .input = "[]", .expected = &.{} },
         .{ .input = "[1, 2]", .expected = &.{ 1, 2 } },
@@ -62,7 +102,7 @@ test "Globals Var Statements" {
         .{ .input = "var one = 10; var two = one + one; one + two", .expected = 30 },
         .{ .input = 
         \\var one = 10
-        \\var two = one + one 
+        \\var two = one + one
         \\var z = if true { one + two } else { 0 }
         \\z + one + two
         , .expected = 30 + 10 + 10 + 10 },
@@ -201,7 +241,7 @@ fn checkStringObject(exp: []const u8, act: Value) !void {
     if (!std.mem.eql(u8, result, exp)) return error.WrongStringValue;
 }
 
-fn checkArrayObject(exp: []const usize, act: Value) !void {
+fn checkArrayObject(exp: []const i64, act: Value) !void {
     const result = switch (act) {
         .obj => |ob| switch (ob.type) {
             .array => |arr| arr,
@@ -215,7 +255,7 @@ fn checkArrayObject(exp: []const usize, act: Value) !void {
     }
 
     for (exp, result) |e, element|
-        try try checkIntegerObject(e, element);
+        try checkIntegerObject(e, element);
 }
 
 fn expectedObject(expected: anytype, actual: Value) !void {
@@ -225,8 +265,24 @@ fn expectedObject(expected: anytype, actual: Value) !void {
         .null => if (actual.null != null) {
             return error.ExpectNullObject;
         },
-        .array => try checkArrayObject(expected, actual),
 
-        else => {},
+        .pointer => |p| {
+            switch (p.child) {
+                i64 => try checkArrayObject(expected, actual),
+                u8 => try checkStringObject(expected, actual),
+                else => return error.invalidpointertype,
+            }
+        },
+
+        .@"union" => {
+            if (@TypeOf(expected) == Value) {
+                try std.testing.expectEqual(actual, expected);
+            }
+        },
+
+        else => {
+            std.debug.print("find type = {}", .{@TypeOf(expected)});
+            return error.UnkowType;
+        },
     }
 }

@@ -12,7 +12,123 @@ const CompilerTestCase = struct {
     expected_instructions: []const []u8,
 };
 
-test "Function Call" {
+test "Var Statement scope" {
+    const tests: []const struct {
+        input: []const u8,
+        expected_constants: struct { usize, []const []u8 },
+        expected_instructions: []const []u8,
+    } = &.{
+        .{
+            .input = "var num = 55; fn(){ num }",
+            .expected_constants = .{
+                55,
+                &.{
+                    try code.makeBytecode(talloc, .getgv, &.{0}),
+                    try code.makeBytecode(talloc, .retv, &.{}),
+                },
+            },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .setgv, &.{0}),
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+
+        .{
+            .input = "fn(){ var num = 55; num }",
+            .expected_constants = .{
+                55,
+                &.{
+                    try code.makeBytecode(talloc, .constant, &.{0}), // literal 10
+                    try code.makeBytecode(talloc, .setlv, &.{0}),
+                    try code.makeBytecode(talloc, .getlv, &.{0}),
+                    try code.makeBytecode(talloc, .retv, &.{}),
+                },
+            },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{1}), // the fn
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+    };
+
+    defer for (tests) |t| {
+        for (t.expected_instructions) |bytes| talloc.free(bytes);
+        const ins = t.expected_constants[1];
+        for (ins) |in| talloc.free(in);
+    };
+
+    try runCompilerTestInline(talloc, tests);
+}
+
+test "Function Call With Arguments" {
+    const tests1: []const struct {
+        input: []const u8,
+        expected_constants: struct { []const []u8, usize },
+        expected_instructions: []const []u8,
+    } = &.{
+        .{
+            .input = "var foo = fn(a){ }; foo(24)",
+            .expected_constants = .{
+                &.{try code.makeBytecode(talloc, .retn, &.{})},
+                24,
+            },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .setgv, &.{0}),
+                try code.makeBytecode(talloc, .getgv, &.{0}),
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                try code.makeBytecode(talloc, .call, &.{1}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+    };
+
+    const tests2: []const struct {
+        input: []const u8,
+        expected_constants: struct { []const []u8, usize, usize, usize },
+        expected_instructions: []const []u8,
+    } = &.{
+        .{
+            .input = "var foo = fn(a, b, c){ }; foo(1, 2, 3)",
+            .expected_constants = .{
+                &.{try code.makeBytecode(talloc, .retn, &.{})},
+                1,
+                2,
+                3,
+            },
+            .expected_instructions = &.{
+                try code.makeBytecode(talloc, .constant, &.{0}),
+                try code.makeBytecode(talloc, .setgv, &.{0}),
+                try code.makeBytecode(talloc, .getgv, &.{0}),
+                try code.makeBytecode(talloc, .constant, &.{1}),
+                try code.makeBytecode(talloc, .constant, &.{2}),
+                try code.makeBytecode(talloc, .constant, &.{3}),
+                try code.makeBytecode(talloc, .call, &.{3}),
+                try code.makeBytecode(talloc, .pop, &.{}),
+            },
+        },
+    };
+
+    defer for (tests1) |t| {
+        for (t.expected_instructions) |bytes| talloc.free(bytes);
+        const ins = t.expected_constants[0];
+        for (ins) |in| talloc.free(in);
+    };
+
+    defer for (tests2) |t| {
+        for (t.expected_instructions) |bytes| talloc.free(bytes);
+        const ins = t.expected_constants[0];
+        for (ins) |in| talloc.free(in);
+    };
+
+    try runCompilerTestInline(talloc, tests1);
+
+    try runCompilerTestInline(talloc, tests2);
+}
+
+test "Function Call No Arguments" {
     const tests: []const struct {
         input: []const u8,
         expected_constants: struct { usize, []const []u8 },
@@ -29,7 +145,7 @@ test "Function Call" {
             },
             .expected_instructions = &.{
                 try code.makeBytecode(talloc, .constant, &.{1}),
-                try code.makeBytecode(talloc, .call, &.{}),
+                try code.makeBytecode(talloc, .call, &.{0}),
                 try code.makeBytecode(talloc, .pop, &.{}),
             },
         },
@@ -47,7 +163,7 @@ test "Function Call" {
                 try code.makeBytecode(talloc, .constant, &.{1}), // the fn
                 try code.makeBytecode(talloc, .setgv, &.{0}),
                 try code.makeBytecode(talloc, .getgv, &.{0}),
-                try code.makeBytecode(talloc, .call, &.{}),
+                try code.makeBytecode(talloc, .call, &.{0}),
                 try code.makeBytecode(talloc, .pop, &.{}),
             },
         },
@@ -536,7 +652,10 @@ fn runCompilerTestInline(alloc: anytype, tests: anytype) !void {
         var vm: Vm = try .init(alloc, &b);
         defer vm.deinit();
 
-        try checkInstructions(alloc, t.expected_instructions, b.instructions);
+        checkInstructions(alloc, t.expected_instructions, b.instructions) catch |err| {
+            std.log.err("test input: {s}", .{t.input});
+            return err;
+        };
         try checkConstantsInline(t.expected_constants, b.constants);
     }
 }
@@ -609,12 +728,17 @@ fn checkConstantsInline(expected: anytype, actual: []Value) !void {
 
                     []const []u8 => {
                         // HOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
-                        try checkInstructions(talloc, con, act.obj.type.function);
+                        try checkInstructions(talloc, con, act.obj.type.function.instructions);
+                    },
+
+                    []const i64 => {
+                        // for (act, con) |a, c|
+                        //     try checkIntegerObject(@intCast(c), a);
                     },
 
                     else => |t| {
                         std.debug.print("{} not supported \n\n", .{t});
-                        return error.UnkowType;
+                        return error.UnknowType;
                     },
                 }
             }

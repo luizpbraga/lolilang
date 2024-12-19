@@ -12,6 +12,10 @@ pub const Opcode = enum(u8) {
     setgv,
     /// get a global constant on the stack
     getgv,
+    /// set a local constant on the stack
+    setlv,
+    /// get a local constant on the stack
+    getlv,
     /// remove the topmost elements of the stack and add it
     add,
     /// remove the topmost elements of the stack and sub it
@@ -52,6 +56,7 @@ pub const Opcode = enum(u8) {
     retv,
     /// return nothing (null), just go back
     retn,
+    getbf,
 
     /// numbers of operands (bytes) for a given upcode
     /// optimize: use a single small integer
@@ -64,6 +69,10 @@ pub const Opcode = enum(u8) {
         .constant = &.{2},
         .setgv = &.{2},
         .getgv = &.{2},
+        .setlv = &.{1},
+        .getlv = &.{1},
+        .call = &.{1},
+        .getbf = &.{1},
         .jumpifnottrue = &.{2},
         .jump = &.{2},
         // the array lenght is the with
@@ -102,6 +111,15 @@ pub fn makeBytecode(alloc: anytype, op: Opcode, operands: []const usize) ![]u8 {
                     instructions[offset + idx] = by;
                 }
             },
+
+            1 => {
+                const native = std.mem.nativeTo(u8, @as(u8, @intCast(o)), .big);
+                const bytes = std.mem.asBytes(&native);
+                for (0.., bytes) |idx, by| {
+                    instructions[offset + idx] = by;
+                }
+            },
+
             else => {},
         }
         offset += w;
@@ -121,6 +139,11 @@ pub fn readOperands(alloc: anytype, widths: Opcode.OperandWidth, ins: Instructio
             2 => {
                 // u16: 2 bytes
                 operands[i] = @intCast(std.mem.readInt(u16, ins[offset..][0..2], .big));
+            },
+
+            1 => {
+                // u8: 1 bytes
+                operands[i] = @intCast(std.mem.readInt(u8, ins[offset..][0..1], .big));
             },
             else => {},
         }

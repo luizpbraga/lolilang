@@ -6,6 +6,7 @@ const Compiler = @import("Compiler.zig");
 pub fn allocateObject(vm: *Vm, tag: Object.Type) !*Object {
     const allocator = vm.allocator;
     const obj = try allocator.create(Object);
+    errdefer allocator.destroy(obj);
 
     vm.bytes_allocated += @sizeOf(*Object);
     // if (vm.bytes_allocated > ) {
@@ -65,8 +66,8 @@ pub fn freeObject(vm: *Vm, obj: *Object) void {
             vm.allocator.destroy(obj);
         },
 
-        .function => |ins| {
-            vm.allocator.free(ins);
+        .function => |func| {
+            vm.allocator.free(func.instructions);
             vm.allocator.destroy(obj);
         },
     }
