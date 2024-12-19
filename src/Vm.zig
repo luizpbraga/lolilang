@@ -107,9 +107,11 @@ pub fn run(vm: *Vm) !void {
                 const num_elements = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
                 vm.currentFrame().ip += 2;
                 const start_index = vm.sp - num_elements;
-                var array = try vm.allocator.alloc(Value, num_elements);
-                for (start_index..vm.sp) |i| {
-                    array[i] = vm.stack[i];
+                const end_index = vm.sp;
+
+                var array = try vm.allocator.alloc(Value, end_index - start_index);
+                for (start_index..end_index) |i| {
+                    array[i - start_index] = vm.stack[i];
                 }
                 vm.sp = vm.sp - num_elements;
                 const obj = try memory.allocateObject(vm, .{ .array = array });
