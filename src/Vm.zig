@@ -215,6 +215,15 @@ pub fn run(vm: *Vm) !void {
                 try vm.push(.{ .builtin = builtin });
             },
 
+            .method => {
+                const caller = vm.pop();
+                const builtin_index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
+                vm.currentFrame().ip += 1;
+                const builtin = builtins.list[builtin_index];
+                const value = builtin.function(&.{caller});
+                try vm.push(value);
+            },
+
             .call => {
                 const args_number = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
                 vm.currentFrame().ip += 1;

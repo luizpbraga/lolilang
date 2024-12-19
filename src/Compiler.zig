@@ -142,10 +142,14 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.loadSymbol(symbol);
             },
 
-            // .method => |method| {
-            //     const ident = method.method;
-            //     const caller = method.caller;
-            // },
+            .method => |method| {
+                try c.compile(.{ .expression = method.caller });
+                const symbol = c.symbols.?.resolve(method.method.value) orelse {
+                    return error.undefinedSymbol;
+                };
+                // try c.loadSymbol(symbol);
+                try c.emit(.method, &.{symbol.index});
+            },
 
             .infix => |infix| {
                 const operator = infix.operator;

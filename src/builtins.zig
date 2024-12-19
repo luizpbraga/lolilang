@@ -8,7 +8,18 @@ pub var builtin_table = std.StaticStringMap(Object.Builtin).initComptime(
 
 pub var list = [_]Object.Builtin{
     .{ .name = "@print", .function = printBuiltin },
+    .{ .name = "len", .function = lenBuiltin },
 };
+
+pub fn lenBuiltin(arg: []const Value) Value {
+    if (arg[0] != .obj) return .null;
+
+    return switch (arg[0].obj.type) {
+        .array => |arr| .{ .integer = @intCast(arr.len) },
+        .string => |str| .{ .integer = @intCast(str.len) },
+        else => .null,
+    };
+}
 
 pub fn printBuiltin(args: []const Value) Value {
     for (args) |arg| {

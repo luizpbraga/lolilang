@@ -57,6 +57,7 @@ pub const Opcode = enum(u8) {
     /// return nothing (null), just go back
     retn,
     getbf,
+    method,
 
     /// numbers of operands (bytes) for a given upcode
     /// optimize: use a single small integer
@@ -72,6 +73,7 @@ pub const Opcode = enum(u8) {
         .setlv = &.{1},
         .getlv = &.{1},
         .call = &.{1},
+        .method = &.{1},
         .getbf = &.{1},
         .jumpifnottrue = &.{2},
         .jump = &.{2},
