@@ -87,9 +87,9 @@ pub fn runVm(allocator: std.mem.Allocator, input: []const u8) !void {
     var code = try compiler.bytecode();
     defer code.deinit(&compiler);
 
-    // const fmt = try @import("code.zig").formatInstruction(allocator, code.instructions);
-    // defer allocator.free(fmt);
-    // std.log.info("bytecode instructions: {s}", .{fmt});
+    const fmt = try @import("code.zig").formatInstruction(allocator, code.instructions);
+    defer allocator.free(fmt);
+    std.log.info("bytecode instructions:\n{s}", .{fmt});
 
     var vm: Vm = try .init(allocator, &code);
     defer vm.deinit();

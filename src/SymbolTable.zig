@@ -14,7 +14,7 @@ pub const Symbol = struct {
     index: usize = 0,
 };
 
-const ScopeType = enum {
+pub const ScopeType = enum {
     global,
     local,
     builtin,

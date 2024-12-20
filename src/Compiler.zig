@@ -142,12 +142,50 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.loadSymbol(symbol);
             },
 
+            .assignment => |assignment| {
+                if (assignment.name.* != .identifier) return error.InvalidAssingmentOperation;
+
+                const symbol = c.symbols.?.resolve(assignment.name.identifier.value) orelse {
+                    return error.UndefinedVariable;
+                };
+
+                switch (assignment.operator) {
+                    .@"+=" => {
+                        try c.compile(.{ .expression = assignment.name });
+                        try c.compile(.{ .expression = assignment.value });
+                        try c.emit(.add, &.{});
+                    },
+
+                    .@"-=" => {
+                        try c.compile(.{ .expression = assignment.name });
+                        try c.compile(.{ .expression = assignment.value });
+                        try c.emit(.sub, &.{});
+                    },
+
+                    .@"*=" => {
+                        try c.compile(.{ .expression = assignment.name });
+                        try c.compile(.{ .expression = assignment.value });
+                        try c.emit(.mul, &.{});
+                    },
+
+                    .@"=" => {
+                        try c.compile(.{ .expression = assignment.value });
+                    },
+
+                    else => return error.InvalidAssingmentOperation,
+                }
+
+                const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+                try c.emit(op, &.{symbol.index}); // sapporra emite um pop
+                try c.emit(.null, &.{}); // will be pop, no integer overflow
+            },
+
+            // rework
             .method => |method| {
                 try c.compile(.{ .expression = method.caller });
                 const symbol = c.symbols.?.resolve(method.method.value) orelse {
                     return error.undefinedSymbol;
                 };
-                // try c.loadSymbol(symbol);
                 try c.emit(.method, &.{symbol.index});
             },
 
@@ -331,10 +369,8 @@ fn currentInstruction(c: *Compiler) *std.ArrayList(code.Instructions) {
 
 /// FIX
 fn removeLastPop(c: *Compiler) void {
-    if (c.scopes.items[c.scope_index].last_ins.opcode == .pop) {
-        c.allocator.free(c.currentInstruction().pop());
-        c.scopes.items[c.scope_index].last_ins = c.scopes.items[c.scope_index].prev_ins;
-    }
+    c.allocator.free(c.currentInstruction().pop());
+    c.scopes.items[c.scope_index].last_ins = c.scopes.items[c.scope_index].prev_ins;
 }
 
 fn addConstants(c: *Compiler, val: Value) !usize {
