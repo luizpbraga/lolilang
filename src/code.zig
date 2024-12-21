@@ -56,8 +56,14 @@ pub const Opcode = enum(u8) {
     retv,
     /// return nothing (null), just go back
     retn,
+    /// builtin methods
     getbf,
+    /// TODO: add description
     method,
+    /// TODO: add description
+    brk,
+
+    range,
 
     /// numbers of operands (bytes) for a given upcode
     /// optimize: use a single small integer
@@ -79,6 +85,7 @@ pub const Opcode = enum(u8) {
         .jump = &.{2},
         // the array lenght is the with
         .array = &.{2},
+        .range = &.{2},
     });
 
     pub fn lookUp(op: u8) !OperandWidth {

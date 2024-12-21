@@ -111,8 +111,13 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             .block => |block| {
-                for (block.statements) |_stmt| {
+                const len = block.statements.len;
+                for (0.., block.statements) |i, _stmt| {
                     try c.compile(.{ .statement = _stmt });
+                    if ((_stmt == .@"return" or _stmt == .@"break") and i < len - 1) {
+                        std.debug.print("UnreachbleCode!\n\n", .{});
+                        @panic("UnreachbleCode");
+                    }
                 }
             },
 
@@ -127,8 +132,54 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             .@"return" => |ret| {
+                if (c.scope_index == 0) {
+                    return error.InvalidReturnStatementOutsideAFunctionBody;
+                }
                 try c.compile(.{ .expression = ret.value });
                 try c.emit(.retv, &.{});
+            },
+
+            // TODO: make it work in if/match/for
+            .@"break" => |ret| {
+                try c.compile(.{ .expression = ret.value });
+                try c.emit(.brk, &.{});
+            },
+
+            .@"fn" => |func_stmt| {
+                const func = func_stmt.func;
+                try c.enterScope();
+                errdefer if (c.symbols) |s| c.allocator.destroy(s);
+
+                for (func.parameters) |parameter| {
+                    _ = try c.symbols.?.define(parameter.value);
+                }
+
+                try c.compile(.{ .statement = .{ .block = func.body } });
+
+                // return the last value if no return statement
+                if (c.lastInstructionIs(.pop)) try c.replaceLastPopWithReturn();
+
+                // return null
+                if (!c.lastInstructionIs(.retv)) try c.emit(.retn, &.{});
+
+                const obj = try c.allocator.create(Object);
+                errdefer c.allocator.destroy(obj);
+                const num_locals = if (c.symbols) |s| s.def_number else 0;
+                const instructions = try c.leaveScope();
+                obj.type = .{
+                    .function = .{
+                        .instructions = instructions,
+                        .num_locals = num_locals,
+                        .num_parameters = func.parameters.len,
+                    },
+                };
+
+                const pos = try c.addConstants(.{ .obj = obj });
+                try c.emit(.constant, &.{pos});
+                const symbol = try c.symbols.?.define(func_stmt.name.value);
+                const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+                try c.emit(op, &.{symbol.index});
+                // try c.emit(.null, &.{});
             },
 
             else => return error.InvalidStatemend,
@@ -142,6 +193,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.loadSymbol(symbol);
             },
 
+            // TODO: not fully implemented
             .assignment => |assignment| {
                 if (assignment.name.* != .identifier) return error.InvalidAssingmentOperation;
 
@@ -177,7 +229,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
                 const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
                 try c.emit(op, &.{symbol.index}); // sapporra emite um pop
-                try c.emit(.null, &.{}); // will be pop, no integer overflow
+                try c.emit(.null, &.{}); // will be pop, no integer overflow. why?
             },
 
             // rework
@@ -314,6 +366,15 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(.null, &.{});
             },
 
+            // todo: think !!
+            .range => |range| {
+                if (range.start.* != .integer) return error.InvalidRangeIndex;
+                if (range.end.* != .integer) return error.InvalidRangeIndex;
+                try c.compile(.{ .expression = range.start });
+                try c.compile(.{ .expression = range.end });
+                try c.emit(.range, &.{@intCast(range.end.integer.value - range.start.integer.value)});
+            },
+
             // BUG: if (true) { var x = 0 } overflows sthe stack
             .@"if" => |ifexp| {
                 // AST if (condition) { consequence } else { alternative }
@@ -324,6 +385,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
 
                 // compiling the consequence
+
                 try c.compile(.{ .statement = .{ .block = ifexp.consequence } });
 
                 // statements add a pop in the end, wee drop the last pop (if return)
@@ -352,6 +414,31 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             else => |e| {
                 std.log.err("find an invalid/not handled Expression: {}\n", .{e});
                 return error.InvalidExpression;
+            },
+
+            .@"for" => |forloop| {
+                const len = c.insLen();
+                try c.compile(.{ .expression = forloop.condition });
+
+                // fake insrtuction position
+                const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
+
+                // compiling the consequence
+                try c.compile(.{ .statement = .{ .block = forloop.consequence } });
+
+                // statements add a pop in the end, wee drop the last pop (if return)
+                if (c.lastInstructionIs(.pop)) c.removeLastPop();
+
+                try c.emit(.jump, &.{len});
+
+                // this is the real jumpifnottrue position. this is how deep the compiled forloop.consequence is
+                const after_consequence_position = c.insLen();
+
+                // replases the 9999 (.jump_if_not_true_pos) to the correct operand (after_consequence_position);
+                try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
+
+                // // always jumb: null is returned
+                try c.emit(.null, &.{});
             },
         },
     }

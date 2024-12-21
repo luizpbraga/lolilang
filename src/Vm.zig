@@ -103,6 +103,8 @@ pub fn run(vm: *Vm) !void {
         op = @enumFromInt(instructions[ip]);
 
         switch (op) {
+            .range => {},
+
             .array => {
                 const num_elements = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
                 vm.currentFrame().ip += 2;
@@ -160,16 +162,20 @@ pub fn run(vm: *Vm) !void {
 
             .retv => {
                 const returned_value = vm.pop(); // get the return value
-                const frame = vm.popFrame(); // return to the calle frame
+                const frame = vm.popFrame(); // return to the callee frame
                 vm.sp = @intCast(frame.bp - 1); // pop the fn
                 // _ = vm.pop(); // pop the fn
                 try vm.push(returned_value); // push the return value
             },
 
             .retn => {
-                const frame = vm.popFrame(); // return to the calle frame
+                const frame = vm.popFrame(); // return to the callee frame
                 vm.sp = @intCast(frame.bp - 1); // pop the fn
                 try vm.push(.null); // push the return value
+            },
+
+            .brk => {
+                // ??????????????????????????????????????????????????/
             },
 
             .add, .sub, .mul, .div => try operation.executeBinary(vm, op),
@@ -184,11 +190,20 @@ pub fn run(vm: *Vm) !void {
 
             .null => try vm.push(.null),
 
+            // BUG: the stack pointer is increasing like a MOTHERFUCKER!! so the stack! why? where?
             .jump => {
-                // get the operand located right afther the opcode
+                const last_ip = vm.currentFrame().ip;
+                // get the operand located right after the opcode
                 const pos = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
                 // move ip to the target out of jump
-                vm.currentFrame().ip = pos - 1;
+                vm.currentFrame().ip = @as(isize, @intCast(pos)) - 1;
+
+                // the 'if' don't need to pop, just the 'for' loop, so we compare
+                // the last ip value with the current jump position;.
+                // If ip is bigger (for loop) we pop the null value. This prevent accumulating nulls in the stack
+                if (last_ip > pos) {
+                    _ = vm.pop();
+                }
             },
 
             .jumpifnottrue => {
@@ -198,6 +213,7 @@ pub fn run(vm: *Vm) !void {
                 const condition = vm.pop();
 
                 if (condition != .boolean) {
+                    std.debug.print("{any}\n", .{condition});
                     return error.NotABooleanExpression;
                 }
 
@@ -241,6 +257,11 @@ pub fn run(vm: *Vm) !void {
                             return error.ArgumentsMismatch;
                         }
 
+                        const fmt = try code.formatInstruction(vm.allocator, func.instructions);
+                        defer vm.allocator.free(fmt);
+
+                        std.debug.print("\n{s}", .{fmt});
+
                         const frame: Frame = .init(func, @intCast(vm.sp - args_number));
                         vm.pushFrame(frame);
                         // the call stack space allocation
@@ -266,6 +287,8 @@ pub fn run(vm: *Vm) !void {
 }
 
 pub fn pop(vm: *Vm) Value {
+    // TODO: fix integer overflow for "if {}", and "for true {}"
+    // if (vm.sp == 0) return .null;
     const o = vm.stack[vm.sp - 1];
     vm.sp -= 1;
     return o;

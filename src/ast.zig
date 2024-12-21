@@ -31,7 +31,7 @@ pub const Statement = union(enum) {
 
     block: Block,
 
-    // function: FunctionStatement,
+    @"fn": FunctionStatement,
     exp_statement: ExpStatement,
 
     program: Program,
@@ -72,6 +72,7 @@ pub const Expression = union(enum) {
     // forloop_expression: ForLoopExpression,
     // forloop_range_expression: ForLoopRangeExpression,
     // multi_forloop_range_expression: MultiForLoopRangeExpression,
+    @"for": For,
     @"if": If,
     match: Match,
     function: Function,
@@ -320,8 +321,8 @@ pub const Range = struct {
     start: *Expression,
     end: *Expression,
 
-    pub fn tokenLiteral(self: *const @This()) []const u8 {
-        return self.token.literal;
+    pub fn tokenLiteral(_: *const @This()) []const u8 {
+        return "..";
     }
 };
 
@@ -351,7 +352,7 @@ pub const EnumTag = struct {
 
 pub const FunctionStatement = struct {
     name: Identifier,
-    func: Expression,
+    func: Function,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;
@@ -396,8 +397,7 @@ pub const Method = struct {
 };
 const ForLoopMode = enum { infinity, decl_infinity, decl_cond, dec_cond_inc, cond, cond_inc, range, multi_range };
 // for i = 0, i < 10, i++, i in 0..10
-pub const ForLoopExpression = struct {
-
+pub const For = struct {
     //TODO: list of conditions
     condition: *Expression,
     consequence: Block,

@@ -17,6 +17,10 @@ pub fn main() !void {
         return error.MissingFile;
     };
 
+    if (std.mem.startsWith(u8, "--", file_name)) {
+        return error.InvalidFile;
+    }
+
     if (!std.mem.endsWith(u8, file_name, ".loli")) {
         std.log.err("unrecognized file extension", .{});
         return;

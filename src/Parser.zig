@@ -93,7 +93,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) Parser {
     parser.prefix_fns.put(.@"fn", parseFunction);
     parser.prefix_fns.put(.string, parseString);
     parser.prefix_fns.put(.@"if", parseIf);
-    // parser.prefix_fns.put(.@"for", parseForLoop);
+    parser.prefix_fns.put(.@"for", parseFor);
     // parser.prefix_fns.put(.@"switch", parseSwitch);
     // parser.prefix_fns.put(.@"enum", parseEnum);
     parser.prefix_fns.put(.@"else", parseIf);
@@ -102,7 +102,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) Parser {
     parser.prefix_fns.put(.@"(", parseGroup);
 
     parser.infix_fns.put(.@"[", parseIndex);
-    // parser.infix_fns.put(.@"..", parseRange);
+    parser.infix_fns.put(.@"..", parseRange);
     parser.infix_fns.put(.@".", parseMethod);
     parser.infix_fns.put(.@"(", parseCall);
     parser.infix_fns.put(.@"+", parseInfix);
@@ -418,7 +418,7 @@ fn parseStatement(self: *Parser) !ast.Statement {
 
         .@"break" => try self.parseBreak(),
 
-        // .@"fn" => try self.parseFunction(),
+        .@"fn" => try self.parseFn(),
 
         .@"defer" => try self.parseDefer(),
 
@@ -607,27 +607,25 @@ fn parseBlock(self: *Parser) anyerror!ast.Block {
     return block;
 }
 
-// fn parseFunction(self: *Parser) anyerror!ast.Statement {
-//     var func_stmt: ast.FunctionStatement = .{
-//         .token = self.cur_token,
-//         .@"fn" = undefined,
-//         .name = undefined,
-//     };
-//
-//     if (!self.expectPeek(.identifier)) {
-//         std.log.err("Expect Identifier, found '{s}'", .{self.cur_token.literal});
-//         return error.UnexpectedToken;
-//     }
-//
-//     func_stmt.name = .{
-//         .token = self.cur_token,
-//         .value = self.cur_token.literal,
-//     };
-//
-//     func_stmt.@"fn" = try self.parseFunction();
-//
-//     return .{ .function = func_stmt };
-// }
+fn parseFn(self: *Parser) anyerror!ast.Statement {
+    var func_stmt: ast.FunctionStatement = .{
+        .func = undefined,
+        .name = undefined,
+    };
+
+    if (!self.expectPeek(.identifier)) {
+        std.log.err("Expect Identifier, found '{s}'", .{self.cur_token.literal});
+        return error.UnexpectedToken;
+    }
+
+    func_stmt.name = .{
+        .value = self.cur_token.literal,
+    };
+
+    func_stmt.func = (try self.parseFunction()).function;
+
+    return .{ .@"fn" = func_stmt };
+}
 
 fn parseFunction(self: *Parser) anyerror!ast.Expression {
     var func: ast.Function = .{
@@ -955,19 +953,18 @@ pub fn parseIndex(self: *Parser, left: *ast.Expression) anyerror!ast.Expression 
 //     return .{ .switch = switch };
 // }
 //
-// pub fn parseRange(self: *Parser, left: *ast.Expression) anyerror!ast.Expression {
-//     var range = ast.Range{
-//         .token = self.cur_token,
-//         .start = left,
-//         .end = undefined,
-//     };
-//
-//     self.nextToken();
-//
-//     range.end = try self.parseExpression(.lower);
-//
-//     return .{ .range = range };
-// }
+pub fn parseRange(self: *Parser, left: *ast.Expression) anyerror!ast.Expression {
+    var range = ast.Range{
+        .start = left,
+        .end = undefined,
+    };
+
+    self.nextToken();
+
+    range.end = try self.parseExpression(.lower);
+
+    return .{ .range = range };
+}
 //
 // pub fn parseMultiForLoopRange(self: *Parser, flr: ast.ForLoopRange) anyerror!ast.Expression {
 //     const allocator = self.arena.allocator();
@@ -1058,38 +1055,37 @@ pub fn parseIndex(self: *Parser, left: *ast.Expression) anyerror!ast.Expression 
 //     return .{ .forloop_range = flr };
 // }
 //
-// pub fn parseForLoopCondition(self: *Parser, tk: Token, cond: *ast.Expression) anyerror!ast.Expression {
-//     var fl = ast.ForLoopExpression{
-//         .token = tk,
-//         .condition = cond,
-//         .consequence = undefined,
-//     };
-//
-//     if (!self.expectPeek(.@"{")) return error.MissingBrance;
-//
-//     fl.consequence = try self.parseBlockStatement();
-//
-//     return .{ .forloop = fl };
-// }
+pub fn parseForLoopCondition(self: *Parser, _: Token, cond: *ast.Expression) anyerror!ast.Expression {
+    var fl = ast.For{
+        .condition = cond,
+        .consequence = undefined,
+    };
+
+    if (!self.expectPeek(.@"{")) return error.MissingBrance;
+
+    fl.consequence = try self.parseBlock();
+
+    return .{ .@"for" = fl };
+}
 //
 // /// for true { } or for idx, val in list {}
-// pub fn parseForLoop(self: *Parser) anyerror!ast.Expression {
-//     const token = self.cur_token;
-//
-//     if (self.expectPeek(.@"{")) {
-//         return error.ExpectSomeConditionOrIdentifier;
-//     }
-//
-//     self.nextToken();
-//
-//     const condition_or_ident = try self.parseExpression(.lower);
-//
-//     if (condition_or_ident.* == .identifier) {
-//         return self.parseForLoopRange(token, condition_or_ident);
-//     }
-//
-//     return self.parseForLoopCondition(token, condition_or_ident);
-// }
+pub fn parseFor(self: *Parser) anyerror!ast.Expression {
+    const token = self.cur_token;
+
+    if (self.expectPeek(.@"{")) {
+        return error.ExpectSomeConditionOrIdentifier;
+    }
+
+    self.nextToken();
+
+    const condition_or_ident = try self.parseExpression(.lower);
+
+    // if (condition_or_ident.* == .identifier) {
+    //     return self.parseForLoopRange(token, condition_or_ident);
+    // }
+
+    return self.parseForLoopCondition(token, condition_or_ident);
+}
 // fn parseEnum(self: *Parser) anyerror!ast.Expression {
 //     var enu = ast.Enum{
 //         .token = self.cur_token,
