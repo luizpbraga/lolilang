@@ -195,41 +195,68 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
             // TODO: not fully implemented
             .assignment => |assignment| {
-                if (assignment.name.* != .identifier) return error.InvalidAssingmentOperation;
-
-                const symbol = c.symbols.?.resolve(assignment.name.identifier.value) orelse {
-                    return error.UndefinedVariable;
-                };
-
-                switch (assignment.operator) {
-                    .@"+=" => {
-                        try c.compile(.{ .expression = assignment.name });
-                        try c.compile(.{ .expression = assignment.value });
-                        try c.emit(.add, &.{});
-                    },
-
-                    .@"-=" => {
-                        try c.compile(.{ .expression = assignment.name });
-                        try c.compile(.{ .expression = assignment.value });
-                        try c.emit(.sub, &.{});
-                    },
-
-                    .@"*=" => {
-                        try c.compile(.{ .expression = assignment.name });
-                        try c.compile(.{ .expression = assignment.value });
-                        try c.emit(.mul, &.{});
-                    },
-
-                    .@"=" => {
-                        try c.compile(.{ .expression = assignment.value });
-                    },
-
-                    else => return error.InvalidAssingmentOperation,
+                if (assignment.operator == .@":=") {
+                    try c.compile(.{ .expression = assignment.value });
+                    //const identifier = var_stmt.name;
+                    const symbol = try c.symbols.?.define(assignment.name.identifier.value);
+                    const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+                    try c.emit(op, &.{symbol.index});
+                    try c.emit(.null, &.{});
+                    return;
                 }
 
-                const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
-                try c.emit(op, &.{symbol.index}); // sapporra emite um pop
-                try c.emit(.null, &.{}); // will be pop, no integer overflow. why?
+                if (assignment.name.* == .identifier) {
+                    try c.compile(.{ .expression = assignment.name });
+                    try c.compile(.{ .expression = assignment.value });
+                    const symbol = c.symbols.?.resolve(assignment.name.identifier.value) orelse {
+                        return error.UndefinedVariable;
+                    };
+                    const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+                    try c.emit(op, &.{symbol.index});
+                    // try c.emit(.null, &.{});
+                }
+
+                if (assignment.name.* == .index) {
+                    try c.compile(.{ .expression = assignment.name.index.left });
+                    try c.compile(.{ .expression = assignment.name.index.index });
+                    try c.compile(.{ .expression = assignment.value });
+                    try c.emit(.index_set, &.{});
+                }
+
+                //
+                //     const symbol = c.symbols.?.resolve(assignment.name.identifier.value) orelse {
+                //         return error.UndefinedVariable;
+                //     };
+                //
+                //     switch (assignment.operator) {
+                //         .@"+=" => {
+                //             try c.compile(.{ .expression = assignment.name });
+                //             try c.compile(.{ .expression = assignment.value });
+                //             try c.emit(.add, &.{});
+                //         },
+                //
+                //         .@"-=" => {
+                //             try c.compile(.{ .expression = assignment.name });
+                //             try c.compile(.{ .expression = assignment.value });
+                //             try c.emit(.sub, &.{});
+                //         },
+                //
+                //         .@"*=" => {
+                //             try c.compile(.{ .expression = assignment.name });
+                //             try c.compile(.{ .expression = assignment.value });
+                //             try c.emit(.mul, &.{});
+                //         },
+                //
+                //         .@"=" => {
+                //             try c.compile(.{ .expression = assignment.value });
+                //         },
+                //
+                //         else => return error.InvalidAssingmentOperation,
+                //     }
+                //
+                //     const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+                //     try c.emit(op, &.{symbol.index}); // sapporra emite um pop
+                //     try c.emit(.null, &.{}); // will be pop, no integer overflow. why?
             },
 
             // rework
@@ -281,12 +308,19 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             .index => |index| {
                 try c.compile(.{ .expression = index.left });
                 try c.compile(.{ .expression = index.index });
-                try c.emit(.index, &.{});
+                try c.emit(.index_get, &.{});
             },
 
             .integer => |int| {
                 const pos = try c.addConstants(.{
                     .integer = int.value,
+                });
+                try c.emit(.constant, &.{pos});
+            },
+
+            .char => |char| {
+                const pos = try c.addConstants(.{
+                    .char = char.value,
                 });
                 try c.emit(.constant, &.{pos});
             },
@@ -313,6 +347,19 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     try c.compile(.{ .expression = element });
                 }
                 try c.emit(.array, &.{array.elements.len});
+            },
+
+            .hash => |hash| {
+                var iterator = hash.pairs.iterator();
+
+                while (iterator.next()) |entry| {
+                    const key = entry.key_ptr.*;
+                    try c.compile(.{ .expression = key });
+                    const val = entry.value_ptr.*;
+                    try c.compile(.{ .expression = val });
+                }
+
+                try c.emit(.hash, &.{hash.pairs.count() * 2});
             },
 
             .call => |call| {
@@ -375,7 +422,8 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(.range, &.{@intCast(range.end.integer.value - range.start.integer.value)});
             },
 
-            // BUG: if (true) { var x = 0 } overflows sthe stack
+            // BUG: empty blocks (non expressions) overflows
+            // PROPOSE: every block must return null, unless a break statement is found
             .@"if" => |ifexp| {
                 // AST if (condition) { consequence } else { alternative }
                 //
@@ -386,10 +434,16 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
                 // compiling the consequence
 
-                try c.compile(.{ .statement = .{ .block = ifexp.consequence } });
+                if (ifexp.consequence.statements.len == 0) {
+                    try c.emit(.null, &.{});
+                } else {
+                    try c.compile(.{ .statement = .{ .block = ifexp.consequence } });
+                }
 
                 // statements add a pop in the end, wee drop the last pop (if return)
-                if (c.lastInstructionIs(.pop)) c.removeLastPop();
+                if (c.lastInstructionIs(.pop)) {
+                    c.removeLastPop();
+                }
 
                 // always jumb: null is returned
                 const jum_pos = try c.emitPos(.jump, &.{9999});
@@ -424,7 +478,50 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
 
                 // compiling the consequence
-                try c.compile(.{ .statement = .{ .block = forloop.consequence } });
+                if (forloop.consequence.statements.len == 0) {
+                    try c.emit(.null, &.{});
+                } else {
+                    try c.compile(.{ .statement = .{ .block = forloop.consequence } });
+                }
+
+                // statements add a pop in the end, wee drop the last pop (if return)
+                if (c.lastInstructionIs(.pop)) c.removeLastPop();
+
+                try c.emit(.jump, &.{len});
+
+                // this is the real jumpifnottrue position. this is how deep the compiled forloop.consequence is
+                const after_consequence_position = c.insLen();
+                try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
+
+                // // always jumb: null is returned
+                try c.emit(.null, &.{});
+            },
+
+            .for_range => |forloop| {
+                const iterable = forloop.iterable;
+
+                const pos = try c.addConstants(.null);
+                try c.emit(.constant, &.{pos});
+
+                try c.compile(.{ .expression = iterable });
+                try c.emit(.range, &.{pos});
+
+                const symbol = try c.symbols.?.define(forloop.ident);
+                //std.debug.print("name:{s} {?}\n", .{ forloop.ident, c.symbols.?.store.get(forloop.ident) });
+
+                const len = c.insLen();
+                // in this block, the last instruction must be boolean
+                {
+                    try c.emit(.get_range, &.{pos});
+                }
+
+                const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
+
+                // compiling the consequence
+                if (forloop.body.statements.len != 0) {
+                    try c.emit(.setgv, &.{symbol.index});
+                    try c.compile(.{ .statement = .{ .block = forloop.body } });
+                }
 
                 // statements add a pop in the end, wee drop the last pop (if return)
                 if (c.lastInstructionIs(.pop)) c.removeLastPop();
@@ -439,6 +536,8 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
                 // // always jumb: null is returned
                 try c.emit(.null, &.{});
+
+                _ = c.symbols.?.store.swapRemove(forloop.ident);
             },
         },
     }

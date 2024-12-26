@@ -66,6 +66,17 @@ pub fn define(t: *SymbolTable, name: []const u8) !Symbol {
     return symbol;
 }
 
+pub fn defineLocal(t: *SymbolTable, name: []const u8) !Symbol {
+    const symbol: Symbol = .{
+        .name = name,
+        .scope = .local,
+        .index = t.def_number,
+    };
+    try t.store.put(name, symbol);
+    t.def_number += 1;
+    return symbol;
+}
+
 pub fn resolve(s: *SymbolTable, name: []const u8) ?*Symbol {
     var obj = s.store.getPtr(name);
     if (obj == null and s.outer != null) {

@@ -6,37 +6,103 @@ const Value = Object.Value;
 const Vm = @import("Vm.zig");
 
 pub fn executeIndex(vm: *Vm, left: Value, index: Value) !void {
-    if (index == .integer) {
-        if (left == .obj and left.obj.type == .array) {
-            const array = left.obj.type.array;
-            const i = index.integer;
-            const len = array.len;
+    switch (left) {
+        .obj => |ob| switch (ob.type) {
+            .string => |string| {
+                if (index != .integer) return error.InvalidIndexType;
 
-            if (i >= 0 and i < len) {
-                return try vm.push(array[@intCast(i)]);
-            }
-        }
+                const i = index.integer;
+                const len = string.len;
 
-        if (left == .obj and left.obj.type == .string) {
-            const string = left.obj.type.string;
-            const i = index.integer;
-            const len = string.len;
+                if (i >= 0 and i < len) {
+                    const char = string[@intCast(i)];
+                    const str = try vm.allocator.dupe(u8, &.{char});
+                    const obj = try memory.allocateObject(vm, .{ .string = str });
+                    return try vm.push(.{ .obj = obj });
+                }
+            },
 
-            if (i >= 0 and i < len) {
-                const char = string[@intCast(i)];
-                const str = try vm.allocator.dupe(u8, &.{char});
-                const obj = try memory.allocateObject(vm, .{ .string = str });
-                return try vm.push(.{ .obj = obj });
-            }
-        }
-        return try vm.push(.null);
+            .array => |array| {
+                if (index != .integer) return error.InvalidIndexType;
+
+                const i = index.integer;
+                const len = array.len;
+
+                if (i >= 0 and i < len) {
+                    return try vm.push(array[@intCast(i)]);
+                }
+            },
+
+            .hash => |hash| {
+                const hashkey = try Object.Hash.Key.init(&index);
+                const pair = hash.pairs.getPtr(hashkey) orelse {
+                    return vm.push(.null);
+                };
+                return vm.push(pair.value);
+            },
+            else => return error.InvalidIndexOperation,
+        },
+        else => {
+            std.debug.print("{} {}", .{ left, index });
+            return error.InvalidIndexOperation;
+        },
     }
 
-    return error.TypeMismatchInIndexOperation;
+    return try vm.push(.null);
+}
+
+pub fn setIndex(vm: *Vm, left: *Value, index: Value, value: Value) !void {
+    switch (left.*) {
+        .obj => |ob| switch (ob.type) {
+            .string => |string| {
+                if (index != .integer) return error.InvalidIndexType;
+
+                const i = index.integer;
+                const len = string.len;
+
+                if (i >= 0 and i < len) {
+                    const char = string[@intCast(i)];
+                    const str = try vm.allocator.dupe(u8, &.{char});
+                    const obj = try memory.allocateObject(vm, .{ .string = str });
+                    return try vm.push(.{ .obj = obj });
+                }
+            },
+
+            .array => |array| {
+                if (index != .integer) return error.InvalidIndexType;
+
+                const i = index.integer;
+                const len = array.len;
+
+                if (i >= 0 and i < len) {
+                    array[@intCast(i)] = value;
+                }
+            },
+
+            .hash => |*hash| {
+                const hashkey = try Object.Hash.Key.init(&index);
+                const pair = hash.pairs.getPtr(hashkey) orelse {
+                    const newpair = Object.Hash.Pair{ .key = index, .value = value };
+                    try hash.pairs.put(hashkey, newpair);
+                    return vm.push(.null);
+                };
+                // WARN: potential bug? need to generate a new key?
+                pair.value = value;
+            },
+            else => return error.InvalidIndexOperation,
+        },
+
+        else => {
+            std.debug.print("{} {}", .{ left, index });
+            return error.InvalidIndexOperation;
+        },
+    }
+
+    return try vm.push(.null);
 }
 
 pub fn executePrefix(vm: *Vm, op: code.Opcode) !void {
-    const obj = vm.pop();
+    const obj = try vm.pop();
 
     switch (obj) {
         .integer => |integer| {
@@ -72,8 +138,8 @@ pub fn executePrefix(vm: *Vm, op: code.Opcode) !void {
 }
 
 pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
-    const right = vm.pop();
-    const left = vm.pop();
+    const right = try vm.pop();
+    const left = try vm.pop();
 
     if (right == .integer and left == .integer) {
         const right_val = right.integer;
@@ -118,8 +184,8 @@ pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
 }
 
 pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
-    const right = vm.pop();
-    const left = vm.pop();
+    const right = try vm.pop();
+    const left = try vm.pop();
 
     if (right == .boolean and left == .boolean) {
         const right_val = right.boolean;

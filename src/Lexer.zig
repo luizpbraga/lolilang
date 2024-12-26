@@ -2,6 +2,7 @@ const Self = @This();
 input: []const u8,
 position: usize = 0,
 read_position: usize = 0,
+line_index: usize = 0,
 ch: u8 = 0,
 
 const std = @import("std");
@@ -9,7 +10,7 @@ const Token = @import("Token.zig");
 const TokenType = Token.Type;
 
 pub fn init(input: []const u8) Self {
-    var lexer = Self{ .input = input };
+    var lexer = Self{ .input = input, .line_index = input.len };
     lexer.readChar();
     return lexer;
 }
@@ -38,6 +39,10 @@ fn readChar(self: *Self) void {
     self.ch = if (self.read_position >= self.input.len) 0 else self.input[self.read_position];
     self.position = self.read_position;
     self.read_position += 1;
+
+    if (self.ch == '\n') {
+        self.line_index += 1;
+    }
 }
 
 fn peekChar(self: *const Self) u8 {
@@ -76,6 +81,15 @@ fn readString(self: *Self) []const u8 {
     return self.input[position..self.position];
 }
 
+fn readCharacter(self: *Self) []const u8 {
+    const position = self.position + 1;
+    while (true) {
+        self.readChar();
+        if (self.ch == '\'' or self.ch == 0) break;
+    }
+    return self.input[position..self.position];
+}
+
 fn newToken(token_type: TokenType) Token {
     return .{
         .type = token_type,
@@ -104,7 +118,6 @@ pub fn nextToken(self: *Self) Token {
         ']' => newToken(.@"]"),
         '=' => switch (self.peekChar()) {
             '=' => x: {
-                self.readChar();
                 break :x newToken(.@"==");
             },
             '>' => x: {
@@ -183,6 +196,17 @@ pub fn nextToken(self: *Self) Token {
                 break :x newToken(.@":=");
             },
             else => newToken(.@":"),
+        },
+        '\'' => {
+            self.readChar(); // "'"
+            const posi = self.position;
+            const literal = self.input[posi .. posi + 1];
+            self.readChar(); // char
+            self.readChar(); // "'"
+            return Token{
+                .type = .char,
+                .literal = literal,
+            };
         },
         '"' => Token{
             .type = .string,

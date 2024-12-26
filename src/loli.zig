@@ -1,7 +1,6 @@
 const std = @import("std");
 const Lexer = @import("Lexer.zig");
 const Parser = @import("Parser.zig");
-// const Environment = @import("Environment.zig");
 const Compiler = @import("Compiler.zig");
 const Vm = @import("Vm.zig");
 
@@ -70,6 +69,8 @@ const Vm = @import("Vm.zig");
 //     }
 // }
 
+pub var emitbytecode = false;
+
 pub fn runVm(allocator: std.mem.Allocator, input: []const u8) !void {
     var lexer = Lexer.init(input);
 
@@ -87,41 +88,37 @@ pub fn runVm(allocator: std.mem.Allocator, input: []const u8) !void {
     var code = try compiler.bytecode();
     defer code.deinit(&compiler);
 
-    const fmt = try @import("code.zig").formatInstruction(allocator, code.instructions);
-    defer allocator.free(fmt);
-    std.log.info("bytecode instructions:\n{s}", .{fmt});
+    if (emitbytecode) {
+        const fmt = try @import("code.zig").formatInstruction(allocator, code.instructions);
+        defer allocator.free(fmt);
+        std.log.info("bytecode instructions:\n{s}", .{fmt});
+    }
 
     var vm: Vm = try .init(allocator, &code);
     defer vm.deinit();
 
     vm.run() catch |err| {
-        std.log.err("{s}", .{@errorName(err)});
         try @import("memory.zig").collectGarbage(&vm);
         return err;
     };
-
-    // const obj = vm.lastPopped();
-    //
-    // print(obj);
-    // std.debug.print("\n", .{});
 }
 
-fn print(obj: anytype) void {
-    switch (obj) {
-        .obj => |o| switch (o.type) {
-            .string => |s| std.debug.print("{s}", .{s}),
-            .array => |arr| {
-                std.debug.print("[", .{});
-                for (arr, 0..) |s, i| {
-                    print(s);
-                    if (i != arr.len - 1) {
-                        std.debug.print(", ", .{});
-                    }
-                }
-                std.debug.print("]", .{});
-            },
-            else => {},
-        },
-        inline else => |o| std.debug.print("{}", .{o}),
-    }
-}
+// fn print(obj: anytype) void {
+//     switch (obj) {
+//         .obj => |o| switch (o.type) {
+//             .string => |s| std.debug.print("{s}", .{s}),
+//             .array => |arr| {
+//                 std.debug.print("[", .{});
+//                 for (arr, 0..) |s, i| {
+//                     print(s);
+//                     if (i != arr.len - 1) {
+//                         std.debug.print(", ", .{});
+//                     }
+//                 }
+//                 std.debug.print("]", .{});
+//             },
+//             else => {},
+//         },
+//         inline else => |o| std.debug.print("{}", .{o}),
+//     }
+// }

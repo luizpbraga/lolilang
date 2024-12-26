@@ -66,6 +66,12 @@ pub fn freeObject(vm: *Vm, obj: *Object) void {
             vm.allocator.destroy(obj);
         },
 
+        .hash => |*hash| {
+            hash.pairs.deinit();
+            // vm.allocator.free(hash);
+            vm.allocator.destroy(obj);
+        },
+
         .function => |func| {
             vm.allocator.free(func.instructions);
             vm.allocator.destroy(obj);

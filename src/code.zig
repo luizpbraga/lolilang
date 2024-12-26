@@ -48,8 +48,11 @@ pub const Opcode = enum(u8) {
     jump,
     /// add an array
     array,
+    /// add an hashmap
+    hash,
     /// index operation
-    index,
+    index_set,
+    index_get,
     /// get the function and execute it on the top of the stack
     call,
     /// return a value on top of the stack
@@ -64,6 +67,7 @@ pub const Opcode = enum(u8) {
     brk,
 
     range,
+    get_range,
 
     /// numbers of operands (bytes) for a given upcode
     /// optimize: use a single small integer
@@ -77,6 +81,8 @@ pub const Opcode = enum(u8) {
         .setgv = &.{2},
         .getgv = &.{2},
         .setlv = &.{1},
+        .get_range = &.{1},
+        .range = &.{1},
         .getlv = &.{1},
         .call = &.{1},
         .method = &.{1},
@@ -85,7 +91,7 @@ pub const Opcode = enum(u8) {
         .jump = &.{2},
         // the array lenght is the with
         .array = &.{2},
-        .range = &.{2},
+        .hash = &.{2},
     });
 
     pub fn lookUp(op: u8) !OperandWidth {

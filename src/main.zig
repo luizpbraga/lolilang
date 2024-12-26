@@ -17,13 +17,21 @@ pub fn main() !void {
         return error.MissingFile;
     };
 
-    if (std.mem.startsWith(u8, "--", file_name)) {
-        return error.InvalidFile;
-    }
+    const loli_args = args.next();
 
     if (!std.mem.endsWith(u8, file_name, ".loli")) {
         std.log.err("unrecognized file extension", .{});
         return;
+    }
+
+    if (loli_args) |arg| {
+        if (std.mem.eql(u8, arg, "--emit-bytecode")) {
+            loli.emitbytecode = true;
+        }
+
+        if (std.mem.eql(u8, arg, "--eb")) {
+            loli.emitbytecode = true;
+        }
     }
 
     const input: []const u8 = std.fs.cwd().readFileAlloc(allocator, file_name, 1024) catch |err| switch (err) {

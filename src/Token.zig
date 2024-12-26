@@ -38,6 +38,7 @@ pub const Type = enum {
     // identifiers + literals
     identifier, // add, foobar, x, y, ...
     float,
+    char,
     integer, // 123678
     string, // "fuck u"
     null,

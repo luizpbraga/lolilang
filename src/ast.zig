@@ -62,6 +62,7 @@ pub const Expression = union(enum) {
     boolean: Boolean,
     float: Float,
     integer: Integer,
+    char: Char,
     string: String,
     array: Array,
     range: Range,
@@ -70,7 +71,7 @@ pub const Expression = union(enum) {
     // enum_tag: EnumTag,
     identifier: Identifier,
     // forloop_expression: ForLoopExpression,
-    // forloop_range_expression: ForLoopRangeExpression,
+    for_range: ForRange,
     // multi_forloop_range_expression: MultiForLoopRangeExpression,
     @"for": For,
     @"if": If,
@@ -267,7 +268,7 @@ pub const Type = struct {
 };
 
 pub const Float = struct {
-    value: f64,
+    value: f32,
 
     pub fn expressionNode() void {}
 
@@ -277,13 +278,23 @@ pub const Float = struct {
 };
 
 pub const Integer = struct {
-    value: i64,
+    value: i32,
 
     pub fn expressionNode() void {}
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         var buf: [10]u8 = undefined;
         return std.fmt.bufPrint(&buf, "{}", .{self.value}) catch "";
+    }
+};
+
+pub const Char = struct {
+    value: u8,
+
+    pub fn expressionNode() void {}
+
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
+        return self.value;
     }
 };
 
@@ -423,7 +434,7 @@ pub const MultiForLoopRange = struct {
     }
 };
 
-pub const ForLoopRange = struct {
+pub const ForRange = struct {
     ident: []const u8,
     index: ?[]const u8 = null,
     iterable: *Expression,

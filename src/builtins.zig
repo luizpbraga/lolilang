@@ -9,6 +9,8 @@ pub var builtin_table = std.StaticStringMap(Object.Builtin).initComptime(
 pub var list = [_]Object.Builtin{
     .{ .name = "@print", .function = printBuiltin },
     .{ .name = "len", .function = lenBuiltin },
+    // .{ .name = "keys", .function = keysBuiltin },
+    // .{ .name = "values", .function = lenBuiltin },
 };
 
 pub fn lenBuiltin(arg: []const Value) Value {
@@ -17,6 +19,19 @@ pub fn lenBuiltin(arg: []const Value) Value {
     return switch (arg[0].obj.type) {
         .array => |arr| .{ .integer = @intCast(arr.len) },
         .string => |str| .{ .integer = @intCast(str.len) },
+        .hash => |hash| .{ .integer = @intCast(hash.pairs.count()) },
+        else => .null,
+    };
+}
+
+pub fn keysBuiltin(arg: []const Value) Value {
+    if (arg[0] != .obj) return .null;
+
+    return switch (arg[0].obj.type) {
+        // .hash => |hash| {
+        //     const pairs = hash.pairs.values();
+        //     return .{ .integer = @intCast(hash.pairs.count()) };
+        // },
         else => .null,
     };
 }
@@ -51,10 +66,27 @@ fn print(value: Value) void {
                 std.debug.print("]", .{});
             },
 
+            .hash => |hash| {
+                var pairs = hash.pairs.iterator();
+                std.debug.print("{{", .{});
+                while (pairs.next()) |entry| {
+                    const pair = entry.value_ptr.*;
+                    const key = pair.key;
+                    const val = pair.value;
+                    print(key);
+                    std.debug.print(": ", .{});
+                    print(val);
+                    std.debug.print(", ", .{});
+                }
+                std.debug.print("}}", .{});
+            },
+
             .function => {
                 std.debug.print("[function]", .{});
             },
         },
+
+        .char => |s| std.debug.print("{c}", .{s}),
 
         .builtin => |b| {
             std.debug.print("[builtin_function:{s}]", .{b.name});
@@ -67,6 +99,8 @@ fn print(value: Value) void {
         .boolean => |b| {
             std.debug.print("{}", .{b});
         },
+
+        .range => |r| std.debug.print("[range:{s}]", .{@tagName(r.value.*)}),
 
         inline else => |o| std.debug.print("{d}", .{o}),
     }

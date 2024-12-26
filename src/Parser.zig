@@ -92,6 +92,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) Parser {
     parser.prefix_fns.put(.@"{", parseHash);
     parser.prefix_fns.put(.@"fn", parseFunction);
     parser.prefix_fns.put(.string, parseString);
+    parser.prefix_fns.put(.char, parseChar);
     parser.prefix_fns.put(.@"if", parseIf);
     parser.prefix_fns.put(.@"for", parseFor);
     // parser.prefix_fns.put(.@"switch", parseSwitch);
@@ -361,6 +362,22 @@ fn parseConBlock(self: *Parser, _: Token) anyerror!ast.ConBlock {
     return stmt;
 }
 
+fn line(self: *Parser) []const u8 {
+    const input = self.lexer.input;
+    const pos = self.lexer.read_position;
+
+    var i = pos;
+    while (i > 0) {
+        if (input[i] == '\n') break;
+        i -= 1;
+    }
+    i += 1;
+
+    const idx = std.mem.indexOf(u8, input[i..], "\n") orelse pos;
+
+    return input[i .. idx + i];
+}
+
 fn parseVar(self: *Parser) anyerror!ast.Statement {
     const tk = self.cur_token;
 
@@ -372,7 +389,7 @@ fn parseVar(self: *Parser) anyerror!ast.Statement {
     };
 
     if (!self.expectPeek(.identifier)) {
-        std.log.err("Expect Identifier, found '{s}'", .{self.cur_token.literal});
+        std.log.err("Expect Identifier, found '{s}' at {s}", .{ self.cur_token.literal, self.line() });
         return error.UnexpectedToken;
     }
 
@@ -447,7 +464,7 @@ fn parseExpStatement(self: *Parser) anyerror!ast.Statement {
 
 fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
     const prefixFn = self.prefix_fns.get(self.cur_token.type) orelse {
-        // std.log.warn("at token: {s}\n", .{self.cur_token.literal});
+        std.log.warn("At {s}\n", .{self.line()});
         return error.UnknowPrefixFn;
     };
 
@@ -492,7 +509,7 @@ pub fn parse(self: *Parser) !ast.Node {
 fn parseFloat(self: *Parser) anyerror!ast.Expression {
     return .{
         .float = .{
-            .value = std.fmt.parseFloat(f64, self.cur_token.literal) catch |err| {
+            .value = std.fmt.parseFloat(f32, self.cur_token.literal) catch |err| {
                 std.log.err("Could not parse {s} as float", .{self.cur_token.literal});
                 return err;
             },
@@ -500,10 +517,14 @@ fn parseFloat(self: *Parser) anyerror!ast.Expression {
     };
 }
 
+fn parseChar(self: *Parser) anyerror!ast.Expression {
+    return .{ .char = .{ .value = self.cur_token.literal[0] } };
+}
+
 fn parseInteger(self: *Parser) anyerror!ast.Expression {
     return .{
         .integer = .{
-            .value = std.fmt.parseInt(i64, self.cur_token.literal, 10) catch |err| {
+            .value = std.fmt.parseInt(i32, self.cur_token.literal, 10) catch |err| {
                 std.log.err("Could not parse {s} as integer", .{self.cur_token.literal});
                 return err;
             },
@@ -1022,39 +1043,39 @@ pub fn parseRange(self: *Parser, left: *ast.Expression) anyerror!ast.Expression 
 //     return .{ .multi_forloop_range = mflr };
 // }
 //
-// pub fn parseForLoopRange(self: *Parser, tk: Token, ident: *ast.) anyerror!ast.Expression {
-//     var flr = ast.ForLoopRange{
-//         .token = tk,
-//         .ident = ident.identifier.value, // for <ident>[, <idx>] in <range> {
-//         .body = undefined,
-//         .iterable = undefined,
-//     };
-//
-//     if (self.expectPeek(.@",")) {
-//         self.nextToken();
-//         const index = try self.parseIdentifier();
-//         flr.index = index.identifier.value;
-//     }
-//
-//     if (!self.expectPeek(.in)) {
-//         return error.ExpectTheInIdentifier;
-//     }
-//
-//     self.nextToken();
-//
-//     flr.iterable = try self.parseExpression(.lower);
-//
-//     if (self.expectPeek(.@";") and !self.peekTokenIs(.@"{")) {
-//         return self.parseMultiForLoopRange(flr);
-//     }
-//
-//     if (!self.expectPeek(.@"{")) return error.MissingBrance1;
-//
-//     flr.body = try self.parseBlockStatement();
-//
-//     return .{ .forloop_range = flr };
-// }
-//
+pub fn parseForRange(self: *Parser, tk: Token, ident: ast.Identifier) anyerror!ast.Expression {
+    _ = tk;
+    var flr = ast.ForRange{
+        .ident = ident.value, // for <ident>[, <idx>] in <range> {
+        .body = undefined,
+        .iterable = undefined,
+    };
+
+    // if (self.expectPeek(.@",")) {
+    //     self.nextToken();
+    //     const index = try self.parseIdentifier();
+    //     flr.index = index.identifier.value;
+    // }
+    //
+    if (!self.expectPeek(.in)) {
+        return error.ExpectTheInIdentifier;
+    }
+
+    self.nextToken();
+
+    flr.iterable = try self.parseExpression(.lower);
+
+    // if (self.expectPeek(.@";") and !self.peekTokenIs(.@"{")) {
+    //     return self.parseMultiForLoopRange(flr);
+    // }
+
+    if (!self.expectPeek(.@"{")) return error.MissingBrance1;
+
+    flr.body = try self.parseBlock();
+
+    return .{ .for_range = flr };
+}
+
 pub fn parseForLoopCondition(self: *Parser, _: Token, cond: *ast.Expression) anyerror!ast.Expression {
     var fl = ast.For{
         .condition = cond,
@@ -1080,9 +1101,11 @@ pub fn parseFor(self: *Parser) anyerror!ast.Expression {
 
     const condition_or_ident = try self.parseExpression(.lower);
 
-    // if (condition_or_ident.* == .identifier) {
-    //     return self.parseForLoopRange(token, condition_or_ident);
-    // }
+    if (condition_or_ident.* == .identifier) {
+        if (self.peekTokenIs(.in)) {
+            return self.parseForRange(token, condition_or_ident.identifier);
+        }
+    }
 
     return self.parseForLoopCondition(token, condition_or_ident);
 }
