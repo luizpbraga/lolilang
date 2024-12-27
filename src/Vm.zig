@@ -179,9 +179,7 @@ pub fn run(vm: *Vm) !void {
             .index_get => {
                 const index = try vm.pop();
                 const left = try vm.pop();
-                // const array = try vm.pop();
-                // std.debug.print("{} ", .{array});
-                try operation.executeIndex(vm, left, index);
+                try operation.executeIndex(vm, &left, &index);
             },
 
             .index_set => {

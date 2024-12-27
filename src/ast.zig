@@ -68,7 +68,7 @@ pub const Expression = union(enum) {
     range: Range,
     hash: Hash,
     // enum_literal: EnumLiteral,
-    // enum_tag: EnumTag,
+    enum_tag: EnumTag,
     identifier: Identifier,
     // forloop_expression: ForLoopExpression,
     for_range: ForRange,
@@ -354,7 +354,7 @@ pub const EnumLiteral = struct {
 };
 
 pub const EnumTag = struct {
-    value: Identifier,
+    value: []const u8,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;

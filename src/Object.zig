@@ -14,9 +14,10 @@ pub const Value = union(enum) {
     integer: i32,
     float: f32,
     char: u8,
+    range: Range,
+    tag: []const u8,
     builtin: Builtin,
     obj: *Object,
-    range: Range,
 
     pub fn toRange(val: *const Value) Range {
         var end: usize = 0;
@@ -85,12 +86,13 @@ pub const Range = struct {
                     }
                 },
 
-                // .hash => |hash| {
-                //     if (r.start < r.end) {
-                //         defer r.start += 1;
-                //         hash.pairs.iterator();
-                //     }
-                // },
+                .hash => |hash| {
+                    if (r.start < r.end) {
+                        defer r.start += 1;
+                        const pair = hash.pairs.values()[r.start];
+                        return pair.key;
+                    }
+                },
 
                 else => {},
             },
@@ -185,6 +187,7 @@ pub const Hash = struct {
                 .boolean => |b| .{ .value = if (b) 1 else 0 },
 
                 .integer => |i| .{ .value = @intCast(i) },
+
                 .char => |i| .{ .value = @intCast(i) },
 
                 .obj => |ob| switch (ob.type) {
@@ -194,6 +197,12 @@ pub const Hash = struct {
                         break :str .{ .value = value };
                     },
                     else => error.ObjectCanNotBeAHashKey,
+                },
+
+                .tag => |string| str: {
+                    var value: usize = 0;
+                    for (string) |ch| value += @intCast(ch);
+                    break :str .{ .value = value };
                 },
 
                 else => error.ObjectCanNotBeAHashKey,

@@ -28,7 +28,9 @@ pub const Precedence = enum {
         .@"==" = .equals,
         .@"!=" = .equals,
         .@">" = .lessgreater,
+        .@">=" = .lessgreater,
         .@"<" = .lessgreater,
+        .@"<=" = .lessgreater,
         .@"+" = .sum,
         .@"-" = .sum,
         .@"/" = .product,
@@ -49,21 +51,6 @@ pub const Precedence = enum {
     pub fn peek(token_type: Token.Type) Precedence {
         return precedences.get(token_type).?;
     }
-
-    // pub fn peek(token_type: Token.Type) Precedence {
-    //     return switch (token_type) {
-    //         .@"or", .@"and" => .cond,
-    //         .@"==", .@"!=" => .equals,
-    //         .@">", .@"<" => .lessgreater,
-    //         .@"+", .@"-" => .sum,
-    //         .@"/", .@"*" => .product,
-    //         .@"(" => .call,
-    //         .@"!" => .prefix,
-    //         .@"[", .@".", .@".." => .index,
-    //         .@"=", .@":=", .@"+=", .@"-=", .@"*=", .@"/=" => .assigne,
-    //         else => .lower,
-    //     };
-    // }
 };
 
 pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) Parser {
@@ -83,11 +70,13 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) Parser {
     parser.nextToken();
 
     parser.prefix_fns.put(.identifier, parseIdentifier);
+    parser.prefix_fns.put(.@".", parseEnumTag);
     parser.prefix_fns.put(.integer, parseInteger);
     parser.prefix_fns.put(.float, parseFloat);
     parser.prefix_fns.put(.true, parseBoolean);
     parser.prefix_fns.put(.false, parseBoolean);
     parser.prefix_fns.put(.null, parseNull);
+    parser.prefix_fns.put(.@";", parseNull);
     parser.prefix_fns.put(.@"[", parseArray);
     parser.prefix_fns.put(.@"{", parseHash);
     parser.prefix_fns.put(.@"fn", parseFunction);
@@ -116,7 +105,9 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) Parser {
     parser.infix_fns.put(.@"and", parseInfix);
     parser.infix_fns.put(.@"/", parseInfix);
     parser.infix_fns.put(.@">", parseInfix);
+    parser.infix_fns.put(.@">=", parseInfix);
     parser.infix_fns.put(.@"<", parseInfix);
+    parser.infix_fns.put(.@"<=", parseInfix);
     parser.infix_fns.put(.@"=", parseAssignment);
     parser.infix_fns.put(.@":=", parseAssignment);
     parser.infix_fns.put(.@"+=", parseAssignment);
@@ -172,17 +163,23 @@ fn parseIdentifier(self: *const Parser) anyerror!ast.Expression {
     };
 }
 
+fn parseEnumTag(self: *Parser) anyerror!ast.Expression {
+    self.nextToken();
+    return .{
+        .enum_tag = .{
+            .value = self.cur_token.literal,
+        },
+    };
+}
+
 fn parseReturn(self: *Parser) anyerror!ast.Statement {
     var return_stmt: ast.Return = .{
-        .value = undefined,
+        .value = &NULL,
     };
 
     self.nextToken();
 
-    return_stmt.value = self.parseExpression(.lower) catch b: {
-        // self.nextToken();
-        break :b &NULL;
-    };
+    return_stmt.value = try self.parseExpression(.lower);
 
     if (self.peekTokenIs(.@";")) {
         self.nextToken();
@@ -364,18 +361,7 @@ fn parseConBlock(self: *Parser, _: Token) anyerror!ast.ConBlock {
 
 fn line(self: *Parser) []const u8 {
     const input = self.lexer.input;
-    const pos = self.lexer.read_position;
-
-    var i = pos;
-    while (i > 0) {
-        if (input[i] == '\n') break;
-        i -= 1;
-    }
-    i += 1;
-
-    const idx = std.mem.indexOf(u8, input[i..], "\n") orelse pos;
-
-    return input[i .. idx + i];
+    return input[self.lexer.position..];
 }
 
 fn parseVar(self: *Parser) anyerror!ast.Statement {
@@ -464,7 +450,7 @@ fn parseExpStatement(self: *Parser) anyerror!ast.Statement {
 
 fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
     const prefixFn = self.prefix_fns.get(self.cur_token.type) orelse {
-        std.log.warn("At {s}\n", .{self.line()});
+        std.log.warn("At token {s}, {s}\n", .{ self.cur_token.literal, self.line() });
         return error.UnknowPrefixFn;
     };
 
@@ -565,7 +551,7 @@ fn parsePrefix(self: *Parser) anyerror!ast.Expression {
 }
 
 fn parseInfix(self: *Parser, left: *ast.Expression) anyerror!ast.Expression {
-    var expression = ast.Infix{
+    var infix = ast.Infix{
         .operator = self.cur_token.type,
         .left = left,
         .right = undefined,
@@ -575,9 +561,9 @@ fn parseInfix(self: *Parser, left: *ast.Expression) anyerror!ast.Expression {
 
     self.nextToken();
 
-    expression.right = try self.parseExpression(precedence);
+    infix.right = try self.parseExpression(precedence);
 
-    return .{ .infix = expression };
+    return .{ .infix = infix };
 }
 
 fn parseIf(self: *Parser) anyerror!ast.Expression {
@@ -815,8 +801,10 @@ pub fn parseHash(self: *Parser) anyerror!ast.Expression {
 
         if (!self.expectPeek(.@":")) {
             if (self.expectPeek(.@",") or self.expectPeek(.@"}")) {
-                try hash.put(key, key);
-                if (self.curTokenIs(.@"}")) break;
+                try hash.put(key, &NULL);
+                if (self.curTokenIs(.@"}")) {
+                    return .{ .hash = .{ .pairs = hash } };
+                }
                 continue;
             }
 

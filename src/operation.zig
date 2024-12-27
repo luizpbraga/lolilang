@@ -5,47 +5,47 @@ const Object = @import("Object.zig");
 const Value = Object.Value;
 const Vm = @import("Vm.zig");
 
-pub fn executeIndex(vm: *Vm, left: Value, index: Value) !void {
-    switch (left) {
-        .obj => |ob| switch (ob.type) {
-            .string => |string| {
-                if (index != .integer) return error.InvalidIndexType;
+pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
+    if (left.* != .obj) {
+        std.debug.print("{} {}", .{ left, index });
+        return error.InvalidIndexOperation;
+    }
 
-                const i = index.integer;
-                const len = string.len;
+    switch (left.obj.type) {
+        .string => |string| {
+            if (index.* != .integer) return error.InvalidIndexType;
 
-                if (i >= 0 and i < len) {
-                    const char = string[@intCast(i)];
-                    const str = try vm.allocator.dupe(u8, &.{char});
-                    const obj = try memory.allocateObject(vm, .{ .string = str });
-                    return try vm.push(.{ .obj = obj });
-                }
-            },
+            const i = index.integer;
+            const len = string.len;
 
-            .array => |array| {
-                if (index != .integer) return error.InvalidIndexType;
-
-                const i = index.integer;
-                const len = array.len;
-
-                if (i >= 0 and i < len) {
-                    return try vm.push(array[@intCast(i)]);
-                }
-            },
-
-            .hash => |hash| {
-                const hashkey = try Object.Hash.Key.init(&index);
-                const pair = hash.pairs.getPtr(hashkey) orelse {
-                    return vm.push(.null);
-                };
-                return vm.push(pair.value);
-            },
-            else => return error.InvalidIndexOperation,
+            if (i >= 0 and i < len) {
+                const char = string[@intCast(i)];
+                const str = try vm.allocator.dupe(u8, &.{char});
+                const obj = try memory.allocateObject(vm, .{ .string = str });
+                return try vm.push(.{ .obj = obj });
+            }
         },
-        else => {
-            std.debug.print("{} {}", .{ left, index });
-            return error.InvalidIndexOperation;
+
+        .array => |array| {
+            if (index.* != .integer) return error.InvalidIndexType;
+
+            const i = index.integer;
+            const len = array.len;
+
+            if (i >= 0 and i < len) {
+                return try vm.push(array[@intCast(i)]);
+            }
         },
+
+        .hash => |hash| {
+            const hashkey = try Object.Hash.Key.init(index);
+            const pair = hash.pairs.getPtr(hashkey) orelse {
+                return vm.push(.null);
+            };
+            return vm.push(pair.value);
+        },
+
+        else => return error.InvalidIndexOperation,
     }
 
     return try vm.push(.null);
@@ -152,6 +152,17 @@ pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
             else => unreachable,
         };
         return try vm.push(.{ .integer = result });
+    }
+
+    if (left == .boolean and right == .boolean) {
+        const left_val = left.boolean;
+        const right_val = right.boolean;
+        const result = switch (op) {
+            .add => left_val and right_val,
+            .sub => left_val or right_val,
+            else => unreachable,
+        };
+        return try vm.push(.{ .boolean = result });
     }
 
     if (right == .float and left == .float) {

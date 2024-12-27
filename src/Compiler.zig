@@ -259,15 +259,6 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 //     try c.emit(.null, &.{}); // will be pop, no integer overflow. why?
             },
 
-            // rework
-            .method => |method| {
-                try c.compile(.{ .expression = method.caller });
-                const symbol = c.symbols.?.resolve(method.method.value) orelse {
-                    return error.undefinedSymbol;
-                };
-                try c.emit(.method, &.{symbol.index});
-            },
-
             .infix => |infix| {
                 const operator = infix.operator;
 
@@ -281,6 +272,8 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.compile(.{ .expression = infix.left });
                 try c.compile(.{ .expression = infix.right });
                 const op: code.Opcode = switch (operator) {
+                    .@"and" => .add,
+                    .@"or" => .sub,
                     .@"+" => .add,
                     .@"-" => .sub,
                     .@"*" => .mul,
@@ -311,9 +304,36 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(.index_get, &.{});
             },
 
+            // TODO: rework
+            .method => |method| {
+                try c.compile(.{ .expression = method.caller });
+
+                if (method.caller.* == .identifier) {
+                    const pos = try c.addConstants(.{
+                        .tag = method.method.value,
+                    });
+                    try c.emit(.constant, &.{pos});
+                    try c.emit(.index_get, &.{});
+                    return;
+                }
+
+                const symbol = c.symbols.?.resolve(method.method.value) orelse {
+                    return error.undefinedSymbol;
+                };
+
+                try c.emit(.method, &.{symbol.index});
+            },
+
             .integer => |int| {
                 const pos = try c.addConstants(.{
                     .integer = int.value,
+                });
+                try c.emit(.constant, &.{pos});
+            },
+
+            .enum_tag => |int| {
+                const pos = try c.addConstants(.{
+                    .tag = int.value,
                 });
                 try c.emit(.constant, &.{pos});
             },
