@@ -453,15 +453,16 @@ pub const ForRange = struct {
     }
 };
 
-pub const MatchChoices = struct {
-    // =>
-    exps: ?[]const Expression,
-    block: Block,
-};
-
 pub const Match = struct {
-    value: *Expression, // swtich (value)
-    choices: []MatchChoices,
+    value: *Expression,
+    arms: []Arm,
+    else_block: ?Block = null,
+
+    pub const Arm = struct {
+        // =>
+        condition: *Expression,
+        block: Block,
+    };
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;

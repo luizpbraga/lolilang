@@ -85,7 +85,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) Parser {
     parser.prefix_fns.put(.char, parseChar);
     parser.prefix_fns.put(.@"if", parseIf);
     parser.prefix_fns.put(.@"for", parseFor);
-    // parser.prefix_fns.put(.@"switch", parseSwitch);
+    parser.prefix_fns.put(.match, parseMatch);
     // parser.prefix_fns.put(.@"enum", parseEnum);
     parser.prefix_fns.put(.@"else", parseIf);
     parser.prefix_fns.put(.@"!", parsePrefix);
@@ -376,7 +376,7 @@ fn parseVar(self: *Parser) anyerror!ast.Statement {
     };
 
     if (!self.expectPeek(.identifier)) {
-        std.log.err("Expect Identifier, found '{s}' at {s}", .{ self.cur_token.literal, self.line() });
+        std.log.err("Expect Identifier, found '{s}' ", .{self.cur_token.literal});
         return error.UnexpectedToken;
     }
 
@@ -451,7 +451,7 @@ fn parseExpStatement(self: *Parser) anyerror!ast.Statement {
 
 fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
     const prefixFn = self.prefix_fns.get(self.cur_token.type) orelse {
-        std.log.warn("At token {s}, {s}\n", .{ self.cur_token.literal, self.line() });
+        std.log.warn("At token {s}\n", .{self.cur_token.literal});
         return error.UnknowPrefixFn;
     };
 
@@ -474,7 +474,7 @@ fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
 
 fn parseExpressionNoAlloc(self: *Parser, precedence: Precedence) !ast.Expression {
     const prefixFn = self.prefix_fns.get(self.cur_token.type) orelse {
-        std.log.warn("At token {s}, {s}\n", .{ self.cur_token.literal, self.line() });
+        std.log.warn("At token {s}\n", .{self.cur_token.literal});
         return error.UnknowPrefixFn;
     };
 
@@ -908,88 +908,76 @@ pub fn parseIndex(self: *Parser, left: *ast.Expression) anyerror!ast.Expression 
     return .{ .index = exp };
 }
 
-// pub fn parseSwitch(self: *Parser) anyerror!ast.Expression {
-//     var switch = ast.Switch{
-//         .token = self.cur_token,
-//         .value = undefined,
-//         .choices = undefined,
-//     };
-//
-//     self.nextToken();
-//
-//     switch.value = try self.parseExpression(.lower);
-//
-//     if (!self.expectPeek(.@"{")) return error.MissingBrance;
-//
-//     self.nextToken();
-//
-//     const allocator = self.arena.allocator();
-//
-//     var choices = std.ArrayList(ast.SwitchChoices).init(allocator);
-//     errdefer choices.deinit();
-//
-//     while (!self.curTokenIs(.@"}") and !self.curTokenIs(.eof)) {
-//         var switch_choices: ast.SwitchChoices = undefined;
-//
-//         // TODO: deixa o else ser feliz :: ele participa do vetor de exp e entra como
-//         // um braco alternativo do switch la no evalSwitch
-//         if (self.curTokenIs(.@"else")) {
-//             switch_choices = .{
-//                 .token = self.cur_token, // .else
-//                 .exps = null, // else case
-//                 .block = undefined,
-//             };
-//
-//             self.nextToken();
-//         } else {
-//             if (self.curTokenIs(.@"}")) return error.SyntaxError;
-//
-//             var exps = std.ArrayList(ast.).init(allocator);
-//             errdefer exps.deinit();
-//
-//             const exp1 = try self.parseExpression(.lower);
-//             try exps.append(exp1.*);
-//
-//             self.nextToken();
-//
-//             // TODO: parse "..." range
-//             while (self.expectPeek(.@",")) {
-//                 const exp_n = try self.parseExpression(.lower);
-//                 try exps.append(exp_n.*);
-//                 self.nextToken();
-//             }
-//
-//             switch_choices = .{
-//                 .token = self.cur_token,
-//                 .exps = try exps.toOwnedSlice(),
-//                 .block = undefined,
-//             };
-//         }
-//
-//         if (self.cur_token.type != .@"=>") {
-//             return error.UnexpectedToken;
-//         }
-//
-//         self.nextToken();
-//
-//         if (self.cur_token.type != .@"{") {
-//             return error.MissingBlockBrace;
-//         }
-//
-//         switch_choices.block = try self.parseBlockStatement();
-//
-//         self.nextToken(); // }
-//
-//         try choices.append(switch_choices);
-//     }
-//
-//     const choice_owned = try choices.toOwnedSlice();
-//
-//     switch.choices = choice_owned;
-//
-//     return .{ .switch = switch };
-// }
-//
+pub fn parseMatch(self: *Parser) anyerror!ast.Expression {
+    var match: ast.Match = .{
+        .value = undefined,
+        .arms = undefined,
+    };
+
+    self.nextToken();
+
+    match.value = try self.parseExpression(.lower);
+
+    if (!self.expectPeek(.@"{")) return error.MissingBrance;
+
+    self.nextToken();
+
+    const allocator = self.arena.allocator();
+
+    var arms = std.ArrayList(ast.Match.Arm).init(allocator);
+    errdefer arms.deinit();
+
+    while (!self.curTokenIs(.@"}") and !self.curTokenIs(.eof)) {
+
+        // the else arm
+        if (self.curTokenIs(.@"else")) {
+            if (match.else_block != null) {
+                return error.DuplicateElseArm;
+            }
+
+            if (!self.expectPeek(.@"=>")) {
+                return error.MissingMatchToken;
+            }
+
+            if (!self.expectPeek(.@"{")) {
+                return error.MissingBrance;
+            }
+
+            match.else_block = try self.parseBlock();
+
+            self.nextToken();
+
+            continue;
+        }
+
+        var arm: ast.Match.Arm = undefined;
+
+        arm.condition = try self.parseExpression(.lower);
+
+        if (!self.expectPeek(.@"=>")) {
+            return error.MissingMatchToken;
+        }
+
+        if (!self.expectPeek(.@"{")) {
+            return error.MissingBrance;
+        }
+
+        arm.block = try self.parseBlock();
+
+        self.nextToken(); // jump the }
+
+        try arms.append(arm);
+    }
+
+    match.arms = try arms.toOwnedSlice();
+
+    // std.debug.print("{}\n", .{match.value});
+    // std.debug.print("{any}\n", .{match.arms});
+    // std.debug.print("{?}\n", .{match.else_block});
+
+    return .{ .match = match };
+}
+
 pub fn parseRange(self: *Parser, left: *ast.Expression) anyerror!ast.Expression {
     var range = ast.Range{
         .start = left,

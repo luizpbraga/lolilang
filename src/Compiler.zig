@@ -371,24 +371,13 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
             .hash => |hash| {
                 for (hash.pairs) |pair| {
-                    const key = pair[0];
+                    const key, const val = pair;
                     try c.compile(.{ .expression = key });
-                    const val = pair[1];
+                    // const val = pair[1];
                     try c.compile(.{ .expression = val });
                 }
 
                 try c.emit(.hash, &.{hash.pairs.len * 2});
-
-                // var iterator = hash.pairs.iterator();
-                //
-                // while (iterator.next()) |entry| {
-                //     const key = entry.key_ptr.*;
-                //     try c.compile(.{ .expression = key });
-                //     const val = entry.value_ptr.*;
-                //     try c.compile(.{ .expression = val });
-                // }
-
-                // try c.emit(.hash, &.{hash.pairs.count() * 2});
             },
 
             .call => |call| {
@@ -497,9 +486,46 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.changeOperand(jum_pos, after_alternative_pos);
             },
 
-            else => |e| {
-                std.log.err("find an invalid/not handled Expression: {}\n", .{e});
-                return error.InvalidExpression;
+            .match => |match| {
+                var jumps_pos_list = std.ArrayList(usize).init(c.allocator);
+                defer jumps_pos_list.deinit();
+
+                for (match.arms) |arm| {
+                    try c.compile(.{ .expression = match.value });
+                    try c.compile(.{ .expression = arm.condition });
+                    try c.emit(.eq, &.{});
+
+                    const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
+
+                    if (arm.block.statements.len == 0) {
+                        try c.emit(.null, &.{});
+                    } else {
+                        try c.compile(.{ .statement = .{ .block = arm.block } });
+                    }
+
+                    if (c.lastInstructionIs(.pop)) {
+                        c.removeLastPop();
+                    }
+
+                    const jum_pos = try c.emitPos(.jump, &.{9999});
+                    try jumps_pos_list.append(jum_pos);
+
+                    const after_consequence_position = c.insLen();
+                    try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
+                }
+
+                if (match.else_block) |block| {
+                    try c.compile(.{ .statement = .{ .block = block } });
+                    if (c.lastInstructionIs(.pop)) c.removeLastPop();
+                } else {
+                    try c.emit(.null, &.{});
+                }
+
+                const after_alternative_pos = c.insLen();
+
+                for (jumps_pos_list.items) |jum_pos| {
+                    try c.changeOperand(jum_pos, after_alternative_pos);
+                }
             },
 
             .@"for" => |forloop| {
