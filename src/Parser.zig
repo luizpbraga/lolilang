@@ -22,6 +22,7 @@ pub const Precedence = enum {
     call,
     index,
 
+    /// switch ?
     const precedences: std.EnumMap(Token.Type, Precedence) = .initFullWithDefault(.lower, .{
         .@"or" = .cond,
         .@"and" = .cond,
@@ -97,7 +98,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) Parser {
     parser.infix_fns.put(.@"(", parseCall);
     parser.infix_fns.put(.@"+", parseInfix);
     parser.infix_fns.put(.@"-", parseInfix);
-    parser.infix_fns.put(.@":", parseInfix);
+    // parser.infix_fns.put(.@":", parseInfix);
     parser.infix_fns.put(.@"==", parseInfix);
     parser.infix_fns.put(.@"!=", parseInfix);
     parser.infix_fns.put(.@"*", parseInfix);
@@ -471,6 +472,23 @@ fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
     return left_exp;
 }
 
+fn parseExpressionNoAlloc(self: *Parser, precedence: Precedence) !ast.Expression {
+    const prefixFn = self.prefix_fns.get(self.cur_token.type) orelse {
+        std.log.warn("At token {s}, {s}\n", .{ self.cur_token.literal, self.line() });
+        return error.UnknowPrefixFn;
+    };
+
+    var left_exp = try prefixFn(self);
+
+    while (@intFromEnum(precedence) < @intFromEnum(self.peekPrecedence())) {
+        const infixFn = self.infix_fns.get(self.peek_token.type) orelse return left_exp;
+        self.nextToken();
+        left_exp = try infixFn(self, left_exp);
+    }
+
+    return left_exp;
+}
+
 pub fn parseProgram(self: *Parser) !ast.Program {
     const allocator = self.arena.allocator();
 
@@ -516,6 +534,13 @@ fn parseInteger(self: *Parser) anyerror!ast.Expression {
             },
         },
     };
+}
+
+fn parseIntegerFrom(self: *Parser, i: usize) !*ast.Expression {
+    const alloc = self.arena.allocator();
+    const int = try alloc.create(ast.Expression);
+    int.* = .{ .integer = .{ .value = @intCast(i) } };
+    return int;
 }
 
 fn parseBoolean(self: *Parser) anyerror!ast.Expression {
@@ -791,20 +816,25 @@ pub fn parseHash(self: *Parser) anyerror!ast.Expression {
     // const token = self.cur_token;
     const allocator = self.arena.allocator();
 
-    var hash: std.AutoHashMap(*ast.Expression, *ast.Expression) = .init(allocator);
-    errdefer hash.deinit();
+    var pairs: std.ArrayList([2]*ast.Expression) = .init(allocator);
+    errdefer pairs.deinit();
 
+    var counter: usize = 0;
     while (!self.peekTokenIs(.@"}")) {
         self.nextToken();
-
         const key = try self.parseExpression(.lower);
 
         if (!self.expectPeek(.@":")) {
             if (self.expectPeek(.@",") or self.expectPeek(.@"}")) {
-                try hash.put(key, &NULL);
+                const index = try self.parseIntegerFrom(counter);
+                counter += 1;
+                // try pairs.put(index, key);
+                try pairs.append(.{ index, key });
+
                 if (self.curTokenIs(.@"}")) {
-                    return .{ .hash = .{ .pairs = hash } };
+                    return .{ .hash = .{ .pairs = try pairs.toOwnedSlice() } };
                 }
+
                 continue;
             }
 
@@ -813,11 +843,9 @@ pub fn parseHash(self: *Parser) anyerror!ast.Expression {
         }
 
         self.nextToken();
-
         const val = try self.parseExpression(.lower);
 
-        // BUG: memory leak
-        try hash.put(key, val);
+        try pairs.append(.{ key, val });
 
         if (!self.peekTokenIs(.@"}") and !self.expectPeek(.@",")) {
             std.log.warn("syntax error: expect ',' or '}}'\n", .{});
@@ -830,7 +858,7 @@ pub fn parseHash(self: *Parser) anyerror!ast.Expression {
         return error.MissingRightBrace;
     }
 
-    return .{ .hash = .{ .pairs = hash } };
+    return .{ .hash = .{ .pairs = try pairs.toOwnedSlice() } };
 }
 
 // (...)

@@ -111,6 +111,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             .block => |block| {
+                // try c.enterScope();
                 const len = block.statements.len;
                 for (0.., block.statements) |i, _stmt| {
                     try c.compile(.{ .statement = _stmt });
@@ -119,6 +120,9 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                         @panic("UnreachbleCode");
                     }
                 }
+                // const instruction = try c.leaveScope();
+                // const pos = try c.addInstruction(instruction);
+                // _ = pos;
             },
 
             .@"var" => |var_stmt| {
@@ -308,17 +312,13 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             .method => |method| {
                 try c.compile(.{ .expression = method.caller });
 
-                if (method.caller.* == .identifier) {
+                const symbol = c.symbols.?.resolve(method.method.value) orelse {
                     const pos = try c.addConstants(.{
                         .tag = method.method.value,
                     });
                     try c.emit(.constant, &.{pos});
                     try c.emit(.index_get, &.{});
                     return;
-                }
-
-                const symbol = c.symbols.?.resolve(method.method.value) orelse {
-                    return error.undefinedSymbol;
                 };
 
                 try c.emit(.method, &.{symbol.index});
@@ -370,16 +370,25 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             .hash => |hash| {
-                var iterator = hash.pairs.iterator();
-
-                while (iterator.next()) |entry| {
-                    const key = entry.key_ptr.*;
+                for (hash.pairs) |pair| {
+                    const key = pair[0];
                     try c.compile(.{ .expression = key });
-                    const val = entry.value_ptr.*;
+                    const val = pair[1];
                     try c.compile(.{ .expression = val });
                 }
 
-                try c.emit(.hash, &.{hash.pairs.count() * 2});
+                try c.emit(.hash, &.{hash.pairs.len * 2});
+
+                // var iterator = hash.pairs.iterator();
+                //
+                // while (iterator.next()) |entry| {
+                //     const key = entry.key_ptr.*;
+                //     try c.compile(.{ .expression = key });
+                //     const val = entry.value_ptr.*;
+                //     try c.compile(.{ .expression = val });
+                // }
+
+                // try c.emit(.hash, &.{hash.pairs.count() * 2});
             },
 
             .call => |call| {
@@ -433,13 +442,16 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(.null, &.{});
             },
 
-            // todo: think !!
+            // TODO: think !!
             .range => |range| {
                 if (range.start.* != .integer) return error.InvalidRangeIndex;
                 if (range.end.* != .integer) return error.InvalidRangeIndex;
-                try c.compile(.{ .expression = range.start });
-                try c.compile(.{ .expression = range.end });
-                try c.emit(.range, &.{@intCast(range.end.integer.value - range.start.integer.value)});
+                const pos = try c.addConstants(.{ .range = .{
+                    .start = @intCast(range.start.integer.value),
+                    .end = @intCast(range.end.integer.value),
+                    .value = &.null,
+                } });
+                try c.emit(.constant, &.{pos});
             },
 
             // BUG: empty blocks (non expressions) overflows
@@ -524,7 +536,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(.constant, &.{pos});
 
                 try c.compile(.{ .expression = iterable });
-                try c.emit(.range, &.{pos});
+                try c.emit(.set_range, &.{pos});
 
                 const symbol = try c.symbols.?.define(forloop.ident);
                 //std.debug.print("name:{s} {?}\n", .{ forloop.ident, c.symbols.?.store.get(forloop.ident) });

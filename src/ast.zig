@@ -337,8 +337,16 @@ pub const Range = struct {
     }
 };
 
+// pub const Hash = struct {
+//     pairs: std.AutoHashMap(*Expression, *Expression),
+//
+//     pub fn tokenLiteral(self: *const @This()) []const u8 {
+//         return self.token.literal;
+//     }
+// };
+
 pub const Hash = struct {
-    pairs: std.AutoHashMap(*Expression, *Expression),
+    pairs: [][2]*Expression,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;

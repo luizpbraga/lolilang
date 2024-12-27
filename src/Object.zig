@@ -21,11 +21,18 @@ pub const Value = union(enum) {
 
     pub fn toRange(val: *const Value) Range {
         var end: usize = 0;
+        var start: usize = 0;
         var value: *const Value = &.null;
 
         switch (val.*) {
             .integer => |int| {
                 end = @intCast(int);
+                value = val;
+            },
+
+            .range => |range| {
+                start = range.start;
+                end = range.end;
                 value = val;
             },
 
@@ -51,7 +58,7 @@ pub const Value = union(enum) {
             else => {},
         }
 
-        return .{ .end = end, .start = 0, .value = value };
+        return .{ .end = end, .start = start, .value = value };
     }
 };
 
@@ -64,7 +71,7 @@ pub const Range = struct {
         switch (r.value.*) {
             else => {},
 
-            .integer => {
+            .integer, .range => {
                 if (r.start < r.end) {
                     defer r.start += 1;
                     return .{ .integer = @intCast(r.start) };

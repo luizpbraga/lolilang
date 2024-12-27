@@ -104,7 +104,7 @@ fn print(value: Value) void {
             std.debug.print(".{s}", .{b});
         },
 
-        .range => |r| std.debug.print("[range:{s}]", .{@tagName(r.value.*)}),
+        .range => |r| std.debug.print("[range:{s}:{}:{}]", .{ @tagName(r.value.*), r.start, r.end }),
 
         inline else => |o| std.debug.print("{d}", .{o}),
     }

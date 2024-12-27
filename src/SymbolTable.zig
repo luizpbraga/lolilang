@@ -1,3 +1,4 @@
+// TODO: SymbolTable should not allocate internals SymbolTable. use index
 const std = @import("std");
 /// symbles (identifier table)
 /// Information such as its location, its scope, whether it was previously declared or not

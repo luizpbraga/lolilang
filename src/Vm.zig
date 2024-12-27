@@ -103,11 +103,11 @@ pub fn run(vm: *Vm) !void {
         op = @enumFromInt(instructions[ip]);
 
         switch (op) {
-            .range => {
+            .set_range => {
                 const pos = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
                 vm.currentFrame().ip += 1;
-                const array = try vm.pop();
-                vm.constants[pos] = .{ .range = array.toRange() };
+                const value = try vm.pop();
+                vm.constants[pos] = .{ .range = value.toRange() };
             },
 
             .get_range => {

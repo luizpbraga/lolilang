@@ -66,7 +66,7 @@ pub const Opcode = enum(u8) {
     /// TODO: add description
     brk,
 
-    range,
+    set_range,
     get_range,
 
     /// numbers of operands (bytes) for a given upcode
@@ -82,7 +82,7 @@ pub const Opcode = enum(u8) {
         .getgv = &.{2},
         .setlv = &.{1},
         .get_range = &.{1},
-        .range = &.{1},
+        .set_range = &.{1},
         .getlv = &.{1},
         .call = &.{1},
         .method = &.{1},
