@@ -1,0 +1,20 @@
+fn fibonacci(n, fib) {
+  if n <= 1 { 
+    return fib[n]
+  }
+    
+  if fib[n-1] == null {
+    fib[n-1] = fibonacci(n-1, fib)
+  }
+
+  if fib[n-2] == null {
+    fib[n-2] = fibonacci(n-2, fib)
+  }
+
+  fib[n] = fib[n-1] + fib[n-2]
+
+  return fib[n]
+}
+
+fib := { 0: 1, 1: 1 }
+fibonacci(20, fib)
