@@ -58,7 +58,6 @@ var yoyo = [1, 2, 3, 4];
 #### Arrays
 
 ```js
-// we have arrays
 var v = [1, true, "2", false, 4];
 v[0] += 1;
 len := v.len;
@@ -67,7 +66,6 @@ len := v.len;
 #### Hashmap
 
 ```js
-// hashmaps
 const map = {
     1: "a",
     2: "b",
@@ -82,7 +80,6 @@ const map = {
 #### Loops
 
 ```js
-// loops
 var i = 0
 for i < 100 {
     @print(i)
@@ -104,10 +101,9 @@ for i in 10..100 {
 }
 ```
 
-#### Switch
+#### Match
 
 ```rust
-// switch
 x := match 10 {
     1 => { 0 }
 
