@@ -38,7 +38,7 @@ pub const Value = union(enum) {
 
             .obj => |ob| switch (ob.type) {
                 .array => |array| {
-                    end = array.len;
+                    end = array.items.len;
                     value = val;
                 },
 
@@ -82,7 +82,7 @@ pub const Range = struct {
                 .array => |array| {
                     if (r.start < r.end) {
                         defer r.start += 1;
-                        return array[r.start];
+                        return array.items[r.start];
                     }
                 },
 
@@ -151,7 +151,7 @@ fn arrayToRange(value: *Value) Range {
     return .{
         .value = value,
         .start = 0,
-        .end = value.obj.type.array.len,
+        .end = value.obj.type.array.items.len,
     };
 }
 
@@ -159,7 +159,7 @@ fn arrayToRange(value: *Value) Range {
 /// this name sucks, i know
 pub const Type = union(enum) {
     string: []u8,
-    array: []Value,
+    array: std.ArrayList(Value),
     /// compilation code
     function: CompiledFn,
     hash: Hash,

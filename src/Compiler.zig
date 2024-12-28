@@ -95,6 +95,22 @@ pub fn leaveScope(c: *Compiler) !code.Instructions {
     return try std.mem.concat(c.allocator, u8, last_scope.instructions.items);
 }
 
+pub fn leaveCurrentScope(c: *Compiler) !void {
+    c.scope_index -= 1;
+    var last_scope = c.scopes.pop();
+    defer {
+        for (last_scope.instructions.items) |ins| c.allocator.free(ins);
+        last_scope.instructions.deinit();
+    }
+
+    c.symbols = if (c.symbols) |s| b: {
+        defer s.deinitEnclosed();
+        break :b s.outer;
+    } else null;
+
+    try c.currentInstruction().append(try std.mem.concat(c.allocator, u8, last_scope.instructions.items));
+}
+
 /// Walks the AST recursively and evaluate the node, and add it the the pool
 pub fn compile(c: *Compiler, node: ast.Node) !void {
     switch (node) {
@@ -151,7 +167,11 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
             .@"fn" => |func_stmt| {
                 const func = func_stmt.func;
+
+                const rs = try c.symbols.?.define(func_stmt.name.value);
+
                 try c.enterScope();
+
                 errdefer if (c.symbols) |s| c.allocator.destroy(s);
 
                 for (func.parameters) |parameter| {
@@ -179,11 +199,20 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 };
 
                 const pos = try c.addConstants(.{ .obj = obj });
-                try c.emit(.constant, &.{pos});
-                const symbol = try c.symbols.?.define(func_stmt.name.value);
-                const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
-                try c.emit(op, &.{symbol.index});
-                // try c.emit(.null, &.{});
+
+                {
+                    try c.emit(.constant, &.{pos});
+                    const symbol = try c.symbols.?.define(func_stmt.name.value);
+                    const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+                    try c.emit(op, &.{symbol.index});
+                }
+
+                // TODO: think
+                {
+                    try c.emit(.constant, &.{pos});
+                    const op: code.Opcode = if (rs.scope == .global) .setgv else .setlv;
+                    try c.emit(op, &.{rs.index});
+                }
             },
 
             else => return error.InvalidStatemend,
@@ -273,6 +302,13 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     return;
                 }
 
+                if (operator == .@"<=") {
+                    try c.compile(.{ .expression = infix.right });
+                    try c.compile(.{ .expression = infix.left });
+                    try c.emit(.gte, &.{});
+                    return;
+                }
+
                 try c.compile(.{ .expression = infix.left });
                 try c.compile(.{ .expression = infix.right });
                 const op: code.Opcode = switch (operator) {
@@ -283,6 +319,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     .@"*" => .mul,
                     .@"/" => .div,
                     .@">" => .gt,
+                    .@">=" => .gte,
                     .@"==" => .eq,
                     .@"!=" => .neq,
                     else => return error.UnknowOperator,
@@ -409,7 +446,9 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 const obj = try c.allocator.create(Object);
                 errdefer c.allocator.destroy(obj);
                 const num_locals = if (c.symbols) |s| s.def_number else 0;
+
                 const instructions = try c.leaveScope();
+
                 obj.type = .{
                     .function = .{
                         .instructions = instructions,

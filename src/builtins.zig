@@ -9,7 +9,7 @@ pub var builtin_table = std.StaticStringMap(Object.Builtin).initComptime(
 pub var list = [_]Object.Builtin{
     .{ .name = "@print", .function = printBuiltin },
     .{ .name = "len", .function = lenBuiltin },
-    // .{ .name = "keys", .function = keysBuiltin },
+    .{ .name = "append", .function = appendBuiltin },
     // .{ .name = "values", .function = lenBuiltin },
 };
 
@@ -17,23 +17,25 @@ pub fn lenBuiltin(arg: []const Value) Value {
     if (arg[0] != .obj) return .null;
 
     return switch (arg[0].obj.type) {
-        .array => |arr| .{ .integer = @intCast(arr.len) },
+        .array => |arr| .{ .integer = @intCast(arr.items.len) },
         .string => |str| .{ .integer = @intCast(str.len) },
         .hash => |hash| .{ .integer = @intCast(hash.pairs.count()) },
         else => .null,
     };
 }
 
-pub fn keysBuiltin(arg: []const Value) Value {
+pub fn appendBuiltin(arg: []const Value) Value {
     if (arg[0] != .obj) return .null;
 
-    return switch (arg[0].obj.type) {
-        // .hash => |hash| {
-        //     const pairs = hash.pairs.values();
-        //     return .{ .integer = @intCast(hash.pairs.count()) };
-        // },
-        else => .null,
-    };
+    switch (arg[0].obj.type) {
+        .array => |*arr| {
+            for (arg[1..]) |val| {
+                arr.append(val) catch return .null;
+            }
+        },
+        else => {},
+    }
+    return .null;
 }
 
 pub fn printBuiltin(args: []const Value) Value {
@@ -57,9 +59,9 @@ fn print(value: Value) void {
 
             .array => |arr| {
                 std.debug.print("[", .{});
-                for (arr, 0..) |s, i| {
+                for (arr.items, 0..) |s, i| {
                     print(s);
-                    if (i != arr.len - 1) {
+                    if (i != arr.items.len - 1) {
                         std.debug.print(", ", .{});
                     }
                 }

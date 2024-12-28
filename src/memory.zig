@@ -62,7 +62,8 @@ pub fn freeObject(vm: *Vm, obj: *Object) void {
         },
 
         .array => |array| {
-            vm.allocator.free(array);
+            // vm.allocator.free(array);
+            array.deinit();
             vm.allocator.destroy(obj);
         },
 
@@ -90,7 +91,7 @@ pub fn traceReference(vm: *Vm) !void {
 pub fn blackenObject(vm: *Vm, obj: *Object) !void {
     switch (obj.type) {
         .array => |array| {
-            for (array) |element| {
+            for (array.items) |element| {
                 try markValue(vm, element);
             }
         },

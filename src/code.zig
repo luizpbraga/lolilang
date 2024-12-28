@@ -38,6 +38,7 @@ pub const Opcode = enum(u8) {
     gt,
     /// compare the two topmost op on the stack (!=)
     neq,
+    gte,
     /// infix op (-)
     min,
     /// infix op (!)

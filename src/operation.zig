@@ -13,27 +13,67 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
 
     switch (left.obj.type) {
         .string => |string| {
-            if (index.* != .integer) return error.InvalidIndexType;
+            if (index.* == .integer) {
+                const i = index.integer;
+                const len = string.len;
 
-            const i = index.integer;
-            const len = string.len;
+                if (i >= 0 and i < len) {
+                    const char = string[@intCast(i)];
+                    const str = try vm.allocator.dupe(u8, &.{char});
+                    const obj = try memory.allocateObject(vm, .{ .string = str });
+                    return try vm.push(.{ .obj = obj });
+                }
+            }
 
-            if (i >= 0 and i < len) {
-                const char = string[@intCast(i)];
-                const str = try vm.allocator.dupe(u8, &.{char});
+            // TODO: optimize
+            if (index.* == .range) {
+                var start = index.range.start;
+                var end = index.range.end;
+
+                if (end > string.len) {
+                    end = string.len;
+                }
+
+                if (start > string.len) {
+                    start = string.len;
+                }
+
+                const str = try vm.allocator.dupe(u8, string[start..end]);
                 const obj = try memory.allocateObject(vm, .{ .string = str });
                 return try vm.push(.{ .obj = obj });
             }
         },
 
         .array => |array| {
-            if (index.* != .integer) return error.InvalidIndexType;
+            if (index.* == .integer) {
+                const i = index.integer;
+                const len = array.items.len;
 
-            const i = index.integer;
-            const len = array.len;
+                if (i >= 0 and i < len) {
+                    return try vm.push(array.items[@intCast(i)]);
+                }
+            }
 
-            if (i >= 0 and i < len) {
-                return try vm.push(array[@intCast(i)]);
+            // optimize!
+            if (index.* == .range) {
+                var start = index.range.start;
+                var end = index.range.end;
+
+                if (end > array.items.len) {
+                    end = array.items.len;
+                }
+
+                if (start > array.items.len) {
+                    start = array.items.len;
+                }
+
+                var arr = try std.ArrayList(Value).initCapacity(vm.allocator, end - start);
+                errdefer arr.deinit();
+
+                try arr.appendSlice(array.items[start..end]);
+
+                const obj = try memory.allocateObject(vm, .{ .array = arr });
+                return try vm.push(.{ .obj = obj });
             }
         },
 
@@ -62,9 +102,7 @@ pub fn setIndex(vm: *Vm, left: *Value, index: Value, value: Value) !void {
 
                 if (i >= 0 and i < len) {
                     const char = string[@intCast(i)];
-                    const str = try vm.allocator.dupe(u8, &.{char});
-                    const obj = try memory.allocateObject(vm, .{ .string = str });
-                    return try vm.push(.{ .obj = obj });
+                    return try vm.push(.{ .char = char });
                 }
             },
 
@@ -72,10 +110,10 @@ pub fn setIndex(vm: *Vm, left: *Value, index: Value, value: Value) !void {
                 if (index != .integer) return error.InvalidIndexType;
 
                 const i = index.integer;
-                const len = array.len;
+                const len = array.items.len;
 
                 if (i >= 0 and i < len) {
-                    array[@intCast(i)] = value;
+                    array.items[@intCast(i)] = value;
                 }
             },
 
@@ -225,6 +263,7 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
             .eq => left_val == right_val,
             .neq => left_val != right_val,
             .gt => left_val > right_val,
+            .gte => left_val >= right_val,
             else => return error.UnknowIntegerOperation,
         };
         return try vm.push(.{ .boolean = result });
@@ -237,9 +276,51 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
             .eq => left_val == right_val,
             .neq => left_val != right_val,
             .gt => left_val > right_val,
+            .gte => left_val >= right_val,
             else => return error.UnknowfloatOperation,
         };
         return try vm.push(.{ .boolean = result });
+    }
+
+    if (left == .obj and right == .obj) {
+        const right_t = right.obj.type;
+        const left_t = left.obj.type;
+
+        if (right_t == .string) {
+            switch (left_t) {
+                .string => |lstr| {
+                    const rstr = right_t.string;
+                    const r = std.mem.eql(u8, lstr, rstr);
+                    return vm.push(.{ .boolean = if (op == .eq) r else if (op == .neq) !r else false });
+                },
+                else => {},
+            }
+        }
+
+        if (right_t == .array) {
+            switch (left_t) {
+                .array => |larr| {
+                    const rarr = right_t.array;
+                    var r = true;
+
+                    if (rarr.items.len == larr.items.len) {
+                        for (larr.items, rarr.items) |le, re| {
+                            if (!std.meta.eql(le, re)) {
+                                r = false;
+                                break;
+                            }
+                        }
+                    } else {
+                        r = false;
+                    }
+
+                    return vm.push(
+                        .{ .boolean = if (op == .eq) r else if (op == .neq) !r else false },
+                    );
+                },
+                else => {},
+            }
+        }
     }
 
     // if (rtype == .float and ltype == .integer) {
@@ -266,5 +347,5 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
     //     return try vm.push(.{ .boolean = .{ .value = result } });
     // }
 
-    return error.UnsupportedOperation;
+    try vm.push(.{ .boolean = if (op == .eq) false else true });
 }

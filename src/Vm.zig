@@ -125,15 +125,34 @@ pub fn run(vm: *Vm) !void {
                 try vm.push(.{ .boolean = true });
             },
 
+            // .array => {
+            //     const num_elements = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
+            //     vm.currentFrame().ip += 2;
+            //     const start_index = vm.sp - num_elements;
+            //     const end_index = vm.sp;
+            //
+            //     var array = try vm.allocator.alloc(Value, end_index - start_index);
+            //     for (start_index..end_index) |i| {
+            //         array[i - start_index] = vm.stack[i];
+            //     }
+            //
+            //     vm.sp = vm.sp - num_elements;
+            //
+            //     const obj = try memory.allocateObject(vm, .{ .array = array });
+            //     errdefer vm.allocator.destroy(obj);
+            //
+            //     try vm.push(.{ .obj = obj });
+            // },
+
             .array => {
                 const num_elements = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
                 vm.currentFrame().ip += 2;
                 const start_index = vm.sp - num_elements;
                 const end_index = vm.sp;
 
-                var array = try vm.allocator.alloc(Value, end_index - start_index);
+                var array = try std.ArrayList(Value).initCapacity(vm.allocator, end_index - start_index);
                 for (start_index..end_index) |i| {
-                    array[i - start_index] = vm.stack[i];
+                    try array.append(vm.stack[i]);
                 }
 
                 vm.sp = vm.sp - num_elements;
@@ -246,7 +265,7 @@ pub fn run(vm: *Vm) !void {
 
             .add, .sub, .mul, .div => try operation.executeBinary(vm, op),
 
-            .eq, .neq, .gt => try operation.executeComparison(vm, op),
+            .eq, .neq, .gt, .gte => try operation.executeComparison(vm, op),
 
             .not, .min => try operation.executePrefix(vm, op),
 
