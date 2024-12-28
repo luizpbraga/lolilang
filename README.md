@@ -1,45 +1,46 @@
-Loli is an interpreter that sometimes does not know how to interpret.
+Loli is a  bytecode compiler
 
 > > loli gos brrr
 
 ##### Zig Version
 
-    zig-linux-x86_64-0.12.0-dev.1372+8457439a8
+    zig master
 
 ### code example
 
 #### Variable Declaration
 
 ```go
-// multi-line declaration
-const {
-    ONE = 1
-    TWO = 2
-}
-
 var t = 3
+sex := true
 ```
 
 #### Function
 
-```go
+```rust
 // functions (sometimes it does not work HEHE)
-const PI = 3.14
-
-func readFileExample(file_path) {
-    const txt = readFile(file_path)
-    defer { closeFile(txt) }
-
-    var sum = 0
-    for ch, idx in txt {
-        sum += 1
-        print(ch, idx)
+fn fibonacci(n, fib) {
+    if n <= 1 { 
+      return fib[n]
+    }
+      
+    if fib[n-1] == null {
+      fib[n-1] = fibonacci(n-1, fib)
     }
 
-    return txt.len == sum
+    if fib[n-2] == null {
+      fib[n-2] = fibonacci(n-2, fib)
+    }
+
+    fib[n] = fib[n-1] + fib[n-2]
+
+    return fib[n]
 }
 
-const foo = func(x, y) {
+fib := { 0: 1, 1: 1 }
+fibonacci(45, fib)
+
+var foo = fn(x, y) {
     var hello = "Hello Loli"
     return if x > y { x } else { hello }
 }
@@ -51,7 +52,7 @@ const foo = func(x, y) {
 ```js
 var my_name_is = "Eminem";
 var yoyo = [1, 2, 3, 4];
-print(my_name_is.len != yoyo.len);
+@print(my_name_is.len != yoyo.len);
 ```
 
 #### Arrays
@@ -60,7 +61,7 @@ print(my_name_is.len != yoyo.len);
 // we have arrays
 var v = [1, true, "2", false, 4];
 v[0] += 1;
-const v_size = v.len;
+len := v.len;
 ```
 
 #### Hashmap
@@ -72,9 +73,10 @@ const map = {
     2: "b",
     true: false,
     "list": {1,2,3}
+    .tags: [.x, .x, .x]
 }
 
-print( map["list"], map[true], map[1] )
+@print( map["list"], map.list, map[true], map[1], map.tags )
 ```
 
 #### Loops
@@ -83,23 +85,30 @@ print( map["list"], map[true], map[1] )
 // loops
 var i = 0
 for i < 100 {
-    println(i)
-    i+=1
+    @print(i)
+    i = i + 1
 }
 
-const range = 1..5
-for idx, item in range {
-    const str = idx + " " + item
-    print(str)
+range := [1, 2, 3]
+for item in range {
+    str := item + " " + item
+    @print(str)
+}
+
+for i in 10 {
+    @print("Integer Loop")
+}
+
+for i in 10..100 {
+    @print("Range Loop")
 }
 ```
 
 #### Switch
 
-```js
+```rust
 // switch
-const y = 10
-const x = switch y {
+x := match 10 {
     1 => { 0 }
 
     2 => { 1 }
@@ -109,13 +118,11 @@ const x = switch y {
 ```
 
 #### to implement:
-
     1. enum
     2. struct
     3. scopes ({ ... })
     4. erros KKKKK
 
 #### to fix:
-
     + hashmap sometimes returns null
-    + memory leaks
+    + segfault in some assignments
