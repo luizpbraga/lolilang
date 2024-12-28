@@ -77,7 +77,10 @@ pub fn runVm(allocator: std.mem.Allocator, input: []const u8) !void {
     var parser = Parser.new(allocator, &lexer);
     defer parser.deinit();
 
-    const node = try parser.parse();
+    const node = parser.parse() catch |err| {
+        std.debug.print("{}", .{err});
+        return;
+    };
 
     var compiler: Compiler = try .init(allocator);
     defer compiler.deinit();

@@ -201,11 +201,19 @@ pub fn run(vm: *Vm) !void {
                 try operation.executeIndex(vm, &left, &index);
             },
 
+            .method_set => {
+                const field_pos = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
+                vm.currentFrame().ip += 1;
+                const value = try vm.pop();
+                var left = try vm.pop();
+                const index = vm.constants[field_pos];
+                try operation.setIndex(vm, &left, index, value);
+            },
+
             .index_set => {
                 const value = try vm.pop();
                 const index = try vm.pop();
                 var left = try vm.pop();
-                // left.obj.type.array[@intCast(index.integer)] = value;
                 try operation.setIndex(vm, &left, index, value);
             },
 
@@ -263,7 +271,7 @@ pub fn run(vm: *Vm) !void {
                 // ??????????????????????????????????????????????????/
             },
 
-            .add, .sub, .mul, .div => try operation.executeBinary(vm, op),
+            .add, .sub, .mul, .div, .mod => try operation.executeBinary(vm, op),
 
             .eq, .neq, .gt, .gte => try operation.executeComparison(vm, op),
 

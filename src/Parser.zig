@@ -34,6 +34,7 @@ pub const Precedence = enum {
         .@"<=" = .lessgreater,
         .@"+" = .sum,
         .@"-" = .sum,
+        .@"%" = .sum,
         .@"/" = .product,
         .@"*" = .product,
         .@"(" = .call,
@@ -78,6 +79,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) Parser {
     parser.prefix_fns.put(.false, parseBoolean);
     parser.prefix_fns.put(.null, parseNull);
     parser.prefix_fns.put(.@";", parseNull);
+    parser.prefix_fns.put(.@"}", parseNull);
     parser.prefix_fns.put(.@"[", parseArray);
     parser.prefix_fns.put(.@"{", parseHash);
     parser.prefix_fns.put(.@"fn", parseFunction);
@@ -96,6 +98,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) Parser {
     parser.infix_fns.put(.@"..", parseRange);
     parser.infix_fns.put(.@".", parseMethod);
     parser.infix_fns.put(.@"(", parseCall);
+    parser.infix_fns.put(.@"%", parseInfix);
     parser.infix_fns.put(.@"+", parseInfix);
     parser.infix_fns.put(.@"-", parseInfix);
     // parser.infix_fns.put(.@":", parseInfix);

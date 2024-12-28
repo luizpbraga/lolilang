@@ -34,7 +34,7 @@ pub fn main() !void {
         }
     }
 
-    const input: []const u8 = std.fs.cwd().readFileAlloc(allocator, file_name, 1024) catch |err| switch (err) {
+    const input: []const u8 = std.fs.cwd().readFileAlloc(allocator, file_name, std.math.maxInt(usize)) catch |err| switch (err) {
         error.FileNotFound => {
             std.log.err("file {s} not found", .{file_name});
             return;

@@ -239,57 +239,97 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 }
 
                 if (assignment.name.* == .identifier) {
-                    try c.compile(.{ .expression = assignment.name });
-                    try c.compile(.{ .expression = assignment.value });
                     const symbol = c.symbols.?.resolve(assignment.name.identifier.value) orelse {
                         return error.UndefinedVariable;
                     };
+
+                    switch (assignment.operator) {
+                        .@"=" => {
+                            try c.compile(.{ .expression = assignment.value });
+                        },
+
+                        .@"+=" => {
+                            try c.compile(.{ .expression = assignment.name });
+                            try c.compile(.{ .expression = assignment.value });
+                            try c.emit(.add, &.{});
+                        },
+
+                        .@"-=" => {
+                            try c.compile(.{ .expression = assignment.name });
+                            try c.compile(.{ .expression = assignment.value });
+                            try c.emit(.sub, &.{});
+                        },
+
+                        .@"*=" => {
+                            try c.compile(.{ .expression = assignment.name });
+                            try c.compile(.{ .expression = assignment.value });
+                            try c.emit(.mul, &.{});
+                        },
+
+                        else => return error.InvalidAssingmentOperation,
+                    }
+
                     const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
-                    try c.emit(op, &.{symbol.index});
-                    // try c.emit(.null, &.{});
+                    try c.emit(op, &.{symbol.index}); // sapporra emite um pop
+                    try c.emit(.null, &.{}); // will be pop, no integer overflow. why?
+                    return;
                 }
 
                 if (assignment.name.* == .index) {
-                    try c.compile(.{ .expression = assignment.name.index.left });
-                    try c.compile(.{ .expression = assignment.name.index.index });
-                    try c.compile(.{ .expression = assignment.value });
+                    const left = assignment.name.index.left;
+                    const index = assignment.name.index.index;
+                    const value = assignment.value;
+
+                    switch (assignment.operator) {
+                        .@"=" => {
+                            try c.compile(.{ .expression = left });
+                            try c.compile(.{ .expression = index });
+                            try c.compile(.{ .expression = value });
+                        },
+
+                        // .@"+=" => {
+                        //     try c.compile(.{ .expression = left });
+                        //     try c.compile(.{ .expression = index });
+                        //     try c.compile(.{ .expression = value });
+                        //     try c.emit(.add, &.{});
+                        // },
+                        //
+                        // .@"-=" => {
+                        //     try c.compile(.{ .expression = left });
+                        //     try c.compile(.{ .expression = index });
+                        //     try c.compile(.{ .expression = value });
+                        //     try c.emit(.sub, &.{});
+                        // },
+                        //
+                        // .@"*=" => {
+                        //     try c.compile(.{ .expression = left });
+                        //     try c.compile(.{ .expression = index });
+                        //     try c.compile(.{ .expression = value });
+                        //     try c.emit(.mul, &.{});
+                        // },
+
+                        else => return error.InvalidAssingmentOperation,
+                    }
+
                     try c.emit(.index_set, &.{});
+                    return;
                 }
+
+                if (assignment.name.* == .method) {
+                    try c.compile(.{ .expression = assignment.name.method.caller });
+                    const pos = try c.addConstants(.{ .tag = assignment.name.method.method.value });
+                    try c.compile(.{ .expression = assignment.value });
+                    try c.emit(.method_set, &.{pos});
+                    return;
+                }
+
+                return error.InvalidAssingmentOperation;
 
                 //
                 //     const symbol = c.symbols.?.resolve(assignment.name.identifier.value) orelse {
                 //         return error.UndefinedVariable;
                 //     };
                 //
-                //     switch (assignment.operator) {
-                //         .@"+=" => {
-                //             try c.compile(.{ .expression = assignment.name });
-                //             try c.compile(.{ .expression = assignment.value });
-                //             try c.emit(.add, &.{});
-                //         },
-                //
-                //         .@"-=" => {
-                //             try c.compile(.{ .expression = assignment.name });
-                //             try c.compile(.{ .expression = assignment.value });
-                //             try c.emit(.sub, &.{});
-                //         },
-                //
-                //         .@"*=" => {
-                //             try c.compile(.{ .expression = assignment.name });
-                //             try c.compile(.{ .expression = assignment.value });
-                //             try c.emit(.mul, &.{});
-                //         },
-                //
-                //         .@"=" => {
-                //             try c.compile(.{ .expression = assignment.value });
-                //         },
-                //
-                //         else => return error.InvalidAssingmentOperation,
-                //     }
-                //
-                //     const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
-                //     try c.emit(op, &.{symbol.index}); // sapporra emite um pop
-                //     try c.emit(.null, &.{}); // will be pop, no integer overflow. why?
             },
 
             .infix => |infix| {
@@ -322,6 +362,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     .@">=" => .gte,
                     .@"==" => .eq,
                     .@"!=" => .neq,
+                    .@"%" => .mod,
                     else => return error.UnknowOperator,
                 };
                 try c.emit(op, &.{});
@@ -597,14 +638,11 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             .for_range => |forloop| {
                 const iterable = forloop.iterable;
 
+                // load the range as a constant
                 const pos = try c.addConstants(.null);
                 try c.emit(.constant, &.{pos});
-
                 try c.compile(.{ .expression = iterable });
                 try c.emit(.set_range, &.{pos});
-
-                const symbol = try c.symbols.?.define(forloop.ident);
-                //std.debug.print("name:{s} {?}\n", .{ forloop.ident, c.symbols.?.store.get(forloop.ident) });
 
                 const len = c.insLen();
                 // in this block, the last instruction must be boolean
@@ -616,6 +654,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
                 // compiling the consequence
                 if (forloop.body.statements.len != 0) {
+                    const symbol = try c.symbols.?.define(forloop.ident);
                     try c.emit(.setgv, &.{symbol.index});
                     try c.compile(.{ .statement = .{ .block = forloop.body } });
                 }
@@ -633,8 +672,6 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
                 // // always jumb: null is returned
                 try c.emit(.null, &.{});
-
-                _ = c.symbols.?.store.swapRemove(forloop.ident);
             },
         },
     }

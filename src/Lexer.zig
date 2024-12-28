@@ -108,6 +108,7 @@ pub fn nextToken(self: *Self) Token {
 
     const tok = switch (self.ch) {
         '^' => newToken(.@"^"),
+        '%' => newToken(.@"%"),
         ';' => newToken(.@";"),
         ',' => newToken(.@","),
         '(' => newToken(.@"("),

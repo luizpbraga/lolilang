@@ -44,6 +44,7 @@ pub const Type = enum {
     null,
 
     // operators
+    @"%",
     @"=",
     @":=",
     @"!",

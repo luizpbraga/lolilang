@@ -187,6 +187,7 @@ pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
             .sub => left_val - right_val,
             .mul => left_val * right_val,
             .div => @divTrunc(left_val, right_val),
+            .mod => @mod(left_val, right_val),
             else => unreachable,
         };
         return try vm.push(.{ .integer = result });
@@ -229,6 +230,8 @@ pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
         }
     }
 
+    std.debug.print("{} {} {}", .{ left, op, right });
+
     return error.UnsupportedOperation;
 }
 
@@ -239,6 +242,17 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
     if (right == .boolean and left == .boolean) {
         const right_val = right.boolean;
         const left_val = left.boolean;
+        const result = switch (op) {
+            .eq => left_val == right_val,
+            .neq => left_val != right_val,
+            else => return error.UnknowBooleanOperation,
+        };
+        return try vm.push(.{ .boolean = result });
+    }
+
+    if (right == .char and left == .char) {
+        const right_val = right.char;
+        const left_val = left.char;
         const result = switch (op) {
             .eq => left_val == right_val,
             .neq => left_val != right_val,

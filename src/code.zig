@@ -16,6 +16,7 @@ pub const Opcode = enum(u8) {
     setlv,
     /// get a local constant on the stack
     getlv,
+    mod,
     /// remove the topmost elements of the stack and add it
     add,
     /// remove the topmost elements of the stack and sub it
@@ -69,6 +70,7 @@ pub const Opcode = enum(u8) {
 
     set_range,
     get_range,
+    method_set,
 
     /// numbers of operands (bytes) for a given upcode
     /// optimize: use a single small integer
@@ -87,6 +89,7 @@ pub const Opcode = enum(u8) {
         .getlv = &.{1},
         .call = &.{1},
         .method = &.{1},
+        .method_set = &.{1},
         .getbf = &.{1},
         .jumpifnottrue = &.{2},
         .jump = &.{2},
