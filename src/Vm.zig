@@ -104,6 +104,17 @@ pub fn run(vm: *Vm) !void {
 
         switch (op) {
             .set_range => {
+                const start = try vm.pop();
+                const end = try vm.pop();
+
+                if (start != .integer or end != .integer) {
+                    return error.InvalidRange;
+                }
+
+                try vm.push(.{ .range = .{ .start = @intCast(start.integer), .end = @intCast(end.integer), .value = &.null } });
+            },
+
+            .to_range => {
                 const pos = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
                 vm.currentFrame().ip += 1;
                 const value = try vm.pop();

@@ -69,6 +69,7 @@ pub const Opcode = enum(u8) {
     brk,
 
     set_range,
+    to_range,
     get_range,
     method_set,
 
@@ -85,7 +86,8 @@ pub const Opcode = enum(u8) {
         .getgv = &.{2},
         .setlv = &.{1},
         .get_range = &.{1},
-        .set_range = &.{1},
+        // .set_range = &.{1},
+        .to_range = &.{1},
         .getlv = &.{1},
         .call = &.{1},
         .method = &.{1},

@@ -513,43 +513,36 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
             // TODO: think !!
             .range => |range| {
-                if (range.start.* != .integer) return error.InvalidRangeIndex;
-                if (range.end.* != .integer) return error.InvalidRangeIndex;
-                const pos = try c.addConstants(.{ .range = .{
-                    .start = @intCast(range.start.integer.value),
-                    .end = @intCast(range.end.integer.value),
-                    .value = &.null,
-                } });
-                try c.emit(.constant, &.{pos});
+                try c.compile(.{ .expression = range.end });
+                try c.compile(.{ .expression = range.start });
+                try c.emit(.set_range, &.{});
             },
 
-            // BUG: empty blocks (non expressions) overflows
-            // PROPOSE: every block must return null, unless a break statement is found
             .@"if" => |ifexp| {
-                // AST if (condition) { consequence } else { alternative }
-                //
-                // compiling the condition
+                if (ifexp.consequence.statements.len == 0) {
+                    try c.emit(.null, &.{});
+                    return;
+                }
+
                 try c.compile(.{ .expression = ifexp.condition });
+
+                // since a new scope will be created, we need the counter
+                const len = c.insLen();
+
+                try c.enterScope();
 
                 const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
 
                 // compiling the consequence
-
-                if (ifexp.consequence.statements.len == 0) {
-                    try c.emit(.null, &.{});
-                } else {
-                    try c.compile(.{ .statement = .{ .block = ifexp.consequence } });
-                }
+                try c.compile(.{ .statement = .{ .block = ifexp.consequence } });
 
                 // statements add a pop in the end, wee drop the last pop (if return)
-                if (c.lastInstructionIs(.pop)) {
-                    c.removeLastPop();
-                }
+                if (c.lastInstructionIs(.pop)) c.removeLastPop();
 
                 // always jumb: null is returned
                 const jum_pos = try c.emitPos(.jump, &.{9999});
+                const after_consequence_position = c.insLen() + len;
 
-                const after_consequence_position = c.insLen();
                 // replases the 9999 (.jump_if_not_true_pos) to the correct operand (after_consequence_position);
                 try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
 
@@ -561,9 +554,11 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     try c.emit(.null, &.{});
                 }
 
-                const after_alternative_pos = c.insLen();
+                const after_alternative_pos = c.insLen() + len;
                 // replases the 9999 (.jump) to the correct operand (after_alternative_pos);
                 try c.changeOperand(jum_pos, after_alternative_pos);
+
+                try c.leaveCurrentScope();
             },
 
             .match => |match| {
@@ -581,10 +576,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                         try c.emit(.null, &.{});
                     } else {
                         try c.compile(.{ .statement = .{ .block = arm.block } });
-                    }
-
-                    if (c.lastInstructionIs(.pop)) {
-                        c.removeLastPop();
+                        if (c.lastInstructionIs(.pop)) c.removeLastPop();
                     }
 
                     const jum_pos = try c.emitPos(.jump, &.{9999});
@@ -595,8 +587,12 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 }
 
                 if (match.else_block) |block| {
-                    try c.compile(.{ .statement = .{ .block = block } });
-                    if (c.lastInstructionIs(.pop)) c.removeLastPop();
+                    if (block.statements.len == 0) {
+                        try c.emit(.null, &.{});
+                    } else {
+                        try c.compile(.{ .statement = .{ .block = block } });
+                        if (c.lastInstructionIs(.pop)) c.removeLastPop();
+                    }
                 } else {
                     try c.emit(.null, &.{});
                 }
@@ -642,7 +638,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 const pos = try c.addConstants(.null);
                 try c.emit(.constant, &.{pos});
                 try c.compile(.{ .expression = iterable });
-                try c.emit(.set_range, &.{pos});
+                try c.emit(.to_range, &.{pos});
 
                 const len = c.insLen();
                 // in this block, the last instruction must be boolean
