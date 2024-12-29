@@ -111,7 +111,11 @@ pub fn run(vm: *Vm) !void {
                     return error.InvalidRange;
                 }
 
-                try vm.push(.{ .range = .{ .start = @intCast(start.integer), .end = @intCast(end.integer), .value = &.null } });
+                try vm.push(.{ .range = .{
+                    .start = @intCast(start.integer),
+                    .end = @intCast(end.integer),
+                    .value = &.null,
+                } });
             },
 
             .to_range => {
@@ -131,29 +135,9 @@ pub fn run(vm: *Vm) !void {
                     try vm.push(.{ .boolean = false });
                     continue;
                 };
-                // _ = try vm.pop();
                 try vm.push(value);
                 try vm.push(.{ .boolean = true });
             },
-
-            // .array => {
-            //     const num_elements = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-            //     vm.currentFrame().ip += 2;
-            //     const start_index = vm.sp - num_elements;
-            //     const end_index = vm.sp;
-            //
-            //     var array = try vm.allocator.alloc(Value, end_index - start_index);
-            //     for (start_index..end_index) |i| {
-            //         array[i - start_index] = vm.stack[i];
-            //     }
-            //
-            //     vm.sp = vm.sp - num_elements;
-            //
-            //     const obj = try memory.allocateObject(vm, .{ .array = array });
-            //     errdefer vm.allocator.destroy(obj);
-            //
-            //     try vm.push(.{ .obj = obj });
-            // },
 
             .array => {
                 const num_elements = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
