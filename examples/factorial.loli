@@ -1,0 +1,14 @@
+fn factorial(n) {
+  f := 1
+  i := 1
+  for i <= n {
+    f *= i
+    i += 1
+  }
+
+  return f
+}
+
+for n in 13 {
+  @print(n, factorial(n))
+}
