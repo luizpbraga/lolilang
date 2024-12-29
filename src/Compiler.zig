@@ -519,11 +519,11 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             .@"if" => |ifexp| {
-                if (ifexp.consequence.statements.len == 0) {
-                    try c.emit(.null, &.{});
-                    return;
-                }
-
+                // if (ifexp.consequence.statements.len == 0) {
+                //     try c.emit(.null, &.{});
+                //     return;
+                // }
+                //
                 try c.compile(.{ .expression = ifexp.condition });
 
                 // since a new scope will be created, we need the counter
@@ -533,11 +533,14 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
                 const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
 
-                // compiling the consequence
-                try c.compile(.{ .statement = .{ .block = ifexp.consequence } });
-
-                // statements add a pop in the end, wee drop the last pop (if return)
-                if (c.lastInstructionIs(.pop)) c.removeLastPop();
+                if (ifexp.consequence.statements.len == 0) {
+                    try c.emit(.null, &.{});
+                } else {
+                    // compiling the consequence
+                    try c.compile(.{ .statement = .{ .block = ifexp.consequence } });
+                    // statements add a pop in the end, wee drop the last pop (if return)
+                    if (c.lastInstructionIs(.pop)) c.removeLastPop();
+                }
 
                 // always jumb: null is returned
                 const jum_pos = try c.emitPos(.jump, &.{9999});
@@ -547,9 +550,13 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
 
                 if (ifexp.alternative) |alt| {
-                    try c.compile(.{ .statement = .{ .block = alt } });
-                    // statements add a pop in the end, wee drop the last pop (if return)
-                    if (c.lastInstructionIs(.pop)) c.removeLastPop();
+                    if (alt.statements.len == 0) {
+                        try c.emit(.null, &.{});
+                    } else {
+                        try c.compile(.{ .statement = .{ .block = alt } });
+                        // statements add a pop in the end, wee drop the last pop (if return)
+                        if (c.lastInstructionIs(.pop)) c.removeLastPop();
+                    }
                 } else {
                     try c.emit(.null, &.{});
                 }
@@ -605,9 +612,13 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             .@"for" => |forloop| {
-                const len = c.insLen();
+                const jump_pos = c.insLen();
+
                 try c.compile(.{ .expression = forloop.condition });
 
+                const start_pos = c.insLen();
+
+                try c.enterScope();
                 // fake insrtuction position
                 const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
 
@@ -621,14 +632,15 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 // statements add a pop in the end, wee drop the last pop (if return)
                 if (c.lastInstructionIs(.pop)) c.removeLastPop();
 
-                try c.emit(.jump, &.{len});
+                try c.emit(.jump, &.{jump_pos});
 
                 // this is the real jumpifnottrue position. this is how deep the compiled forloop.consequence is
-                const after_consequence_position = c.insLen();
+                const after_consequence_position = c.insLen() + start_pos;
                 try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
 
                 // // always jumb: null is returned
                 try c.emit(.null, &.{});
+                try c.leaveCurrentScope();
             },
 
             .for_range => |forloop| {
