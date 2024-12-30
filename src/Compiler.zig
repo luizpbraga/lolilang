@@ -162,7 +162,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             // TODO: make it work in if/match/for
             .@"break" => |ret| {
                 try c.compile(.{ .expression = ret.value });
-                try c.emit(.brk, &.{});
+                try c.emit(.jump, &.{});
             },
 
             .@"fn" => |func_stmt| {
@@ -522,10 +522,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.compile(.{ .expression = ifexp.condition });
 
                 // since a new scope will be created, we need the counter
-                const len = c.insLen();
-
-                try c.enterScope();
-
+                // const len = c.insLen();
                 const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
 
                 if (ifexp.consequence.statements.len == 0) {
@@ -539,7 +536,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
                 // always jump: null is returned
                 const jump_pos = try c.emitPos(.jump, &.{9999});
-                const after_consequence_position = c.insLen() + len;
+                const after_consequence_position = c.insLen();
 
                 // Replaces the 9999 (.jump_if_not_true_pos) to the correct operand (after_consequence_position);
                 try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
@@ -556,11 +553,9 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     try c.emit(.null, &.{});
                 }
 
-                const after_alternative_pos = c.insLen() + len;
+                const after_alternative_pos = c.insLen();
                 // Replaces the 9999 (.jump) to the correct operand (after_alternative_pos);
                 try c.changeOperand(jump_pos, after_alternative_pos);
-
-                try c.leaveCurrentScope();
             },
 
             .match => |match| {
@@ -607,13 +602,11 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             .@"for" => |forloop| {
+                // const jump_pos = c.insLenRec();
                 const jump_pos = c.insLen();
 
                 try c.compile(.{ .expression = forloop.condition });
 
-                const start_pos = c.insLen();
-
-                try c.enterScope();
                 // fake instruction position
                 const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
 
@@ -629,27 +622,22 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(.jump, &.{jump_pos});
 
                 // this is the real jumpifnottrue position. this is how deep the compiled forloop.consequence is
-                const after_consequence_position = c.insLen() + start_pos;
+                // const after_consequence_position = c.insLen() + start_pos;
+                const after_consequence_position = c.insLen();
                 try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
 
                 // // always jump: null is returned
                 try c.emit(.null, &.{});
-                try c.leaveCurrentScope();
             },
 
             .for_range => |forloop| {
-                const iterable = forloop.iterable;
-
                 // cast the expression as a range and load it as a constant
                 const pos = try c.addConstants(.null);
                 try c.emit(.constant, &.{pos});
-                try c.compile(.{ .expression = iterable });
+                try c.compile(.{ .expression = forloop.iterable });
                 try c.emit(.to_range, &.{pos});
 
                 const jump_pos = c.insLen();
-
-                try c.enterScope();
-
                 // in this block, the last instruction must be boolean
                 {
                     try c.emit(.get_range, &.{pos});
@@ -661,7 +649,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 if (forloop.body.statements.len == 0) {
                     try c.emit(.null, &.{});
                 } else {
-                    const symbol = try c.symbols.?.defineLocal(forloop.ident);
+                    const symbol = try c.symbols.?.define(forloop.ident);
                     try c.emit(.setlv, &.{symbol.index});
                     try c.compile(.{ .statement = .{ .block = forloop.body } });
                     // statements add a pop in the end, wee drop the last pop (if return)
@@ -671,15 +659,13 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(.jump, &.{jump_pos});
 
                 // this is the real jumpifnottrue position. this is how deep the compiled forloop.consequence is
-                const after_consequence_position = c.insLen() + jump_pos;
+                const after_consequence_position = c.insLen();
 
                 // Replaces the 9999 (.jump_if_not_true_pos) to the correct operand (after_consequence_position);
                 try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
 
                 // // always jump: null is returned
                 try c.emit(.null, &.{});
-
-                try c.leaveCurrentScope();
             },
         },
     }
@@ -688,6 +674,17 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 fn insLen(c: *Compiler) usize {
     var len: usize = 0;
     for (c.currentInstruction().items) |ins| len += ins.len;
+    return len;
+}
+
+fn insLenRec(c: *Compiler) usize {
+    var len: usize = 0;
+    var si = c.scope_index;
+    while (true) {
+        for (c.scopes.items[si].instructions.items) |ins| len += ins.len;
+        if (si == 0) break;
+        si -= 1;
+    }
     return len;
 }
 

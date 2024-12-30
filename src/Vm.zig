@@ -219,18 +219,18 @@ pub fn run(vm: *Vm) !void {
                 vm.globals[global_index] = value;
             },
 
+            .getgv => {
+                const global_index = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
+                vm.currentFrame().ip += 2;
+                try vm.push(vm.globals[global_index].?);
+            },
+
             .setlv => {
                 const local_index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
                 vm.currentFrame().ip += 1;
                 const frame = vm.currentFrame();
                 const value = try vm.pop();
                 vm.stack[@as(usize, @intCast(frame.bp)) + local_index] = value;
-            },
-
-            .getgv => {
-                const global_index = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-                vm.currentFrame().ip += 2;
-                try vm.push(vm.globals[global_index].?);
             },
 
             .getlv => {

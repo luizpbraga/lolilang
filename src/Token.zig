@@ -82,6 +82,7 @@ pub const Type = enum {
     @".",
     // range
     @"..",
+    @"..=",
     @"...",
 
     // keywords

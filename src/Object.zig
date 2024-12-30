@@ -18,6 +18,7 @@ pub const Value = union(enum) {
     tag: []const u8,
     builtin: Builtin,
     obj: *Object,
+    ref: *const Value,
 
     pub fn toRange(val: *const Value) Range {
         var end: usize = 0;

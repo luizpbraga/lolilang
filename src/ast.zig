@@ -331,6 +331,7 @@ pub const Array = struct {
 pub const Range = struct {
     start: *Expression,
     end: *Expression,
+    inc: enum { yes, no } = .no,
 
     pub fn tokenLiteral(_: *const @This()) []const u8 {
         return "..";

@@ -181,6 +181,12 @@ pub fn nextToken(self: *Self) Token {
         '.' => switch (self.peekChar()) {
             '.' => x: {
                 self.readChar();
+
+                if (self.peekChar() == '=') {
+                    self.readChar();
+                    break :x newToken(.@"..=");
+                }
+
                 break :x newToken(.@"..");
             },
             else => newToken(.@"."),

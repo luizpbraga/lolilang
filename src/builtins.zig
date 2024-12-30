@@ -108,6 +108,6 @@ fn print(value: Value) void {
 
         .range => |r| std.debug.print("[range:{s}:{}:{}]", .{ @tagName(r.value.*), r.start, r.end }),
 
-        inline else => |o| std.debug.print("{d}", .{o}),
+        inline else => |o| std.debug.print("{}", .{o}),
     }
 }

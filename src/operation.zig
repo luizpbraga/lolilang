@@ -23,6 +23,8 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
                     const obj = try memory.allocateObject(vm, .{ .string = str });
                     return try vm.push(.{ .obj = obj });
                 }
+
+                return;
             }
 
             // TODO: optimize

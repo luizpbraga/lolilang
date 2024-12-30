@@ -42,6 +42,7 @@ pub const Precedence = enum {
         .@"[" = .index,
         .@"." = .index,
         .@".." = .index,
+        .@"..=" = .index,
         .@"=" = .assigne,
         .@":=" = .assigne,
         .@"+=" = .assigne,
@@ -96,6 +97,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) Parser {
 
     parser.infix_fns.put(.@"[", parseIndex);
     parser.infix_fns.put(.@"..", parseRange);
+    parser.infix_fns.put(.@"..=", parseRange);
     parser.infix_fns.put(.@".", parseMethod);
     parser.infix_fns.put(.@"(", parseCall);
     parser.infix_fns.put(.@"%", parseInfix);
@@ -985,6 +987,7 @@ pub fn parseRange(self: *Parser, left: *ast.Expression) anyerror!ast.Expression 
     var range = ast.Range{
         .start = left,
         .end = undefined,
+        .inc = if (self.curTokenIs(.@"..")) .no else .yes,
     };
 
     self.nextToken();
