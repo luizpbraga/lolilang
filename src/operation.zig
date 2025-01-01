@@ -142,7 +142,7 @@ pub fn setIndex(vm: *Vm, left: *Value, index: Value, value: Value) !void {
 }
 
 pub fn executePrefix(vm: *Vm, op: code.Opcode) !void {
-    const obj = try vm.pop();
+    const obj = vm.pop();
 
     switch (obj) {
         .integer => |integer| {
@@ -178,8 +178,8 @@ pub fn executePrefix(vm: *Vm, op: code.Opcode) !void {
 }
 
 pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
-    const right = try vm.pop();
-    const left = try vm.pop();
+    const right = vm.pop();
+    const left = vm.pop();
 
     if (right == .integer and left == .integer) {
         const right_val = right.integer;
@@ -238,8 +238,8 @@ pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
 }
 
 pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
-    const right = try vm.pop();
-    const left = try vm.pop();
+    const right = vm.pop();
+    const left = vm.pop();
 
     if (right == .boolean and left == .boolean) {
         const right_val = right.boolean;

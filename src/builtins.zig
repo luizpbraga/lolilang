@@ -1,19 +1,51 @@
 const std = @import("std");
 const Object = @import("Object.zig");
 const Value = Object.Value;
-
-pub var builtin_table = std.StaticStringMap(Object.Builtin).initComptime(
-    .{.{ "@print", Object.Builtin{ .name = "@print", .function = printBuiltin } }},
-);
+const memory = @import("memory.zig");
+const Vm = @import("Vm.zig");
 
 pub var list = [_]Object.Builtin{
     .{ .name = "@print", .function = printBuiltin },
     .{ .name = "len", .function = lenBuiltin },
-    .{ .name = "append", .function = appendBuiltin },
-    // .{ .name = "values", .function = lenBuiltin },
+    .{ .name = "@append", .function = appendBuiltin },
+    .{ .name = "@read", .function = readBuiltin },
+    .{ .name = "@write", .function = writeBuiltin },
 };
 
-pub fn lenBuiltin(arg: []const Value) Value {
+pub fn readBuiltin(vm: *Vm, arg: []const Value) Value {
+    if (arg[0] != .obj) return .null;
+
+    switch (arg[0].obj.type) {
+        .string => |str| {
+            const file = str;
+            const content = std.fs.cwd().readFileAlloc(vm.allocator, file, std.math.maxInt(usize)) catch return .null;
+            const obj = vm.allocator.create(Object) catch return .null;
+            obj.type = .{ .string = content };
+            vm.instantiateAtVm(obj) catch return .null;
+            return .{ .obj = obj };
+        },
+
+        else => return .null,
+    }
+}
+
+pub fn writeBuiltin(_: *Vm, arg: []const Value) Value {
+    if (arg.len != 2) return .null;
+
+    if (arg[0] != .obj) return .null;
+    if (arg[1] != .obj) return .null;
+
+    const filename = arg[0].obj.type.string;
+    const content = arg[1].obj.type.string;
+
+    var file = std.fs.cwd().createFile(filename, .{}) catch return .null;
+    defer file.close();
+    file.writeAll(content) catch return .null;
+
+    return .{ .integer = @intCast(content.len) };
+}
+
+pub fn lenBuiltin(_: *Vm, arg: []const Value) Value {
     if (arg[0] != .obj) return .null;
 
     return switch (arg[0].obj.type) {
@@ -24,7 +56,7 @@ pub fn lenBuiltin(arg: []const Value) Value {
     };
 }
 
-pub fn appendBuiltin(arg: []const Value) Value {
+pub fn appendBuiltin(_: *Vm, arg: []const Value) Value {
     if (arg[0] != .obj) return .null;
 
     switch (arg[0].obj.type) {
@@ -38,7 +70,7 @@ pub fn appendBuiltin(arg: []const Value) Value {
     return .null;
 }
 
-pub fn printBuiltin(args: []const Value) Value {
+pub fn printBuiltin(_: *Vm, args: []const Value) Value {
     for (args) |arg| {
         print(arg);
         std.debug.print(" ", .{});
@@ -85,6 +117,10 @@ fn print(value: Value) void {
 
             .function => {
                 std.debug.print("[function]", .{});
+            },
+
+            .closure => {
+                std.debug.print("[closure]", .{});
             },
         },
 

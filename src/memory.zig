@@ -77,6 +77,12 @@ pub fn freeObject(vm: *Vm, obj: *Object) void {
             vm.allocator.free(func.instructions);
             vm.allocator.destroy(obj);
         },
+
+        .closure => |cl| {
+            vm.allocator.free(cl.func.instructions);
+            vm.allocator.free(cl.free);
+            vm.allocator.destroy(obj);
+        },
     }
 }
 

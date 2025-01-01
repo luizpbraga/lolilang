@@ -8,6 +8,16 @@ type: Type,
 next: ?*Object = null,
 marked: bool = false,
 
+/// heap allocated values
+/// this name sucks, i know
+pub const Type = union(enum) {
+    string: []u8,
+    array: std.ArrayList(Value),
+    function: CompiledFn,
+    hash: Hash,
+    closure: Closure,
+};
+
 pub const Value = union(enum) {
     null,
     boolean: bool,
@@ -18,7 +28,6 @@ pub const Value = union(enum) {
     tag: []const u8,
     builtin: Builtin,
     obj: *Object,
-    ref: *const Value,
 
     pub fn toRange(val: *const Value) Range {
         var end: usize = 0;
@@ -156,16 +165,6 @@ fn arrayToRange(value: *Value) Range {
     };
 }
 
-/// heap allocated values
-/// this name sucks, i know
-pub const Type = union(enum) {
-    string: []u8,
-    array: std.ArrayList(Value),
-    /// compilation code
-    function: CompiledFn,
-    hash: Hash,
-};
-
 pub const CompiledFn = struct {
     /// function bytecode
     instructions: code.Instructions,
@@ -174,9 +173,18 @@ pub const CompiledFn = struct {
     num_parameters: usize = 0,
 };
 
+pub const Closure = struct {
+    func: CompiledFn,
+    free: []Value = &.{},
+
+    pub fn function(self: *const Closure) *CompiledFn {
+        return &self.func;
+    }
+};
+
 pub const Builtin = struct {
     name: []const u8,
-    function: *const fn ([]const Value) Value,
+    function: *const fn (*@import("Vm.zig"), []const Value) Value,
 };
 
 pub const Hash = struct {

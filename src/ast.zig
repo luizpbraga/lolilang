@@ -25,8 +25,9 @@ pub const Statement = union(enum) {
     con_block: ConBlock,
 
     @"return": Return,
-
     @"break": Break,
+    @"continue": Continue,
+
     @"defer": Defer,
 
     block: Block,
@@ -213,6 +214,18 @@ pub const Return = struct {
     }
 };
 
+pub const Continue = struct {
+    value: *Expression,
+
+    pub fn statementNode(self: *const @This()) void {
+        _ = self;
+    }
+
+    pub fn tokenLiteral(_: *const @This()) []const u8 {
+        return "continue";
+    }
+};
+
 pub const Break = struct {
     value: *Expression,
 
@@ -388,6 +401,7 @@ pub const Defer = struct {
 };
 
 pub const Function = struct {
+    name: ?Identifier = null,
     parameters: []Identifier,
     body: Block,
 

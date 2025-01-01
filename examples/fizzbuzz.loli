@@ -2,7 +2,7 @@ for i in 100 {
     div3 := i % 3 == 0;
     div5 := i % 5 == 0;
     
-    fb := match true {
+    fb := match {
         div3 and div5 => { "FizzBuzz" }
         
         div3 => { "Fizz" }

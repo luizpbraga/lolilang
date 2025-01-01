@@ -9,6 +9,7 @@ infix_fns: std.EnumMap(Token.Type, InfixParseFn),
 prefix_fns: std.EnumMap(Token.Type, PrefixParseFn),
 
 var NULL: ast.Expression = .null;
+var TRUE: ast.Expression = .{ .boolean = .{ .value = true } };
 
 pub const Precedence = enum {
     lower,
@@ -208,6 +209,22 @@ fn parseBreak(self: *Parser) anyerror!ast.Statement {
     }
 
     return .{ .@"break" = break_stmt };
+}
+
+fn parseContinue(self: *Parser) anyerror!ast.Statement {
+    var break_stmt: ast.Continue = .{
+        .value = undefined,
+    };
+
+    self.nextToken();
+
+    break_stmt.value = try self.parseExpression(.lower);
+
+    if (self.peekTokenIs(.@";")) {
+        self.nextToken();
+    }
+
+    return .{ .@"continue" = break_stmt };
 }
 
 fn parseAssignment(self: *Parser, name: *ast.Expression) anyerror!ast.Expression {
@@ -426,6 +443,8 @@ fn parseStatement(self: *Parser) !ast.Statement {
         .@"return" => try self.parseReturn(),
 
         .@"break" => try self.parseBreak(),
+
+        .@"continue" => try self.parseContinue(),
 
         .@"fn" => try self.parseFn(),
 
@@ -921,9 +940,12 @@ pub fn parseMatch(self: *Parser) anyerror!ast.Expression {
 
     self.nextToken();
 
-    match.value = try self.parseExpression(.lower);
-
-    if (!self.expectPeek(.@"{")) return error.MissingBrance;
+    if (self.curTokenIs(.@"{")) {
+        match.value = &TRUE;
+    } else {
+        match.value = try self.parseExpression(.lower);
+        if (!self.expectPeek(.@"{")) return error.MissingBrance;
+    }
 
     self.nextToken();
 
@@ -1053,8 +1075,7 @@ pub fn parseRange(self: *Parser, left: *ast.Expression) anyerror!ast.Expression 
 //     return .{ .multi_forloop_range = mflr };
 // }
 //
-pub fn parseForRange(self: *Parser, tk: Token, ident: ast.Identifier) anyerror!ast.Expression {
-    _ = tk;
+pub fn parseForRange(self: *Parser, ident: ast.Identifier) anyerror!ast.Expression {
     var flr = ast.ForRange{
         .ident = ident.value, // for <ident>[, <idx>] in <range> {
         .body = undefined,
@@ -1086,7 +1107,7 @@ pub fn parseForRange(self: *Parser, tk: Token, ident: ast.Identifier) anyerror!a
     return .{ .for_range = flr };
 }
 
-pub fn parseForLoopCondition(self: *Parser, _: Token, cond: *ast.Expression) anyerror!ast.Expression {
+pub fn parseForLoopCondition(self: *Parser, cond: *ast.Expression) anyerror!ast.Expression {
     var fl = ast.For{
         .condition = cond,
         .consequence = undefined,
@@ -1098,13 +1119,11 @@ pub fn parseForLoopCondition(self: *Parser, _: Token, cond: *ast.Expression) any
 
     return .{ .@"for" = fl };
 }
-//
+
 // /// for true { } or for idx, val in list {}
 pub fn parseFor(self: *Parser) anyerror!ast.Expression {
-    const token = self.cur_token;
-
     if (self.expectPeek(.@"{")) {
-        return error.ExpectSomeConditionOrIdentifier;
+        return .{ .@"for" = .{ .condition = &TRUE, .consequence = try self.parseBlock() } };
     }
 
     self.nextToken();
@@ -1113,11 +1132,11 @@ pub fn parseFor(self: *Parser) anyerror!ast.Expression {
 
     if (condition_or_ident.* == .identifier) {
         if (self.peekTokenIs(.in)) {
-            return self.parseForRange(token, condition_or_ident.identifier);
+            return self.parseForRange(condition_or_ident.identifier);
         }
     }
 
-    return self.parseForLoopCondition(token, condition_or_ident);
+    return self.parseForLoopCondition(condition_or_ident);
 }
 // fn parseEnum(self: *Parser) anyerror!ast.Expression {
 //     var enu = ast.Enum{

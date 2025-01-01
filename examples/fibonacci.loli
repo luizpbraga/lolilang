@@ -17,4 +17,5 @@ fn fibonacci(n, fib) {
 }
 
 fib := { 0: 1, 1: 1 }
-fibonacci(20, fib)
+fibonacci(35, fib)
+@print(fib)

@@ -3,11 +3,9 @@ const code = @import("code.zig");
 const Compiler = @import("Compiler.zig");
 
 const Scope = @This();
-instructions: std.ArrayList(code.Instructions),
-// instructions: *std.ArrayList(code.Instructions),
+instructions: *std.ArrayList(code.Instructions),
 last_ins: EmittedInstruction,
 prev_ins: EmittedInstruction,
-// idx: usize = 0,
 
 pub const EmittedInstruction = struct {
     opcode: code.Opcode,

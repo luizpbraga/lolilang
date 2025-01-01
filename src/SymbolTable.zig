@@ -6,6 +6,7 @@ const SymbolTable = @This();
 /// identifier name to scope map
 allocator: std.mem.Allocator,
 store: std.StringArrayHashMap(Symbol),
+frees: std.ArrayList(*Symbol),
 def_number: usize = 0,
 outer: ?*SymbolTable = null,
 
@@ -19,12 +20,15 @@ pub const ScopeType = enum {
     global,
     local,
     builtin,
+    free,
+    function,
 };
 
 pub fn init(alloc: std.mem.Allocator) SymbolTable {
     return .{
         .allocator = alloc,
         .store = .init(alloc),
+        .frees = .init(alloc),
         .def_number = 0,
     };
 }
@@ -39,10 +43,12 @@ pub fn initEnclosed(outer: *SymbolTable) !*SymbolTable {
 
 pub fn deinit(t: *SymbolTable) void {
     t.store.deinit();
+    t.frees.deinit();
 }
 
 pub fn deinitEnclosed(t: *SymbolTable) void {
     t.store.deinit();
+    t.frees.deinit();
     t.allocator.destroy(t);
 }
 
@@ -67,7 +73,28 @@ pub fn define(t: *SymbolTable, name: []const u8) !Symbol {
     return symbol;
 }
 
-pub fn defineLocal(t: *SymbolTable, name: []const u8) !Symbol {
+pub fn defineFunctionName(t: *SymbolTable, name: []const u8) !Symbol {
+    const symbol: Symbol = .{
+        .name = name,
+        .scope = .function,
+        .index = 0,
+    };
+    try t.store.put(name, symbol);
+    return symbol;
+}
+
+pub fn defineFree(t: *SymbolTable, original_symbol: *Symbol) !?*Symbol {
+    try t.frees.append(original_symbol);
+    const symbol: Symbol = .{
+        .name = original_symbol.name,
+        .scope = .free,
+        .index = t.frees.items.len - 1,
+    };
+    try t.store.put(original_symbol.name, symbol);
+    return t.store.getPtr(original_symbol.name);
+}
+
+pub fn defineLocal(t: *SymbolTable, name: []const u8) !?*Symbol {
     const symbol: Symbol = .{
         .name = name,
         .scope = .local,
@@ -75,14 +102,24 @@ pub fn defineLocal(t: *SymbolTable, name: []const u8) !Symbol {
     };
     try t.store.put(name, symbol);
     t.def_number += 1;
-    return symbol;
+    return t.store.getPtr(name);
 }
 
-pub fn resolve(s: *SymbolTable, name: []const u8) ?*Symbol {
+pub fn resolve(s: *SymbolTable, name: []const u8) !?*Symbol {
     var obj = s.store.getPtr(name);
     if (obj == null and s.outer != null) {
-        obj = s.outer.?.resolve(name);
-        return obj;
+        obj = try s.outer.?.resolve(name);
+
+        if (obj == null) {
+            return obj;
+        }
+
+        if (obj.?.scope == .global or obj.?.scope == .builtin) {
+            return obj;
+        }
+
+        const free = try s.defineFree(obj.?);
+        return free;
     }
     return obj;
 }

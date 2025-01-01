@@ -39,6 +39,7 @@ pub const Opcode = enum(u8) {
     gt,
     /// compare the two topmost op on the stack (!=)
     neq,
+    /// compare the two topmost op on the stack (>=)
     gte,
     /// infix op (-)
     min,
@@ -52,8 +53,9 @@ pub const Opcode = enum(u8) {
     array,
     /// add an hashmap
     hash,
-    /// index operation
+    /// set index operation
     index_set,
+    /// get index operation
     index_get,
     /// get the function and execute it on the top of the stack
     call,
@@ -64,14 +66,21 @@ pub const Opcode = enum(u8) {
     /// builtin methods
     getbf,
     /// TODO: add description
-    method,
-    /// TODO: add description
-    brk,
-
-    set_range,
-    to_range,
-    get_range,
+    method_get,
+    /// reassign a value from a method
     method_set,
+    /// TODO: add description
+    set_range,
+    /// add a new ranto to the top of the stack
+    to_range,
+    /// get the range from the stack
+    get_range,
+    /// wraps the compilerd function to a closure
+    closure,
+
+    current_closure,
+    /// closure free var
+    getfree,
 
     /// numbers of operands (bytes) for a given upcode
     /// optimize: use a single small integer
@@ -85,19 +94,19 @@ pub const Opcode = enum(u8) {
         .setgv = &.{2},
         .getgv = &.{2},
         .setlv = &.{1},
-        .get_range = &.{1},
-        // .set_range = &.{1},
-        .to_range = &.{1},
         .getlv = &.{1},
+        .get_range = &.{1},
+        .to_range = &.{1},
         .call = &.{1},
-        .method = &.{1},
+        .method_get = &.{1},
         .method_set = &.{1},
         .getbf = &.{1},
         .jumpifnottrue = &.{2},
         .jump = &.{2},
-        // the array lenght is the with
         .array = &.{2},
         .hash = &.{2},
+        .closure = &.{ 2, 1 },
+        .getfree = &.{1},
     });
 
     pub fn lookUp(op: u8) !OperandWidth {
@@ -200,7 +209,7 @@ pub fn formatInstruction(alloc: anytype, ins: Instructions) ![]const u8 {
             0 => try out.writer().print("{:0>4} {s}\n", .{ i, @tagName(op) }),
             1 => try out.writer().print("{:0>4} {s} {d}\n", .{ i, @tagName(op), operands[0] }),
             2 => try out.writer().print("{:0>4} {s} {d} {d}\n", .{ i, @tagName(op), operands[0], operands[1] }),
-            3 => try out.writer().print("{:0>4} {s} {d} {d} {d}\n", .{ i, @tagName(op), operands[0], operands[1], operands[2] }),
+            //3 => try out.writer().print("{:0>4} {s} {d} {d} {d}\n", .{ i, @tagName(op), operands[0], operands[1], operands[2] }),
             else => try out.writer().print("{d} Error: operand len {d} does not match defined {d}\n", .{ i, operands.len, operand_count }),
         }
 

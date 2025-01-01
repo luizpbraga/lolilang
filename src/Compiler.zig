@@ -11,13 +11,18 @@ const builtins = @import("builtins.zig");
 /// compiler: transverse the AST, find the ast nodes and evakueate then to objects, and add it to the pool
 const Compiler = @This();
 allocator: std.mem.Allocator,
-
 /// constants pool
 constants: std.ArrayList(Value),
 symbols: ?*SymbolTable,
-
 scopes: std.ArrayList(Scope),
 scope_index: usize,
+/// testing the logic
+loop: struct { top: usize = 0, start: usize = 0 } = .{},
+
+const Loop = struct {
+    loops: [10]struct { start: usize, end: usize },
+    idx: usize = 0,
+};
 
 pub fn init(alloc: std.mem.Allocator) !Compiler {
     const main_scope: Scope = .{
@@ -66,9 +71,12 @@ fn loadSymbol(c: *Compiler, s: *SymbolTable.Symbol) !void {
         .local => try c.emit(.getlv, &.{s.index}),
         .global => try c.emit(.getgv, &.{s.index}),
         .builtin => try c.emit(.getbf, &.{s.index}),
+        .free => try c.emit(.getfree, &.{s.index}),
+        .function => try c.emit(.current_closure, &.{}),
     }
 }
 
+/// TODO: make instructions a pointer
 pub fn enterScope(c: *Compiler) !void {
     try c.scopes.append(.{
         .prev_ins = undefined,
@@ -95,22 +103,6 @@ pub fn leaveScope(c: *Compiler) !code.Instructions {
     return try std.mem.concat(c.allocator, u8, last_scope.instructions.items);
 }
 
-pub fn leaveCurrentScope(c: *Compiler) !void {
-    c.scope_index -= 1;
-    var last_scope = c.scopes.pop();
-    defer {
-        for (last_scope.instructions.items) |ins| c.allocator.free(ins);
-        last_scope.instructions.deinit();
-    }
-
-    c.symbols = if (c.symbols) |s| b: {
-        defer s.deinitEnclosed();
-        break :b s.outer;
-    } else null;
-
-    try c.currentInstruction().append(try std.mem.concat(c.allocator, u8, last_scope.instructions.items));
-}
-
 /// Walks the AST recursively and evaluate the node, and add it the the pool
 pub fn compile(c: *Compiler, node: ast.Node) !void {
     switch (node) {
@@ -128,25 +120,20 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
             .block => |block| {
                 // try c.enterScope();
-                const len = block.statements.len;
-                for (0.., block.statements) |i, _stmt| {
+                // const len = block.statements.len;
+                for (block.statements) |_stmt| {
                     try c.compile(.{ .statement = _stmt });
-                    if ((_stmt == .@"return" or _stmt == .@"break") and i < len - 1) {
-                        std.debug.print("UnreachbleCode!\n\n", .{});
-                        @panic("UnreachbleCode");
-                    }
+                    // if ((_stmt == .@"return" or _stmt == .@"break") and i < len - 1) {
+                    //     std.debug.print("UnreachbleCode!\n\n", .{});
+                    //     @panic("UnreachbleCode");
+                    // }
                 }
-                // const instruction = try c.leaveScope();
-                // const pos = try c.addInstruction(instruction);
-                // _ = pos;
+                // try c.leaveScope();
             },
 
             .@"var" => |var_stmt| {
-                // var [var_stmt.name :: identifier] = [var_stmt.value :: *expression]
-                // var_stmt.value is the right side expression
-                try c.compile(.{ .expression = var_stmt.value });
-                //const identifier = var_stmt.name;
                 const symbol = try c.symbols.?.define(var_stmt.name.value);
+                try c.compile(.{ .expression = var_stmt.value });
                 const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
                 try c.emit(op, &.{symbol.index});
             },
@@ -162,13 +149,17 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             // TODO: make it work in if/match/for
             .@"break" => |ret| {
                 try c.compile(.{ .expression = ret.value });
-                try c.emit(.jump, &.{});
+                try c.emit(.jump, &.{c.loop.top});
+            },
+
+            .@"continue" => |ret| {
+                try c.compile(.{ .expression = ret.value });
+                try c.emit(.jump, &.{c.loop.start});
             },
 
             .@"fn" => |func_stmt| {
+                const symbol = try c.symbols.?.define(func_stmt.name.value);
                 const func = func_stmt.func;
-
-                const rs = try c.symbols.?.define(func_stmt.name.value);
 
                 try c.enterScope();
 
@@ -207,19 +198,9 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
                 const pos = try c.addConstants(.{ .obj = obj });
 
-                {
-                    try c.emit(.constant, &.{pos});
-                    const symbol = try c.symbols.?.define(func_stmt.name.value);
-                    const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
-                    try c.emit(op, &.{symbol.index});
-                }
-
-                // TODO: think
-                {
-                    try c.emit(.constant, &.{pos});
-                    const op: code.Opcode = if (rs.scope == .global) .setgv else .setlv;
-                    try c.emit(op, &.{rs.index});
-                }
+                try c.emit(.constant, &.{pos});
+                const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+                try c.emit(op, &.{symbol.index});
             },
 
             else => return error.InvalidStatemend,
@@ -227,7 +208,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
         .expression => |exp| switch (exp.*) {
             .identifier => |ident| {
-                const symbol = c.symbols.?.resolve(ident.value) orelse {
+                const symbol = try c.symbols.?.resolve(ident.value) orelse {
                     return error.UndefinedVariable;
                 };
                 try c.loadSymbol(symbol);
@@ -236,9 +217,8 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             // TODO: not fully implemented
             .assignment => |assignment| {
                 if (assignment.operator == .@":=") {
-                    try c.compile(.{ .expression = assignment.value });
-                    //const identifier = var_stmt.name;
                     const symbol = try c.symbols.?.define(assignment.name.identifier.value);
+                    try c.compile(.{ .expression = assignment.value });
                     const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
                     try c.emit(op, &.{symbol.index});
                     try c.emit(.null, &.{});
@@ -246,7 +226,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 }
 
                 if (assignment.name.* == .identifier) {
-                    const symbol = c.symbols.?.resolve(assignment.name.identifier.value) orelse {
+                    const symbol = try c.symbols.?.resolve(assignment.name.identifier.value) orelse {
                         return error.UndefinedVariable;
                     };
 
@@ -331,12 +311,6 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 }
 
                 return error.InvalidAssingmentOperation;
-
-                //
-                //     const symbol = c.symbols.?.resolve(assignment.name.identifier.value) orelse {
-                //         return error.UndefinedVariable;
-                //     };
-                //
             },
 
             .infix => |infix| {
@@ -394,7 +368,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             // TODO: rework
             .method => |method| {
                 try c.compile(.{ .expression = method.caller });
-                const symbol = c.symbols.?.resolve(method.method.value) orelse {
+                const symbol = try c.symbols.?.resolve(method.method.value) orelse {
                     const pos = try c.addConstants(.{
                         .tag = method.method.value,
                     });
@@ -402,7 +376,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     try c.emit(.index_get, &.{});
                     return;
                 };
-                try c.emit(.method, &.{symbol.index});
+                try c.emit(.method_get, &.{symbol.index});
             },
 
             .boolean => |boolean| {
@@ -487,6 +461,11 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.enterScope();
                 errdefer if (c.symbols) |s| c.allocator.destroy(s);
 
+                // TODO: ast
+                if (func.name) |name| {
+                    _ = try c.symbols.?.defineFunctionName(name.value);
+                }
+
                 for (func.parameters) |parameter| {
                     _ = try c.symbols.?.define(parameter.value);
                 }
@@ -499,23 +478,29 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 // return null
                 if (!c.lastInstructionIs(.retv)) try c.emit(.retn, &.{});
 
+                const free_symbols = c.symbols.?.frees;
                 const obj = try c.allocator.create(Object);
                 errdefer c.allocator.destroy(obj);
                 const num_locals = if (c.symbols) |s| s.def_number else 0;
 
+                for (free_symbols.items) |symb| {
+                    try c.loadSymbol(symb);
+                }
+                const num_free_symbols = free_symbols.items.len;
+
                 const instructions = try c.leaveScope();
                 errdefer c.allocator.free(instructions);
 
-                obj.type = .{
-                    .function = .{
+                obj.type = .{ .closure = .{
+                    .func = .{
                         .instructions = instructions,
                         .num_locals = num_locals,
                         .num_parameters = func.parameters.len,
                     },
-                };
+                } };
 
                 const pos = try c.addConstants(.{ .obj = obj });
-                try c.emit(.constant, &.{pos});
+                try c.emit(.closure, &.{ pos, num_free_symbols });
             },
 
             .@"if" => |ifexp| {
@@ -562,6 +547,8 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 var jumps_pos_list = std.ArrayList(usize).init(c.allocator);
                 defer jumps_pos_list.deinit();
 
+                // try c.enterScope();
+
                 for (match.arms) |arm| {
                     try c.compile(.{ .expression = match.value });
                     try c.compile(.{ .expression = arm.condition });
@@ -602,8 +589,8 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             .@"for" => |forloop| {
-                // const jump_pos = c.insLenRec();
                 const jump_pos = c.insLen();
+                c.loop.start = jump_pos;
 
                 try c.compile(.{ .expression = forloop.condition });
 
@@ -626,7 +613,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 const after_consequence_position = c.insLen();
                 try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
 
-                // // always jump: null is returned
+                c.loop.top = after_consequence_position;
                 try c.emit(.null, &.{});
             },
 
@@ -638,6 +625,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(.to_range, &.{pos});
 
                 const jump_pos = c.insLen();
+                c.loop.start = jump_pos;
                 // in this block, the last instruction must be boolean
                 {
                     try c.emit(.get_range, &.{pos});
@@ -650,7 +638,8 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     try c.emit(.null, &.{});
                 } else {
                     const symbol = try c.symbols.?.define(forloop.ident);
-                    try c.emit(.setlv, &.{symbol.index});
+                    const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+                    try c.emit(op, &.{symbol.index});
                     try c.compile(.{ .statement = .{ .block = forloop.body } });
                     // statements add a pop in the end, wee drop the last pop (if return)
                     if (c.lastInstructionIs(.pop)) c.removeLastPop();
@@ -660,6 +649,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
                 // this is the real jumpifnottrue position. this is how deep the compiled forloop.consequence is
                 const after_consequence_position = c.insLen();
+                c.loop.top = after_consequence_position;
 
                 // Replaces the 9999 (.jump_if_not_true_pos) to the correct operand (after_consequence_position);
                 try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
@@ -772,3 +762,49 @@ test {
     // _ = SymbolTable;
     // _ = Scope;
 }
+
+// pub fn enterScope(c: *Compiler) !void {
+//     // const idx = c.currentInstruction().items.len;
+//     try c.scopes.append(.{
+//         .prev_ins = undefined,
+//         .last_ins = undefined,
+//         .instructions = .init(c.allocator),
+//         // .instructions = c.currentInstruction(),
+//         // .idx = idx,
+//     });
+//     c.scope_index += 1;
+//     c.symbols = if (c.symbols) |s| try s.initEnclosed() else null;
+// }
+
+// pub fn leaveScope(c: *Compiler) !void {
+//     c.scope_index -= 1;
+//     _ = c.scopes.pop();
+//     c.symbols = if (c.symbols) |s| b: {
+//         defer s.deinitEnclosed();
+//         break :b s.outer;
+//     } else null;
+// }
+//
+// pub fn leaveScopeFn(c: *Compiler) !code.Instructions {
+//     c.scope_index -= 1;
+//     const last_scope = c.scopes.pop();
+//
+//     defer {
+//
+//     }
+//
+//     c.symbols = if (c.symbols) |s| b: {
+//         defer s.deinitEnclosed();
+//         break :b s.outer;
+//     } else null;
+//
+//     const ins = try std.mem.concat(c.allocator, u8, last_scope.instructions.items[last_scope.idx..]);
+
+// var len = last_scope.instructions.items.len - 1;
+// while (last_scope.idx < len) {
+//     const el = last_scope.instructions.orderedRemove(len);
+//     c.allocator.free(el);
+//     len -= 1;
+// }
+//     return ins;
+// }
