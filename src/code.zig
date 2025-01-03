@@ -81,10 +81,10 @@ pub const Opcode = enum(u8) {
     current_closure,
     /// closure free var
     getfree,
-
+    /// create a new instance
     instance,
-
-    @"struct",
+    /// create a new type
+    type,
 
     /// numbers of operands (bytes) for a given upcode
     /// optimize: use a single small integer
@@ -103,7 +103,7 @@ pub const Opcode = enum(u8) {
         .to_range = &.{1},
         .call = &.{1},
         .instance = &.{1},
-        .@"struct" = &.{ 1, 1 },
+        .type = &.{ 1, 1 },
         .method_get = &.{1},
         .method_set = &.{1},
         .getbf = &.{1},

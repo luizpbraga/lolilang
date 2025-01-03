@@ -123,16 +123,20 @@ fn print(value: Value) void {
                 std.debug.print("[closure]", .{});
             },
 
-            .@"struct" => |stu| {
-                std.debug.print("[{}_struct {{", .{stu.index});
-                defer std.debug.print("}}]", .{});
-                var iter = stu.fields.iterator();
+            .type => |ty| {
+                std.debug.print("[{}_{s}.{any}]", .{ ty.index, @tagName(ty.type), ty.name });
+            },
+
+            .instance => |ty| {
+                std.debug.print("{{", .{});
+                var iter = ty.fields.iterator();
                 while (iter.next()) |entry| {
                     const key = entry.key_ptr;
-                    std.debug.print("{s} = ", .{key.*});
+                    std.debug.print(".{s} = ", .{key.*});
                     print(entry.value_ptr.*);
                     std.debug.print(", ", .{});
                 }
+                std.debug.print("}}", .{});
             },
 
             // inline else => |x| std.debug.print("{}", .{x}),

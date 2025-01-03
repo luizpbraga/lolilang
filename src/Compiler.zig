@@ -20,7 +20,7 @@ scope_index: usize,
 loop: struct { top: usize = 0, start: usize = 0 } = .{},
 
 struct_fields: std.ArrayList(struct { index: usize, fields: [][]const u8 = &.{} }),
-struct_index: usize = 0,
+type_index: usize = 0,
 
 const Loop = struct {
     loops: [10]struct { start: usize, end: usize },
@@ -137,6 +137,11 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
             .@"var" => |var_stmt| {
                 const symbol = try c.symbols.?.define(var_stmt.name.value);
+
+                if (var_stmt.value.* == .type) {
+                    var_stmt.value.type.name = var_stmt.name.value;
+                }
+
                 try c.compile(.{ .expression = var_stmt.value });
                 const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
                 try c.emit(op, &.{symbol.index});
@@ -222,6 +227,11 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             .assignment => |assignment| {
                 if (assignment.operator == .@":=") {
                     const symbol = try c.symbols.?.define(assignment.name.identifier.value);
+
+                    if (assignment.value.* == .type) {
+                        assignment.value.type.name = assignment.name.identifier.value;
+                    }
+
                     try c.compile(.{ .expression = assignment.value });
                     const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
                     try c.emit(op, &.{symbol.index});
@@ -462,10 +472,12 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             .instance => |instance| {
-                try c.compile(.{ .expression = instance.@"struct" });
+                try c.compile(.{ .expression = instance.type });
                 for (instance.fields) |field| {
-                    const value = field.value;
-                    try c.compile(.{ .expression = value });
+                    const ident = field.name;
+                    const pos = try c.addConstants(.{ .tag = ident.value });
+                    try c.emit(.constant, &.{pos});
+                    try c.compile(.{ .expression = field.value });
                 }
                 try c.emit(.instance, &.{instance.fields.len});
             },
@@ -669,9 +681,9 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(.null, &.{});
             },
 
-            .@"struct" => |st| {
-                const fields = st.fields;
-                const descs = st.desc;
+            .type => |@"type"| {
+                const fields = @"type".fields;
+                const descs = @"type".desc;
 
                 for (fields) |field| {
                     const ident = field.name;
@@ -686,8 +698,8 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     _ = desc;
                 }
 
-                try c.emit(.@"struct", &.{ c.struct_index, fields.len });
-                c.struct_index += 1;
+                try c.emit(.type, &.{ c.type_index, fields.len });
+                c.type_index += 1;
             },
 
             // else => |exx| {

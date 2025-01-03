@@ -389,16 +389,17 @@ pub fn run(vm: *Vm) !void {
                 try vm.push(closure.*);
             },
 
-            .@"struct" => {
+            .type => {
                 const index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
                 const fields_number = std.mem.readInt(u8, instructions[ip + 2 ..][0..1], .big);
                 fm.ip += 2;
 
-                var structy: Object.Struct = .{
+                var struct_type: Object.BuiltinType = .{
                     .index = index,
+                    .type = .@"struct",
                     .fields = .init(vm.allocator),
                 };
-                errdefer structy.fields.deinit();
+                errdefer struct_type.fields.deinit();
 
                 const start_index = vm.sp - fields_number * 2;
                 const end_index = vm.sp;
@@ -406,10 +407,10 @@ pub fn run(vm: *Vm) !void {
                 while (i < end_index) : (i += 2) {
                     const name = vm.stack[i].tag;
                     const value = vm.stack[i + 1];
-                    try structy.fields.put(name, value);
+                    try struct_type.fields.put(name, value);
                 }
 
-                const obj = try memory.allocateObject(vm, .{ .@"struct" = structy });
+                const obj = try memory.allocateObject(vm, .{ .type = struct_type });
                 errdefer vm.allocator.destroy(obj);
                 try vm.push(.{ .obj = obj });
             },
@@ -417,9 +418,32 @@ pub fn run(vm: *Vm) !void {
             .instance => {
                 const fields_number = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
                 fm.ip += 1;
-                const value = vm.stack[vm.sp - 1 - fields_number];
-                // std.debug.print("{}", .{fields_number});
-                try vm.push(value);
+
+                const value_type = &vm.stack[vm.sp - 1 - fields_number * 2].obj.type.type;
+
+                var instance: Object.Instance = .{
+                    .type = value_type,
+                    .fields = .init(vm.allocator),
+                };
+                errdefer instance.fields.deinit();
+
+                var iter = value_type.fields.iterator();
+                while (iter.next()) |entry| {
+                    try instance.fields.put(entry.key_ptr.*, entry.value_ptr.*);
+                }
+
+                const start_index = vm.sp - fields_number * 2;
+                const end_index = vm.sp;
+                var i = start_index;
+                while (i < end_index) : (i += 2) {
+                    const name = vm.stack[i].tag;
+                    const value = vm.stack[i + 1];
+                    try instance.fields.put(name, value);
+                }
+
+                const obj = try memory.allocateObject(vm, .{ .instance = instance });
+                errdefer vm.allocator.destroy(obj);
+                try vm.push(.{ .obj = obj });
             },
 
             .call => {

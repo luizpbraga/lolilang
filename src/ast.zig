@@ -89,7 +89,7 @@ pub const Expression = union(enum) {
     method: Method,
     index: Index,
 
-    @"struct": Struct,
+    type: Type,
 
     fn expressionNode(self: *const Expression) void {
         _ = self;
@@ -280,10 +280,6 @@ pub const Block = struct {
 };
 // --------------------------------------------------------------------
 
-pub const Type = struct {
-    value: Identifier,
-};
-
 pub const Float = struct {
     value: f32,
 
@@ -424,8 +420,9 @@ pub const Call = struct {
     }
 };
 
-pub const Struct = struct {
-    name: ?Identifier = null,
+pub const Type = struct {
+    type: Token.Type,
+    name: ?[]const u8 = null,
     fields: []Field = &.{},
     desc: []FunctionStatement = &.{},
 
@@ -440,8 +437,8 @@ pub const Struct = struct {
 };
 
 pub const Instance = struct {
-    @"struct": *Expression, // Identifier or FunctionLiteral
-    fields: []Struct.Field,
+    type: *Expression, // Identifier or FunctionLiteral
+    fields: []Type.Field,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;

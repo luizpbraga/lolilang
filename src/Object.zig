@@ -13,15 +13,25 @@ marked: bool = false,
 pub const Type = union(enum) {
     string: []u8,
     array: std.ArrayList(Value),
-    function: CompiledFn,
     hash: Hash,
+    function: CompiledFn,
     closure: Closure,
-    @"struct": Struct,
+    type: BuiltinType,
+    instance: Instance,
 };
 
-pub const Struct = struct {
+pub const BuiltinType = struct {
     index: usize,
+    type: enum { @"struct", @"enum" },
+    name: ?[]const u8 = null,
     fields: std.StringHashMap(Value),
+    desc: ?std.StringHashMap(Value) = null,
+};
+
+pub const Instance = struct {
+    type: *BuiltinType,
+    fields: std.StringHashMap(Value),
+    desc: ?std.StringHashMap(Value) = null,
 };
 
 pub const Value = union(enum) {

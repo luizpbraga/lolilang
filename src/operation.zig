@@ -12,6 +12,14 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
     }
 
     switch (left.obj.type) {
+        .instance => |ins| {
+            if (index.* != .tag) {
+                return try vm.push(.null);
+            }
+            const value = ins.fields.get(index.tag) orelse .null;
+            return try vm.push(value);
+        },
+
         .string => |string| {
             if (index.* == .integer) {
                 const i = index.integer;

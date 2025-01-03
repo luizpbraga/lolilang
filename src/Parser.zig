@@ -87,7 +87,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) Parser {
     parser.prefix_fns.put(.@"[", parseArray);
     parser.prefix_fns.put(.@"{", parseHash);
     parser.prefix_fns.put(.@"fn", parseFunction);
-    parser.prefix_fns.put(.@"struct", parseStruct);
+    parser.prefix_fns.put(.@"struct", parseType);
     parser.prefix_fns.put(.string, parseString);
     parser.prefix_fns.put(.char, parseChar);
     parser.prefix_fns.put(.@"if", parseIf);
@@ -687,12 +687,14 @@ fn parseFn(self: *Parser) anyerror!ast.Statement {
     return .{ .@"fn" = func_stmt };
 }
 
-fn parseStruct(self: *Parser) anyerror!ast.Expression {
-    var struc: ast.Struct = .{};
+fn parseType(self: *Parser) anyerror!ast.Expression {
+    var struc: ast.Type = .{
+        .type = self.cur_token.type,
+    };
 
     if (!self.expectPeek(.@"{")) return error.MissingParentese;
 
-    var fields: std.ArrayList(ast.Struct.Field) = .init(self.arena.allocator());
+    var fields: std.ArrayList(ast.Type.Field) = .init(self.arena.allocator());
     errdefer fields.deinit();
 
     var descs: std.ArrayList(ast.FunctionStatement) = .init(self.arena.allocator());
@@ -702,7 +704,7 @@ fn parseStruct(self: *Parser) anyerror!ast.Expression {
         self.nextToken();
 
         if (self.curTokenIs(.identifier)) {
-            var field: ast.Struct.Field = .{
+            var field: ast.Type.Field = .{
                 .name = (try self.parseIdentifier()).identifier,
                 .value = &NULL,
             };
@@ -747,7 +749,7 @@ fn parseStruct(self: *Parser) anyerror!ast.Expression {
     struc.fields = try fields.toOwnedSlice();
     struc.desc = try descs.toOwnedSlice();
 
-    return .{ .@"struct" = struc };
+    return .{ .type = struc };
 }
 
 fn parseFunction(self: *Parser) anyerror!ast.Expression {
@@ -822,13 +824,56 @@ fn parseMethod(self: *Parser, caller: *ast.Expression) anyerror!ast.Expression {
     return .{ .method = method_exp };
 }
 
-fn parseInstance(self: *Parser, struct_exp: *ast.Expression) anyerror!ast.Expression {
+fn parseInstance(self: *Parser, type_exp: *ast.Expression) anyerror!ast.Expression {
     return .{
         .instance = .{
-            .@"struct" = struct_exp,
+            .type = type_exp,
             .fields = try self.parseInstanceArguments(),
         },
     };
+}
+
+fn parseInstanceArguments(self: *Parser) anyerror![]ast.Type.Field {
+    var fields: std.ArrayList(ast.Type.Field) = .init(self.arena.allocator());
+    errdefer fields.deinit();
+
+    if (self.peekTokenIs(.@"}")) {
+        self.nextToken();
+        return try fields.toOwnedSlice();
+    }
+
+    while (!self.peekTokenIs(.@"}") and !self.curTokenIs(.eof)) {
+        self.nextToken();
+
+        if (self.curTokenIs(.identifier)) {
+            var field: ast.Type.Field = .{
+                .name = (try self.parseIdentifier()).identifier,
+                .value = &NULL,
+            };
+
+            if (self.expectPeek(.@"=")) {
+                self.nextToken();
+                field.value = try self.parseExpression(.lower);
+            }
+
+            try fields.append(field);
+
+            if (!self.expectPeek(.@",")) {
+                if (self.peekTokenIs(.@"}")) break;
+                return error.MissingComma;
+            }
+
+            continue;
+        }
+
+        return error.InvalidInstance;
+    }
+
+    self.nextToken();
+
+    if (!self.curTokenIs(.@"}")) return error.MissingBrance;
+
+    return fields.toOwnedSlice();
 }
 
 fn parseCall(self: *Parser, func: *ast.Expression) anyerror!ast.Expression {
@@ -839,11 +884,6 @@ fn parseCall(self: *Parser, func: *ast.Expression) anyerror!ast.Expression {
             .arguments = try self.parseCallArguments(),
         },
     };
-}
-
-fn parseInstanceArguments(self: *Parser) anyerror![]ast.Struct.Field {
-    if (!self.expectPeek(.@"}")) return error.MissingRightBrace;
-    return &.{};
 }
 
 fn parseCallArguments(self: *Parser) anyerror![]*ast.Expression {
