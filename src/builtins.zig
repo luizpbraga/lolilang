@@ -122,6 +122,20 @@ fn print(value: Value) void {
             .closure => {
                 std.debug.print("[closure]", .{});
             },
+
+            .@"struct" => |stu| {
+                std.debug.print("[{}_struct {{", .{stu.index});
+                defer std.debug.print("}}]", .{});
+                var iter = stu.fields.iterator();
+                while (iter.next()) |entry| {
+                    const key = entry.key_ptr;
+                    std.debug.print("{s} = ", .{key.*});
+                    print(entry.value_ptr.*);
+                    std.debug.print(", ", .{});
+                }
+            },
+
+            // inline else => |x| std.debug.print("{}", .{x}),
         },
 
         .char => |s| std.debug.print("{c}", .{s}),

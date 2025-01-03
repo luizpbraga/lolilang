@@ -2,12 +2,13 @@ const std = @import("std");
 const loli = @import("loli.zig");
 
 pub fn main() !void {
-    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
-    defer {
-        _ = gpa.detectLeaks();
-        _ = gpa.deinit();
-    }
-    const allocator = gpa.allocator();
+    // var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
+    // defer {
+    //     _ = gpa.detectLeaks();
+    //     _ = gpa.deinit();
+    // }
+    // const allocator = gpa.allocator();
+    const allocator = std.heap.c_allocator;
 
     var args = std.process.args();
     _ = args.next();

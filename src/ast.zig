@@ -69,7 +69,7 @@ pub const Expression = union(enum) {
     range: Range,
     hash: Hash,
     // enum_literal: EnumLiteral,
-    enum_tag: EnumTag,
+    tag: Tag,
     identifier: Identifier,
     // forloop_expression: ForLoopExpression,
     for_range: ForRange,
@@ -84,8 +84,12 @@ pub const Expression = union(enum) {
     assignment: Assignment,
 
     call: Call,
+    instance: Instance,
+
     method: Method,
     index: Index,
+
+    @"struct": Struct,
 
     fn expressionNode(self: *const Expression) void {
         _ = self;
@@ -375,7 +379,7 @@ pub const EnumLiteral = struct {
     }
 };
 
-pub const EnumTag = struct {
+pub const Tag = struct {
     value: []const u8,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
@@ -414,6 +418,30 @@ pub const Call = struct {
     // (
     function: *Expression, // Identifier or FunctionLiteral
     arguments: []*Expression,
+
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const Struct = struct {
+    name: ?Identifier = null,
+    fields: []Field = &.{},
+    desc: []FunctionStatement = &.{},
+
+    pub const Field = struct {
+        name: Identifier,
+        value: *Expression,
+    };
+
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const Instance = struct {
+    @"struct": *Expression, // Identifier or FunctionLiteral
+    fields: []Struct.Field,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;

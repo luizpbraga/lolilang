@@ -19,6 +19,9 @@ scope_index: usize,
 /// testing the logic
 loop: struct { top: usize = 0, start: usize = 0 } = .{},
 
+struct_fields: std.ArrayList(struct { index: usize, fields: [][]const u8 = &.{} }),
+struct_index: usize = 0,
+
 const Loop = struct {
     loops: [10]struct { start: usize, end: usize },
     idx: usize = 0,
@@ -45,6 +48,7 @@ pub fn init(alloc: std.mem.Allocator) !Compiler {
     return .{
         .allocator = alloc,
         .constants = .init(alloc),
+        .struct_fields = .init(alloc),
         .symbols = s,
         .scopes = scopes,
         .scope_index = 0,
@@ -402,7 +406,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(.constant, &.{pos});
             },
 
-            .enum_tag => |tag| {
+            .tag => |tag| {
                 const pos = try c.addConstants(.{
                     .tag = tag.value,
                 });
@@ -455,6 +459,15 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     try c.compile(.{ .expression = arg });
                 }
                 try c.emit(.call, &.{call.arguments.len});
+            },
+
+            .instance => |instance| {
+                try c.compile(.{ .expression = instance.@"struct" });
+                for (instance.fields) |field| {
+                    const value = field.value;
+                    try c.compile(.{ .expression = value });
+                }
+                try c.emit(.instance, &.{instance.fields.len});
             },
 
             .function => |func| {
@@ -634,9 +647,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
 
                 // compiling the consequence
-                if (forloop.body.statements.len == 0) {
-                    try c.emit(.null, &.{});
-                } else {
+                if (forloop.body.statements.len != 0) {
                     const symbol = try c.symbols.?.define(forloop.ident);
                     const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
                     try c.emit(op, &.{symbol.index});
@@ -657,6 +668,32 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 // // always jump: null is returned
                 try c.emit(.null, &.{});
             },
+
+            .@"struct" => |st| {
+                const fields = st.fields;
+                const descs = st.desc;
+
+                for (fields) |field| {
+                    const ident = field.name;
+                    const value = field.value;
+
+                    const pos = try c.addConstants(.{ .tag = ident.value });
+                    try c.emit(.constant, &.{pos});
+                    try c.compile(.{ .expression = value });
+                }
+
+                for (descs) |desc| {
+                    _ = desc;
+                }
+
+                try c.emit(.@"struct", &.{ c.struct_index, fields.len });
+                c.struct_index += 1;
+            },
+
+            // else => |exx| {
+            //     std.debug.print("{}\n", .{exx});
+            //     @panic("Invalid Expression");
+            // },
         },
     }
 }

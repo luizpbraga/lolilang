@@ -21,6 +21,7 @@ pub const Precedence = enum {
     product,
     prefix,
     call,
+    instance,
     index,
 
     /// switch ?
@@ -39,6 +40,7 @@ pub const Precedence = enum {
         .@"/" = .product,
         .@"*" = .product,
         .@"(" = .call,
+        .@"{" = .instance,
         .@"!" = .prefix,
         .@"[" = .index,
         .@"." = .index,
@@ -85,6 +87,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) Parser {
     parser.prefix_fns.put(.@"[", parseArray);
     parser.prefix_fns.put(.@"{", parseHash);
     parser.prefix_fns.put(.@"fn", parseFunction);
+    parser.prefix_fns.put(.@"struct", parseStruct);
     parser.prefix_fns.put(.string, parseString);
     parser.prefix_fns.put(.char, parseChar);
     parser.prefix_fns.put(.@"if", parseIf);
@@ -100,6 +103,7 @@ pub fn new(child_alloc: std.mem.Allocator, lexer: *Lexer) Parser {
     parser.infix_fns.put(.@"..", parseRange);
     parser.infix_fns.put(.@"..=", parseRange);
     parser.infix_fns.put(.@".", parseMethod);
+    parser.infix_fns.put(.@"{", parseInstance);
     parser.infix_fns.put(.@"(", parseCall);
     parser.infix_fns.put(.@"%", parseInfix);
     parser.infix_fns.put(.@"+", parseInfix);
@@ -173,7 +177,7 @@ fn parseIdentifier(self: *const Parser) anyerror!ast.Expression {
 fn parseEnumTag(self: *Parser) anyerror!ast.Expression {
     self.nextToken();
     return .{
-        .enum_tag = .{
+        .tag = .{
             .value = self.cur_token.literal,
         },
     };
@@ -683,6 +687,69 @@ fn parseFn(self: *Parser) anyerror!ast.Statement {
     return .{ .@"fn" = func_stmt };
 }
 
+fn parseStruct(self: *Parser) anyerror!ast.Expression {
+    var struc: ast.Struct = .{};
+
+    if (!self.expectPeek(.@"{")) return error.MissingParentese;
+
+    var fields: std.ArrayList(ast.Struct.Field) = .init(self.arena.allocator());
+    errdefer fields.deinit();
+
+    var descs: std.ArrayList(ast.FunctionStatement) = .init(self.arena.allocator());
+    errdefer descs.deinit();
+
+    while (!self.peekTokenIs(.@"}") and !self.curTokenIs(.eof)) {
+        self.nextToken();
+
+        if (self.curTokenIs(.identifier)) {
+            var field: ast.Struct.Field = .{
+                .name = (try self.parseIdentifier()).identifier,
+                .value = &NULL,
+            };
+
+            if (self.expectPeek(.@"=")) {
+                self.nextToken();
+                field.value = try self.parseExpression(.lower);
+            }
+
+            if (self.peekTokenIs(.@",") or self.curTokenIs(.@";")) {
+                self.nextToken();
+            }
+
+            try fields.append(field);
+            continue;
+        }
+
+        if (self.curTokenIs(.@"fn")) {
+            if (!self.expectPeek(.identifier)) {
+                std.log.err("Expect Identifier, found '{s}'", .{self.cur_token.literal});
+                return error.UnexpectedToken;
+            }
+
+            const name = (try self.parseIdentifier()).identifier;
+
+            const func = (try self.parseFunction()).function;
+
+            try descs.append(.{
+                .name = name,
+                .func = func,
+            });
+            continue;
+        }
+
+        return error.InvalidStruct;
+    }
+
+    self.nextToken();
+
+    if (!self.curTokenIs(.@"}")) return error.MissingBrance;
+
+    struc.fields = try fields.toOwnedSlice();
+    struc.desc = try descs.toOwnedSlice();
+
+    return .{ .@"struct" = struc };
+}
+
 fn parseFunction(self: *Parser) anyerror!ast.Expression {
     var func: ast.Function = .{
         .parameters = undefined,
@@ -755,6 +822,15 @@ fn parseMethod(self: *Parser, caller: *ast.Expression) anyerror!ast.Expression {
     return .{ .method = method_exp };
 }
 
+fn parseInstance(self: *Parser, struct_exp: *ast.Expression) anyerror!ast.Expression {
+    return .{
+        .instance = .{
+            .@"struct" = struct_exp,
+            .fields = try self.parseInstanceArguments(),
+        },
+    };
+}
+
 fn parseCall(self: *Parser, func: *ast.Expression) anyerror!ast.Expression {
     return .{
         .call = .{
@@ -763,6 +839,11 @@ fn parseCall(self: *Parser, func: *ast.Expression) anyerror!ast.Expression {
             .arguments = try self.parseCallArguments(),
         },
     };
+}
+
+fn parseInstanceArguments(self: *Parser) anyerror![]ast.Struct.Field {
+    if (!self.expectPeek(.@"}")) return error.MissingRightBrace;
+    return &.{};
 }
 
 fn parseCallArguments(self: *Parser) anyerror![]*ast.Expression {

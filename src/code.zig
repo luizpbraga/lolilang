@@ -82,6 +82,10 @@ pub const Opcode = enum(u8) {
     /// closure free var
     getfree,
 
+    instance,
+
+    @"struct",
+
     /// numbers of operands (bytes) for a given upcode
     /// optimize: use a single small integer
     pub const OperandWidth = []const usize;
@@ -98,6 +102,8 @@ pub const Opcode = enum(u8) {
         .get_range = &.{1},
         .to_range = &.{1},
         .call = &.{1},
+        .instance = &.{1},
+        .@"struct" = &.{ 1, 1 },
         .method_get = &.{1},
         .method_set = &.{1},
         .getbf = &.{1},

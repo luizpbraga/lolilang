@@ -16,6 +16,12 @@ pub const Type = union(enum) {
     function: CompiledFn,
     hash: Hash,
     closure: Closure,
+    @"struct": Struct,
+};
+
+pub const Struct = struct {
+    index: usize,
+    fields: std.StringHashMap(Value),
 };
 
 pub const Value = union(enum) {

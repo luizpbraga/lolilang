@@ -29,6 +29,7 @@ pub const keywords = std.StaticStringMap(Type).initComptime(.{
     .{ "return", .@"return" },
     .{ "enum", .@"enum" },
     .{ "with", .with },
+    .{ "struct", .@"struct" },
 });
 
 pub const Type = enum {
@@ -88,6 +89,7 @@ pub const Type = enum {
     // keywords
     @"fn",
     @"enum",
+    @"struct",
     @"for",
     match,
     @"return",

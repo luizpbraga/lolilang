@@ -241,127 +241,113 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
     const right = vm.pop();
     const left = vm.pop();
 
-    if (right == .boolean and left == .boolean) {
-        const right_val = right.boolean;
-        const left_val = left.boolean;
-        const result = switch (op) {
-            .eq => left_val == right_val,
-            .neq => left_val != right_val,
-            else => return error.UnknowBooleanOperation,
-        };
-        return try vm.push(.{ .boolean = result });
+    if (std.meta.Tag(@TypeOf(right)) != std.meta.Tag(@TypeOf(left))) {
+        try vm.push(.{ .boolean = if (op == .eq) false else true });
     }
 
-    if (right == .char and left == .char) {
-        const right_val = right.char;
-        const left_val = left.char;
-        const result = switch (op) {
-            .eq => left_val == right_val,
-            .neq => left_val != right_val,
-            else => return error.UnknowBooleanOperation,
-        };
-        return try vm.push(.{ .boolean = result });
-    }
+    switch (left) {
+        .boolean => |left_val| switch (right) {
+            .boolean => |right_val| {
+                const result = switch (op) {
+                    .eq => left_val == right_val,
+                    .neq => left_val != right_val,
+                    else => return error.UnknowBooleanOperation,
+                };
+                return try vm.push(.{ .boolean = result });
+            },
+            else => {},
+        },
 
-    if (right == .null or left == .null) {
-        const result = switch (op) {
-            .eq => right == .null and left == .null,
-            .neq => right != .null or left != .null,
-            else => return error.UnknowBooleanOperation,
-        };
-        return try vm.push(.{ .boolean = result });
-    }
+        .integer => |left_val| switch (right) {
+            .integer => |right_val| {
+                const result = switch (op) {
+                    .eq => left_val == right_val,
+                    .neq => left_val != right_val,
+                    .gt => left_val > right_val,
+                    .gte => left_val >= right_val,
+                    else => return error.UnknowIntegerOperation,
+                };
+                return try vm.push(.{ .boolean = result });
+            },
+            else => {},
+        },
 
-    if (right == .integer and left == .integer) {
-        const right_val = right.integer;
-        const left_val = left.integer;
-        const result = switch (op) {
-            .eq => left_val == right_val,
-            .neq => left_val != right_val,
-            .gt => left_val > right_val,
-            .gte => left_val >= right_val,
-            else => return error.UnknowIntegerOperation,
-        };
-        return try vm.push(.{ .boolean = result });
-    }
+        .float => |left_val| switch (right) {
+            .float => |right_val| {
+                const result = switch (op) {
+                    .eq => left_val == right_val,
+                    .neq => left_val != right_val,
+                    .gt => left_val > right_val,
+                    .gte => left_val >= right_val,
+                    else => return error.UnknowIntegerOperation,
+                };
+                return try vm.push(.{ .boolean = result });
+            },
+            else => {},
+        },
 
-    if (right == .float and left == .float) {
-        const right_val = right.float;
-        const left_val = left.float;
-        const result = switch (op) {
-            .eq => left_val == right_val,
-            .neq => left_val != right_val,
-            .gt => left_val > right_val,
-            .gte => left_val >= right_val,
-            else => return error.UnknowfloatOperation,
-        };
-        return try vm.push(.{ .boolean = result });
-    }
+        .char => |left_val| switch (right) {
+            .char => |right_val| {
+                const result = switch (op) {
+                    .eq => left_val == right_val,
+                    .neq => left_val != right_val,
+                    else => return error.UnknowBooleanOperation,
+                };
+                return try vm.push(.{ .boolean = result });
+            },
+            else => {},
+        },
 
-    if (left == .obj and right == .obj) {
-        const right_t = right.obj.type;
-        const left_t = left.obj.type;
+        .null => switch (right) {
+            .null => {
+                const result = switch (op) {
+                    .eq => right == .null and left == .null,
+                    .neq => right != .null or left != .null,
+                    else => return error.UnknowBooleanOperation,
+                };
+                return try vm.push(.{ .boolean = result });
+            },
+            else => {},
+        },
 
-        if (right_t == .string) {
-            switch (left_t) {
-                .string => |lstr| {
-                    const rstr = right_t.string;
-                    const r = std.mem.eql(u8, lstr, rstr);
-                    return vm.push(.{ .boolean = if (op == .eq) r else if (op == .neq) !r else false });
-                },
-                else => {},
-            }
-        }
+        .obj => |left_val_obj| switch (right) {
+            .obj => |right_val_obj| {
+                const right_t = right_val_obj.type;
+                const left_t = left_val_obj.type;
 
-        if (right_t == .array) {
-            switch (left_t) {
-                .array => |larr| {
-                    const rarr = right_t.array;
-                    var r = true;
+                switch (right_t) {
+                    .string => |rstr| switch (left_t) {
+                        .string => |lstr| {
+                            const r = std.mem.eql(u8, lstr, rstr);
+                            return try vm.push(.{ .boolean = if (op == .eq) r else if (op == .neq) !r else false });
+                        },
+                        else => {},
+                    },
 
-                    if (rarr.items.len == larr.items.len) {
-                        for (larr.items, rarr.items) |le, re| {
-                            if (!std.meta.eql(le, re)) {
+                    .array => |rarr| switch (left_t) {
+                        .array => |larr| {
+                            var r = true;
+                            if (rarr.items.len == larr.items.len) {
+                                for (larr.items, rarr.items) |le, re| {
+                                    if (!std.meta.eql(le, re)) {
+                                        r = false;
+                                        break;
+                                    }
+                                }
+                            } else {
                                 r = false;
-                                break;
                             }
-                        }
-                    } else {
-                        r = false;
-                    }
-
-                    return vm.push(
-                        .{ .boolean = if (op == .eq) r else if (op == .neq) !r else false },
-                    );
-                },
-                else => {},
-            }
-        }
+                            return try vm.push(.{ .boolean = if (op == .eq) r else if (op == .neq) !r else false });
+                        },
+                        else => {},
+                    },
+                    else => {},
+                }
+            },
+            else => {},
+        },
+        else => {},
     }
-
-    // if (rtype == .float and ltype == .integer) {
-    //     const right_val = right.float.value;
-    //     const left_val = left.integer.value;
-    //     const result = switch (op) {
-    //         .eq => left_val == right_val,
-    //         .neq => left_val != right_val,
-    //         .gt => left_val > right_val,
-    //         else => return error.UnknowfloatOperation,
-    //     };
-    //     return try vm.push(.{ .boolean = .{ .value = result } });
-    // }
-    //
-    // if (rtype == .integer and ltype == .float) {
-    //     const right_val = right.integer.value;
-    //     const left_val = left.float.value;
-    //     const result = switch (op) {
-    //         .eq => left_val == right_val,
-    //         .neq => left_val != right_val,
-    //         .gt => left_val > right_val,
-    //         else => return error.UnknowfloatOperation,
-    //     };
-    //     return try vm.push(.{ .boolean = .{ .value = result } });
-    // }
 
     try vm.push(.{ .boolean = if (op == .eq) false else true });
 }

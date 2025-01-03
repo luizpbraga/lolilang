@@ -83,6 +83,11 @@ pub fn freeObject(vm: *Vm, obj: *Object) void {
             vm.allocator.free(cl.free);
             vm.allocator.destroy(obj);
         },
+
+        .@"struct" => |manuela| {
+            _ = manuela;
+            vm.allocator.destroy(obj);
+        },
     }
 }
 

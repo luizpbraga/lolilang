@@ -76,6 +76,34 @@ pub fn deinit(vm: *Vm) void {
     vm.freeObjects();
 }
 
+// return a pointer?
+pub fn pop(vm: *Vm) Value {
+    //if (vm.sp == 0) return .null;
+    const o = vm.stack[vm.sp - 1];
+    vm.sp -= 1;
+    return o;
+}
+
+// return a pointer?
+pub fn pop2(vm: *Vm) void {
+    vm.sp -= 1;
+}
+
+pub fn push(vm: *Vm, obj: Value) !void {
+    if (vm.sp >= STACK_SIZE) return error.VMStackOverflow;
+    vm.stack[vm.sp] = obj;
+    vm.sp += 1;
+}
+
+fn top(vm: *Vm) ?Value {
+    if (vm.sp == 0) return null;
+    return vm.stack[vm.sp - 1];
+}
+
+pub fn lastPopped(vm: *Vm) Value {
+    return vm.stack[vm.sp];
+}
+
 fn currentFrame(vm: *Vm) *Frame {
     return &vm.frames[vm.frames_index - 1];
 }
@@ -96,10 +124,11 @@ pub fn run(vm: *Vm) !void {
     var instructions: code.Instructions = undefined;
     var op: code.Opcode = undefined;
 
-    while (vm.currentFrame().ip + 1 < vm.currentFrame().instructions().len) {
-        vm.currentFrame().ip += 1;
-        ip = @intCast(vm.currentFrame().ip);
-        instructions = vm.currentFrame().instructions();
+    var fm = vm.currentFrame();
+    while (fm.ip + 1 < fm.instructions().len) {
+        fm.ip += 1;
+        ip = @intCast(fm.ip);
+        instructions = fm.instructions();
         op = @enumFromInt(instructions[ip]);
 
         switch (op) {
@@ -120,14 +149,14 @@ pub fn run(vm: *Vm) !void {
 
             .to_range => {
                 const pos = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-                vm.currentFrame().ip += 1;
+                fm.ip += 1;
                 const value = vm.pop();
                 vm.constants[pos] = .{ .range = value.toRange() };
             },
 
             .get_range => {
                 const pos = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-                vm.currentFrame().ip += 1;
+                fm.ip += 1;
                 var range = &vm.constants[pos].range;
 
                 const value = range.next() orelse {
@@ -141,7 +170,7 @@ pub fn run(vm: *Vm) !void {
 
             .array => {
                 const num_elements = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-                vm.currentFrame().ip += 2;
+                fm.ip += 2;
                 const start_index = vm.sp - num_elements;
                 const end_index = vm.sp;
 
@@ -160,7 +189,7 @@ pub fn run(vm: *Vm) !void {
 
             .hash => {
                 const num_elements = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-                vm.currentFrame().ip += 2;
+                fm.ip += 2;
 
                 var hash: Object.Hash = .{
                     .pairs = .init(vm.allocator),
@@ -192,7 +221,7 @@ pub fn run(vm: *Vm) !void {
 
             .method_set => {
                 const field_pos = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-                vm.currentFrame().ip += 1;
+                fm.ip += 1;
                 const value = vm.pop();
                 var left = vm.pop();
                 const index = vm.constants[field_pos];
@@ -202,7 +231,7 @@ pub fn run(vm: *Vm) !void {
             .method_get => {
                 const caller = vm.pop();
                 const builtin_index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-                vm.currentFrame().ip += 1;
+                fm.ip += 1;
                 const builtin = builtins.list[builtin_index];
                 const value = builtin.function(vm, &.{caller});
                 try vm.push(value);
@@ -223,32 +252,30 @@ pub fn run(vm: *Vm) !void {
 
             .setgv => {
                 const global_index = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-                vm.currentFrame().ip += 2;
+                fm.ip += 2;
                 const value = vm.pop();
                 vm.globals[global_index] = value;
             },
 
             .getgv => {
                 const global_index = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-                vm.currentFrame().ip += 2;
+                fm.ip += 2;
                 try vm.push(vm.globals[global_index].?);
             },
 
             .setlv => {
                 const local_index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-                vm.currentFrame().ip += 1;
-                const frame = vm.currentFrame();
+                fm.ip += 1;
                 const value = vm.pop();
-                const index = @as(usize, @intCast(frame.bp)) + local_index;
+                const index = @as(usize, @intCast(fm.bp)) + local_index;
                 // std.debug.print("{} on {}\n", .{ value, index });
                 vm.stack[index] = value;
             },
 
             .getlv => {
                 const local_index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-                vm.currentFrame().ip += 1;
-                const frame = vm.currentFrame();
-                const index = @as(usize, @intCast(frame.bp)) + local_index;
+                fm.ip += 1;
+                const index = @as(usize, @intCast(fm.bp)) + local_index;
                 const value = vm.stack[index];
                 // std.debug.print("{} on {}\n", .{ value, index });
                 try vm.push(value);
@@ -256,20 +283,21 @@ pub fn run(vm: *Vm) !void {
 
             .getbf => {
                 const builtin_index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-                vm.currentFrame().ip += 1;
+                fm.ip += 1;
                 const builtin = builtins.list[builtin_index];
                 try vm.push(.{ .builtin = builtin });
             },
 
             .constant => {
                 const const_index = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-                vm.currentFrame().ip += 2;
+                fm.ip += 2;
                 try vm.push(vm.constants[const_index]);
             },
 
             .retv => {
                 const returned_value = vm.pop(); // get the return value
                 const frame = vm.popFrame(); // return to the callee frame
+                fm = vm.currentFrame(); // ?
                 vm.sp = @intCast(frame.bp - 1); // pop the fn
                 // _ = vm.pop(); // pop the fn
                 try vm.push(returned_value); // push the return value
@@ -277,6 +305,7 @@ pub fn run(vm: *Vm) !void {
 
             .retn => {
                 const frame = vm.popFrame(); // return to the callee frame
+                fm = vm.currentFrame();
                 vm.sp = @intCast(frame.bp - 1); // pop the fn
                 try vm.push(.null); // push the return value
             },
@@ -294,27 +323,27 @@ pub fn run(vm: *Vm) !void {
             .null => try vm.push(.null),
 
             .jump => {
-                const last_ip = vm.currentFrame().ip;
+                const last_ip = fm.ip;
                 // get the operand located right after the opcode
                 const pos = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
                 // move ip to the target out of jump
-                vm.currentFrame().ip = @as(isize, @intCast(pos)) - 1;
+                fm.ip = @as(isize, @intCast(pos)) - 1;
 
                 // the 'if' don't need to pop, just the 'for' loop, so we compare
                 // the last ip value with the current jump position;.
                 // If ip is bigger (for loop) we pop the null value. This prevent accumulating nulls in the stack
                 if (last_ip > pos) {
-                    _ = vm.pop();
+                    vm.pop2();
                 }
             },
 
             .jumpifnottrue => {
                 const pos = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-                vm.currentFrame().ip += 2;
+                fm.ip += 2;
                 const condition = vm.pop();
 
                 if (condition == .boolean) {
-                    if (!condition.boolean) vm.currentFrame().ip = pos - 1;
+                    if (!condition.boolean) fm.ip = pos - 1;
                     continue;
                 }
 
@@ -322,18 +351,18 @@ pub fn run(vm: *Vm) !void {
                 return error.InvalidCondition;
             },
 
-            .pop => _ = vm.pop(),
+            .pop => vm.pop2(),
 
             .getfree => {
                 const free_index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-                vm.currentFrame().ip += 1;
-                const closure = vm.currentFrame().cl;
+                fm.ip += 1;
+                const closure = fm.cl;
                 if (closure.free.len != 0) try vm.push(closure.free[free_index]);
             },
 
             // this is used for recursive closure
             .current_closure => {
-                const closure = vm.currentFrame().cl;
+                const closure = fm.cl;
                 var obj = try vm.allocator.create(Object);
                 obj.type.closure = closure;
                 // SHIT
@@ -344,7 +373,7 @@ pub fn run(vm: *Vm) !void {
             .closure => {
                 const index = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
                 const num_free = std.mem.readInt(u8, instructions[ip + 3 ..][0..1], .big);
-                vm.currentFrame().ip += 3;
+                fm.ip += 3;
 
                 var closure = &vm.constants[index];
                 var frees = try vm.allocator.alloc(Value, num_free);
@@ -360,9 +389,42 @@ pub fn run(vm: *Vm) !void {
                 try vm.push(closure.*);
             },
 
+            .@"struct" => {
+                const index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
+                const fields_number = std.mem.readInt(u8, instructions[ip + 2 ..][0..1], .big);
+                fm.ip += 2;
+
+                var structy: Object.Struct = .{
+                    .index = index,
+                    .fields = .init(vm.allocator),
+                };
+                errdefer structy.fields.deinit();
+
+                const start_index = vm.sp - fields_number * 2;
+                const end_index = vm.sp;
+                var i = start_index;
+                while (i < end_index) : (i += 2) {
+                    const name = vm.stack[i].tag;
+                    const value = vm.stack[i + 1];
+                    try structy.fields.put(name, value);
+                }
+
+                const obj = try memory.allocateObject(vm, .{ .@"struct" = structy });
+                errdefer vm.allocator.destroy(obj);
+                try vm.push(.{ .obj = obj });
+            },
+
+            .instance => {
+                const fields_number = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
+                fm.ip += 1;
+                const value = vm.stack[vm.sp - 1 - fields_number];
+                // std.debug.print("{}", .{fields_number});
+                try vm.push(value);
+            },
+
             .call => {
                 const args_number = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-                vm.currentFrame().ip += 1;
+                fm.ip += 1;
                 const value = vm.stack[vm.sp - 1 - args_number];
 
                 switch (value) {
@@ -376,6 +438,7 @@ pub fn run(vm: *Vm) !void {
 
                             const frame: Frame = .init(.{ .func = func }, @intCast(vm.sp - args_number));
                             vm.pushFrame(frame);
+                            fm = vm.currentFrame();
                             // the call stack space allocation
                             vm.sp = @as(usize, @intCast(frame.bp)) + func.num_locals;
                             continue;
@@ -390,6 +453,7 @@ pub fn run(vm: *Vm) !void {
 
                             const frame: Frame = .init(.{ .func = func }, @intCast(vm.sp - args_number));
                             vm.pushFrame(frame);
+                            fm = vm.currentFrame();
                             // the call stack space allocation
                             vm.sp = @as(usize, @intCast(frame.bp)) + func.num_locals;
                             continue;
@@ -409,28 +473,6 @@ pub fn run(vm: *Vm) !void {
             },
         }
     }
-}
-
-pub fn pop(vm: *Vm) Value {
-    //if (vm.sp == 0) return .null;
-    const o = vm.stack[vm.sp - 1];
-    vm.sp -= 1;
-    return o;
-}
-
-pub fn push(vm: *Vm, obj: Value) !void {
-    if (vm.sp >= STACK_SIZE) return error.VMStackOverflow;
-    vm.stack[vm.sp] = obj;
-    vm.sp += 1;
-}
-
-fn top(vm: *Vm) ?Value {
-    if (vm.sp == 0) return null;
-    return vm.stack[vm.sp - 1];
-}
-
-pub fn lastPopped(vm: *Vm) Value {
-    return vm.stack[vm.sp];
 }
 
 const std = @import("std");
