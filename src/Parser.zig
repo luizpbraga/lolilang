@@ -514,7 +514,19 @@ fn parseFloat(self: *Parser) anyerror!ast.Expression {
 }
 
 fn parseChar(self: *Parser) anyerror!ast.Expression {
-    return .{ .char = .{ .value = self.cur_token.literal[0] } };
+    var value: u8 = self.cur_token.literal[0];
+
+    if (self.cur_token.literal.len > 1) {
+        if (std.mem.eql(u8, self.cur_token.literal, "\\n")) {
+            value = '\n';
+        } else if (std.mem.eql(u8, self.cur_token.literal, "\\t")) {
+            value = '\t';
+        } else if (std.mem.eql(u8, self.cur_token.literal, "\\r")) {
+            value = '\r';
+        }
+    }
+
+    return .{ .char = .{ .value = value } };
 }
 
 fn parseInteger(self: *Parser) anyerror!ast.Expression {

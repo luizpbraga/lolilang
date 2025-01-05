@@ -86,6 +86,9 @@ pub const Opcode = enum(u8) {
     /// create a new type
     type,
 
+    land,
+    lor,
+
     /// numbers of operands (bytes) for a given upcode
     /// optimize: use a single small integer
     pub const OperandWidth = []const usize;

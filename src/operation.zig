@@ -36,9 +36,10 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
 
                 if (i >= 0 and i < len) {
                     const char = string[@intCast(i)];
-                    const str = try vm.allocator.dupe(u8, &.{char});
-                    const obj = try memory.allocateObject(vm, .{ .string = str });
-                    return try vm.push(.{ .obj = obj });
+                    return try vm.push(.{ .char = char });
+                    // const str = try vm.allocator.dupe(u8, &.{char});
+                    // const obj = try memory.allocateObject(vm, .{ .string = str });
+                    // return try vm.push(.{ .obj = obj });
                 }
 
                 return;
@@ -274,11 +275,13 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                 const result = switch (op) {
                     .eq => left_val == right_val,
                     .neq => left_val != right_val,
+                    .land => left_val and right_val,
+                    .lor => left_val or right_val,
                     else => return error.UnknowBooleanOperation,
                 };
                 return try vm.push(.{ .boolean = result });
             },
-            else => {},
+            else => return error.InvalidOperation,
         },
 
         .integer => |left_val| switch (right) {
@@ -292,7 +295,23 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                 };
                 return try vm.push(.{ .boolean = result });
             },
-            else => {},
+
+            .char => |right_val| {
+                const right_val0: i32 = @intCast(right_val);
+                const result = switch (op) {
+                    .eq => left_val == right_val0,
+                    .neq => left_val != right_val0,
+                    .gt => left_val > right_val0,
+                    .gte => left_val >= right_val0,
+                    else => return error.UnknowBooleanOperation,
+                };
+                return try vm.push(.{ .boolean = result });
+            },
+
+            else => {
+                std.debug.print("int int op {}", .{op});
+                return error.InvalidOperation;
+            },
         },
 
         .float => |left_val| switch (right) {
@@ -306,7 +325,10 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                 };
                 return try vm.push(.{ .boolean = result });
             },
-            else => {},
+            else => {
+                std.debug.print("float float op {}", .{op});
+                return error.InvalidOperation;
+            },
         },
 
         .char => |left_val| switch (right) {
@@ -314,11 +336,28 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                 const result = switch (op) {
                     .eq => left_val == right_val,
                     .neq => left_val != right_val,
+                    .gt => left_val > right_val,
+                    .gte => left_val >= right_val,
                     else => return error.UnknowBooleanOperation,
                 };
                 return try vm.push(.{ .boolean = result });
             },
-            else => {},
+
+            .integer => |right_val| {
+                const right_val0: u8 = @intCast(right_val);
+                const result = switch (op) {
+                    .eq => left_val == right_val0,
+                    .neq => left_val != right_val0,
+                    .gt => left_val > right_val0,
+                    .gte => left_val >= right_val0,
+                    else => return error.UnknowBooleanOperation,
+                };
+                return try vm.push(.{ .boolean = result });
+            },
+            else => {
+                std.debug.print("{} {} op {}\n", .{ left, right, op });
+                return error.InvalidOperation;
+            },
         },
 
         .null => switch (right) {
@@ -330,7 +369,7 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                 };
                 return try vm.push(.{ .boolean = result });
             },
-            else => {},
+            else => return error.InvalidOperation,
         },
 
         .obj => |left_val_obj| switch (right) {

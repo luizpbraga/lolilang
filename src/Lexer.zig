@@ -205,16 +205,9 @@ pub fn nextToken(self: *Self) Token {
             },
             else => newToken(.@":"),
         },
-        '\'' => {
-            self.readChar(); // "'"
-            const posi = self.position;
-            const literal = self.input[posi .. posi + 1];
-            self.readChar(); // char
-            self.readChar(); // "'"
-            return Token{
-                .type = .char,
-                .literal = literal,
-            };
+        '\'' => Token{
+            .type = .char,
+            .literal = self.readCharacter(),
         },
         '"' => Token{
             .type = .string,

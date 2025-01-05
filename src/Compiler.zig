@@ -347,8 +347,8 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.compile(.{ .expression = infix.left });
                 try c.compile(.{ .expression = infix.right });
                 const op: code.Opcode = switch (operator) {
-                    .@"and" => .add,
-                    .@"or" => .sub,
+                    .@"and" => .land,
+                    .@"or" => .lor,
                     .@"+" => .add,
                     .@"-" => .sub,
                     .@"*" => .mul,
@@ -476,6 +476,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.compile(.{ .expression = instance.type });
                 for (instance.fields) |field| {
                     const ident = field.name;
+
                     const pos = try c.addConstants(.{ .tag = ident.value });
                     try c.emit(.constant, &.{pos});
                     try c.compile(.{ .expression = field.value });

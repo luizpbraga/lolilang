@@ -312,7 +312,7 @@ pub fn run(vm: *Vm) !void {
 
             .add, .sub, .mul, .div, .mod => try operation.executeBinary(vm, op),
 
-            .eq, .neq, .gt, .gte => try operation.executeComparison(vm, op),
+            .eq, .neq, .gt, .gte, .land, .lor => try operation.executeComparison(vm, op),
 
             .not, .min => try operation.executePrefix(vm, op),
 
@@ -496,7 +496,10 @@ pub fn run(vm: *Vm) !void {
                         try vm.push(bui.function(vm, args));
                     },
 
-                    else => return error.ValueNotCallable,
+                    else => {
+                        std.debug.print("got {}\n", .{value});
+                        return error.ValueNotCallable;
+                    },
                 }
             },
         }
