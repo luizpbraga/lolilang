@@ -20,6 +20,15 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
             return try vm.push(value);
         },
 
+        .type => |y| {
+            if (y.type != .@"enum") {
+                return error.StructNotIndex;
+            }
+
+            const value = y.fields.get(index.tag) orelse .null;
+            return try vm.push(value);
+        },
+
         .string => |string| {
             if (index.* == .integer) {
                 const i = index.integer;

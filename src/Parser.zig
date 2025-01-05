@@ -25,7 +25,7 @@ pub const Precedence = enum {
     prefix,
     call,
     index,
-    instance,
+
     pub fn peek(token_type: Token.Type) Precedence {
         return switch (token_type) {
             else => .lowest,
@@ -39,7 +39,6 @@ pub const Precedence = enum {
             .@"!" => .prefix,
             .@"[", .@".", .@"..", .@"..=" => .index,
             .@"=", .@":=", .@"+=", .@"-=", .@"*=", .@"/=" => .assigne,
-            // .@"{" => .call,
         };
     }
 };
@@ -51,27 +50,22 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
 
     left_exp.* = try switch (p.cur_token.type) {
         .identifier => p.parseIdentifier(),
-        .@"." => p.parseEnumTag(),
+        .@"." => p.parseTag(),
         .integer => p.parseInteger(),
         .float => p.parseFloat(),
-        .true => p.parseBoolean(),
-        .false => p.parseBoolean(),
-        .null => p.parseNull(),
-        .@";" => p.parseNull(),
-        .@"}" => p.parseNull(),
+        .true, .false => p.parseBoolean(),
+        .null, .@";", .@"}" => p.parseNull(),
         .@"[" => p.parseArray(),
         .@"{" => p.parseHash(),
+        .new => p.parseInstance2(),
         .@"fn" => p.parseFunction(),
-        .@"struct" => p.parseType(),
-        .@"enum" => p.parseType(),
+        .@"struct", .@"enum" => p.parseType(),
         .string => p.parseString(),
         .char => p.parseChar(),
-        .@"if" => p.parseIf(),
+        .@"if", .@"else" => p.parseIf(),
         .@"for" => p.parseFor(),
         .match => p.parseMatch(),
-        .@"else" => p.parseIf(),
-        .@"!" => p.parsePrefix(),
-        .@"-" => p.parsePrefix(),
+        .@"!", .@"-" => p.parsePrefix(),
         .@"(" => p.parseGroup(),
         else => error.UnknowPrefixFn,
     };
@@ -93,6 +87,14 @@ fn infixExp(p: *Parser, lx: *ast.Expression) anyerror!?ast.Expression {
             p.nextToken();
             return try p.parseMethod(lx);
         },
+        // .@"{" => {
+        //     // if (p.cur_token.type != .identifier) {
+        //     //     return null;
+        //     // }
+        //
+        //     p.nextToken();
+        //     return try p.parseInstance(lx);
+        // },
         .@"(" => {
             p.nextToken();
             return try p.parseCall(lx);
@@ -168,7 +170,7 @@ fn parseIdentifier(self: *const Parser) anyerror!ast.Expression {
     return .{ .identifier = .{ .value = self.cur_token.literal } };
 }
 
-fn parseEnumTag(self: *Parser) anyerror!ast.Expression {
+fn parseTag(self: *Parser) anyerror!ast.Expression {
     self.nextToken();
     return .{ .tag = .{ .value = self.cur_token.literal } };
 }
@@ -218,7 +220,11 @@ fn parseContinue(self: *Parser) anyerror!ast.Statement {
 }
 
 fn parseAssignment(self: *Parser, name: *ast.Expression) anyerror!ast.Expression {
-    var stmt: ast.Assignment = undefined;
+    var stmt: ast.Assignment = .{
+        .name = name,
+        .operator = undefined,
+        .value = undefined,
+    };
 
     stmt.name = name;
 
@@ -237,7 +243,9 @@ fn parseAssignment(self: *Parser, name: *ast.Expression) anyerror!ast.Expression
 }
 
 pub fn parseDefer(self: *Parser) anyerror!ast.Statement {
-    var defer_stmt: ast.Defer = undefined;
+    var defer_stmt: ast.Defer = .{
+        .body = undefined,
+    };
 
     if (!self.expectPeek(.@"{")) {
         return error.ExpectSomeConditionOrIdentifier;
@@ -253,7 +261,10 @@ fn parseCon(self: *Parser) anyerror!ast.Statement {
 
     if (self.expectPeek(.@"(")) return .{ .con_block = try self.parseConBlock(tk) };
 
-    var const_stmt: ast.Con = undefined;
+    var const_stmt: ast.Con = .{
+        .name = undefined,
+        .value = undefined,
+    };
 
     if (!self.expectPeek(.identifier)) {
         std.log.err("Expect Identifier, found '{s}'", .{self.cur_token.literal});
@@ -282,7 +293,9 @@ fn parseCon(self: *Parser) anyerror!ast.Statement {
 }
 
 fn parseVarBlock(self: *Parser, _: Token) anyerror!ast.VarBlock {
-    var stmt: ast.VarBlock = undefined;
+    var stmt: ast.VarBlock = .{
+        .vars_decl = undefined,
+    };
 
     const allocator = self.arena.allocator();
 
@@ -322,7 +335,10 @@ fn parseVarBlock(self: *Parser, _: Token) anyerror!ast.VarBlock {
 }
 
 fn parseConBlock(self: *Parser, _: Token) anyerror!ast.ConBlock {
-    var stmt: ast.ConBlock = undefined;
+    var stmt: ast.ConBlock = .{
+        .const_decl = undefined,
+    };
+
     const allocator = self.arena.allocator();
 
     var vars: std.ArrayList(ast.Con) = .init(allocator);
@@ -458,7 +474,6 @@ fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
         old_left_exp.* = left_exp.*;
 
         left_exp.* = try infixExp(self, old_left_exp) orelse {
-            allocator.destroy(old_left_exp);
             return left_exp;
         };
     }
@@ -540,7 +555,10 @@ fn parseGroup(self: *Parser) anyerror!ast.Expression {
 }
 
 fn parsePrefix(self: *Parser) anyerror!ast.Expression {
-    var expression: ast.Prefix = undefined;
+    var expression: ast.Prefix = .{
+        .operator = self.cur_token.type,
+        .right = undefined,
+    };
 
     expression.operator = self.cur_token.type;
 
@@ -568,7 +586,10 @@ fn parseInfix(self: *Parser, left: *ast.Expression) anyerror!ast.Expression {
 }
 
 fn parseIf(self: *Parser) anyerror!ast.Expression {
-    var expression: ast.If = undefined;
+    var expression: ast.If = .{
+        .condition = undefined,
+        .consequence = undefined,
+    };
 
     self.nextToken();
 
@@ -613,7 +634,10 @@ fn parseBlock(self: *Parser) anyerror!ast.Block {
 }
 
 fn parseFn(self: *Parser) anyerror!ast.Statement {
-    var func_stmt: ast.FunctionStatement = undefined;
+    var func_stmt: ast.FunctionStatement = .{
+        .func = undefined,
+        .name = undefined,
+    };
 
     if (!self.expectPeek(.identifier)) {
         std.log.err("Expect Identifier, found '{s}'", .{self.cur_token.literal});
@@ -693,7 +717,10 @@ fn parseType(self: *Parser) anyerror!ast.Expression {
 }
 
 fn parseFunction(self: *Parser) anyerror!ast.Expression {
-    var func: ast.Function = undefined;
+    var func: ast.Function = .{
+        .parameters = undefined,
+        .body = undefined,
+    };
 
     if (!self.expectPeek(.@"(")) return error.MissingParentese;
 
@@ -765,9 +792,23 @@ fn parseInstance(self: *Parser, type_exp: *ast.Expression) anyerror!ast.Expressi
     return .{ .instance = .{ .type = type_exp, .fields = try self.parseInstanceArguments() } };
 }
 
+fn parseInstance2(self: *Parser) anyerror!ast.Expression {
+    self.nextToken();
+    return .{ .instance = .{
+        .type = try self.parseExpression(.lowest),
+        .fields = try self.parseInstanceArguments(),
+    } };
+}
+
 fn parseInstanceArguments(self: *Parser) anyerror![]ast.Type.Field {
     var fields: std.ArrayList(ast.Type.Field) = .init(self.arena.allocator());
     errdefer fields.deinit();
+
+    if (!self.peekTokenIs(.@"{")) {
+        return error.InvalidInstanceSyntax;
+    }
+
+    self.nextToken();
 
     if (self.peekTokenIs(.@"}")) {
         self.nextToken();
@@ -980,7 +1021,10 @@ pub fn parseIndex(self: *Parser, left: *ast.Expression) anyerror!ast.Expression 
 }
 
 pub fn parseMatch(self: *Parser) anyerror!ast.Expression {
-    var match: ast.Match = undefined;
+    var match: ast.Match = .{
+        .value = undefined,
+        .arms = undefined,
+    };
 
     self.nextToken();
 
@@ -1021,9 +1065,10 @@ pub fn parseMatch(self: *Parser) anyerror!ast.Expression {
             continue;
         }
 
-        var arm: ast.Match.Arm = undefined;
-
-        arm.condition = try self.parseExpression(.lowest);
+        var arm: ast.Match.Arm = .{
+            .condition = try self.parseExpression(.lowest),
+            .block = undefined,
+        };
 
         if (!self.expectPeek(.@"=>")) {
             return error.MissingMatchToken;
@@ -1182,6 +1227,7 @@ pub fn parseFor(self: *Parser) anyerror!ast.Expression {
 
     return self.parseForLoopCondition(condition_or_ident);
 }
+
 // fn parseEnum(self: *Parser) anyerror!ast.Expression {
 //     var enu = ast.Enum{
 //         .token = self.cur_token,

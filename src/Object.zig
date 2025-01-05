@@ -21,8 +21,10 @@ pub const Type = union(enum) {
 };
 
 pub const BuiltinType = struct {
+    pub const BT = enum { @"struct", @"enum" };
+
     index: usize,
-    type: enum { @"struct", @"enum" },
+    type: BT,
     name: ?[]const u8 = null,
     fields: std.StringHashMap(Value),
     desc: ?std.StringHashMap(Value) = null,

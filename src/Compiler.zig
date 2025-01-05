@@ -419,6 +419,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             .tag => |tag| {
                 const pos = try c.addConstants(.{
                     .tag = tag.value,
+                    //.from = tag.from,
                 });
                 try c.emit(.constant, &.{pos});
             },
@@ -681,24 +682,46 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(.null, &.{});
             },
 
-            .type => |@"type"| {
-                const fields = @"type".fields;
-                const descs = @"type".desc;
+            .type => |ty| {
+                const fields = ty.fields;
+                const descs = ty.desc;
 
-                for (fields) |field| {
-                    const ident = field.name;
-                    const value = field.value;
+                const e: Object.BuiltinType.BT = if (ty.type == .@"struct") .@"struct" else .@"enum";
 
-                    const pos = try c.addConstants(.{ .tag = ident.value });
-                    try c.emit(.constant, &.{pos});
-                    try c.compile(.{ .expression = value });
+                if (ty.type == .@"struct") {
+                    for (fields) |field| {
+                        const ident = field.name;
+                        const value = field.value;
+
+                        const pos = try c.addConstants(.{ .tag = ident.value });
+                        try c.emit(.constant, &.{pos});
+                        try c.compile(.{ .expression = value });
+                    }
+                } else {
+                    var n: i32 = 0;
+                    for (fields) |field| {
+                        const ident = field.name;
+                        const value = field.value;
+
+                        const pos = try c.addConstants(.{ .tag = ident.value });
+                        try c.emit(.constant, &.{pos});
+
+                        if (value.* == .null) {
+                            const posx = try c.addConstants(.{ .integer = n });
+                            try c.emit(.constant, &.{posx});
+                            n += 1;
+                            continue;
+                        }
+
+                        try c.compile(.{ .expression = value });
+                    }
                 }
 
                 for (descs) |desc| {
                     _ = desc;
                 }
 
-                try c.emit(.type, &.{ c.type_index, fields.len });
+                try c.emit(.type, &.{ c.type_index, fields.len, @intFromEnum(e) });
                 c.type_index += 1;
             },
 

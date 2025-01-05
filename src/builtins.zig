@@ -124,7 +124,7 @@ fn print(value: Value) void {
             },
 
             .type => |ty| {
-                std.debug.print("[{}_{s}.{any}]", .{ ty.index, @tagName(ty.type), ty.name });
+                std.debug.print("{}_{s}.{any}", .{ ty.index, @tagName(ty.type), ty.name });
             },
 
             .instance => |ty| {

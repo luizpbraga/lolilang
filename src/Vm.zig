@@ -392,11 +392,13 @@ pub fn run(vm: *Vm) !void {
             .type => {
                 const index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
                 const fields_number = std.mem.readInt(u8, instructions[ip + 2 ..][0..1], .big);
-                fm.ip += 2;
+                const type_type = std.mem.readInt(u8, instructions[ip + 3 ..][0..1], .big);
+
+                fm.ip += 3;
 
                 var struct_type: Object.BuiltinType = .{
                     .index = index,
-                    .type = .@"struct",
+                    .type = @enumFromInt(type_type),
                     .fields = .init(vm.allocator),
                 };
                 errdefer struct_type.fields.deinit();
