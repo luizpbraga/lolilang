@@ -31,7 +31,7 @@ pub const BuiltinType = struct {
 pub const Instance = struct {
     type: *BuiltinType,
     fields: std.StringHashMap(Value),
-    desc: ?std.StringHashMap(Value) = null,
+    desc: ?*std.StringHashMap(Value) = null,
 };
 
 pub const Value = union(enum) {

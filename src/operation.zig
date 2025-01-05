@@ -104,6 +104,12 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
 pub fn setIndex(vm: *Vm, left: *Value, index: Value, value: Value) !void {
     switch (left.*) {
         .obj => |ob| switch (ob.type) {
+            .instance => |*ins| {
+                if (index == .tag) {
+                    try ins.fields.put(index.tag, value);
+                }
+            },
+
             .string => |string| {
                 if (index != .integer) return error.InvalidIndexType;
 

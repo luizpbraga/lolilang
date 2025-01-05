@@ -132,7 +132,7 @@ fn print(value: Value) void {
                 var iter = ty.fields.iterator();
                 while (iter.next()) |entry| {
                     const key = entry.key_ptr;
-                    std.debug.print(".{s} = ", .{key.*});
+                    std.debug.print("{s}: ", .{key.*});
                     print(entry.value_ptr.*);
                     std.debug.print(", ", .{});
                 }

@@ -483,6 +483,8 @@ pub fn run(vm: *Vm) !void {
                             continue;
                         }
 
+                        std.debug.print("got {}", .{ob});
+
                         return error.CallerIsNoFunction;
                     },
 

@@ -7,15 +7,12 @@ const Vm = @import("Vm.zig");
 pub var emitbytecode = false;
 
 pub fn runVm(allocator: std.mem.Allocator, input: []const u8) !void {
-    var lexer = Lexer.init(input);
+    var lexer: Lexer = .init(input);
 
-    var parser = Parser.new(allocator, &lexer);
+    var parser: Parser = .init(allocator, &lexer);
     defer parser.deinit();
 
-    const node = parser.parse() catch |err| {
-        std.debug.print("{}", .{err});
-        return;
-    };
+    const node = try parser.parse();
 
     var compiler: Compiler = try .init(allocator);
     defer compiler.deinit();
