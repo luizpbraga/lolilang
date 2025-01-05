@@ -15,10 +15,9 @@ var t = 3
 sex := true
 ```
 
-#### Function
+#### Function and Closures
 
 ```rust
-// functions (sometimes it does not work HEHE)
 fn fibonacci(n, fib) {
     if n <= 1 { 
       return fib[n]
@@ -40,8 +39,8 @@ fn fibonacci(n, fib) {
 fib := { 0: 1, 1: 1 }
 fibonacci(45, fib)
 
-var foo = fn(x, y) {
-    var hello = "Hello Loli"
+foo := fn(x, y) {
+    hello := "Hello Loli"
     return if x > y { x } else { hello }
 }
 
@@ -102,7 +101,6 @@ for i in 10..100 {
 ```
 
 #### Match
-
 ```rust
 x := match 10 {
     1 => { 0 }
@@ -113,12 +111,25 @@ x := match 10 {
 }
 ```
 
-#### to implement:
-    1. enum
-    2. struct
-    3. scopes ({ ... })
-    4. erros KKKKK
+#### Structs and Enums
+```zig
+Color := enum { 
+    red,
+    blue,
+    black,
+}
+
+X := struct { 
+    some_null_value,
+    default_color = Color.red,
+    you_mama = {}
+}
+
+// new keyword sucks!
+x := new X{ .some_null_value = 1 }
+```
 
 #### to fix:
     + hashmap sometimes returns null
     + segfault in some assignments
+    + enum and struct implementation
