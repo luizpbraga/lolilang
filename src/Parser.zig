@@ -20,17 +20,38 @@ const Error = struct {
 };
 
 fn missing(p: *Parser, tk: Token.Type) !void {
-    const lin = p.line();
+    const l = p.line();
+    const lin = l.line;
+    const at = p.lexer.position - l.start - 1;
     try p.errors.append(
-        "Syntax error: Expect '{s}', found '{s}'\n{}:{} {s}\n",
-        .{ @tagName(tk), p.peek_token.literal, p.lexer.line_index, p.lexer.position, lin },
+        "\x1b[1m{}:{}: \x1b[31mSyntax error:\x1b[0m\x1b[1m Expected '{s}', found '{s}' ({s}) \x1b[0m\n\t{s}\n",
+        .{ p.lexer.line_index, at, @tagName(tk), p.peek_token.literal, @tagName(p.peek_token.type), lin },
     );
-    try p.errors.msg.writer().writeByteNTimes('~', p.lexer.read_position);
-    try p.errors.msg.writer().writeByte('^');
+    try p.errors.msg.writer().writeByteNTimes(' ', at - 1);
+    try p.errors.msg.writer().writeAll("\t\x1b[32m^\x1b[0m\n");
 }
 
-fn line(p: *Parser) []const u8 {
+fn unexpected(p: *Parser, tk: Token.Type) !void {
+    const l = p.line();
+    const lin = l.line;
+    const at = p.lexer.position - l.start - 1;
+    try p.errors.append(
+        "\x1b[1m{}:{}: \x1b[31mSyntax error:\x1b[0m\x1b[1m Unexpected token '{s}'\x1b[0m\n\t{s}\n",
+        .{ p.lexer.line_index, at, @tagName(tk), lin },
+    );
+    try p.errors.msg.writer().writeByteNTimes(' ', at - 1);
+    try p.errors.msg.writer().writeAll("\t\x1b[32m^\x1b[0m\n");
+}
+
+const Line = struct {
+    line: []const u8,
+    start: usize,
+    end: usize,
+};
+
+fn line(p: *Parser) Line {
     const input = p.lexer.input;
+
     var pos = p.lexer.position;
 
     if (pos >= input.len) {
@@ -40,10 +61,11 @@ fn line(p: *Parser) []const u8 {
         }
     }
 
-    const start = std.mem.indexOf(u8, input[0..pos], "\n") orelse 0;
+    const start = std.mem.lastIndexOf(u8, input[0..pos], "\n") orelse 0;
     var end = std.mem.indexOf(u8, input[pos..], "\n") orelse input.len;
     if (end != input.len) end += pos;
-    return std.mem.trim(u8, input[start..end], "\n");
+
+    return .{ .line = std.mem.trim(u8, input[start..end], "\n"), .end = end, .start = start };
 }
 
 fn errlog(p: *Parser, msg: []const u8) !void {
@@ -111,8 +133,7 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
         .@"!", .@"-" => try p.parsePrefix(),
         .@"(" => try p.parseGroup(),
         else => b: {
-            try p.errlog("Undefined Predix Function");
-            std.log.err("At token: {s}", .{p.cur_token.literal});
+            try p.unexpected(p.cur_token.type);
             break :b NULL;
         },
     };
@@ -688,6 +709,8 @@ fn parseBlock(self: *Parser) anyerror!ast.Block {
         try stmts.append(stmt);
         self.nextToken();
     }
+
+    if (!self.curTokenIs(.@"}")) try self.missing(.@"}");
 
     const stmts_owner = try stmts.toOwnedSlice();
 
