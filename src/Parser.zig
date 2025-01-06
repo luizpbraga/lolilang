@@ -9,6 +9,29 @@ cur_token: Token,
 last_token: Token,
 peek_token: Token,
 arena: std.heap.ArenaAllocator,
+errors: Error,
+
+const Error = struct {
+    msg: std.ArrayList(u8),
+
+    fn append(err: *Error, comptime fmt: []const u8, args: anytype) !void {
+        try err.msg.writer().print(fmt, args);
+    }
+};
+
+fn missing(p: *Parser, tk: Token.Type) !void {
+    try p.errors.append(
+        "{}:{} Syntax error: Expect '{s}', found '{s}'\n",
+        .{ p.lexer.line_index, p.lexer.position, @tagName(tk), p.peek_token.literal },
+    );
+}
+
+fn errlog(p: *Parser, msg: []const u8) !void {
+    try p.errors.append(
+        "{}:{} {s}\n",
+        .{ p.lexer.line_index, p.lexer.position, msg },
+    );
+}
 
 var NULL: ast.Expression = .null;
 var TRUE: ast.Expression = .{ .boolean = .{ .value = true } };
@@ -48,26 +71,30 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
     const left_exp = try allocator.create(ast.Expression);
     errdefer allocator.destroy(left_exp);
 
-    left_exp.* = try switch (p.cur_token.type) {
+    left_exp.* = switch (p.cur_token.type) {
         .identifier => p.parseIdentifier(),
         .@"." => p.parseTag(),
-        .integer => p.parseInteger(),
-        .float => p.parseFloat(),
+        .integer => try p.parseInteger(),
+        .float => try p.parseFloat(),
         .true, .false => p.parseBoolean(),
         .null, .@";", .@"}" => p.parseNull(),
-        .@"[" => p.parseArray(),
-        .@"{" => p.parseHash(),
-        .new => p.parseInstance2(),
-        .@"fn" => p.parseFunction(),
-        .@"struct", .@"enum" => p.parseType(),
+        .@"[" => try p.parseArray(),
+        .@"{" => try p.parseHash(),
+        .new => try p.parseInstance2(),
+        .@"fn" => try p.parseFunction(),
+        .@"struct", .@"enum" => try p.parseType(),
         .string => p.parseString(),
         .char => p.parseChar(),
-        .@"if", .@"else" => p.parseIf(),
-        .@"for" => p.parseFor(),
-        .match => p.parseMatch(),
-        .@"!", .@"-" => p.parsePrefix(),
-        .@"(" => p.parseGroup(),
-        else => error.UnknowPrefixFn,
+        .@"if", .@"else" => try p.parseIf(),
+        .@"for" => try p.parseFor(),
+        .match => try p.parseMatch(),
+        .@"!", .@"-" => try p.parsePrefix(),
+        .@"(" => try p.parseGroup(),
+        else => b: {
+            try p.errlog("Undefined Predix Function");
+            std.log.err("At token: {s}", .{p.cur_token.literal});
+            break :b NULL;
+        },
     };
 
     return left_exp;
@@ -113,7 +140,8 @@ fn infixExp(p: *Parser, lx: *ast.Expression) anyerror!?ast.Expression {
 }
 
 pub fn init(child_alloc: std.mem.Allocator, lexer: *Lexer) Parser {
-    const arena: std.heap.ArenaAllocator = .init(child_alloc);
+    var arena: std.heap.ArenaAllocator = .init(child_alloc);
+    const allocator = arena.allocator();
 
     var parser: Parser = .{
         .arena = arena,
@@ -121,6 +149,7 @@ pub fn init(child_alloc: std.mem.Allocator, lexer: *Lexer) Parser {
         .cur_token = undefined,
         .peek_token = undefined,
         .last_token = .{ .type = .eof, .literal = "" },
+        .errors = .{ .msg = .init(allocator) },
     };
 
     parser.nextToken();
@@ -166,16 +195,16 @@ fn currentPrecedence(self: *const Parser) Precedence {
 }
 
 // parsers fn -----------------------------------------------------------
-fn parseIdentifier(self: *const Parser) anyerror!ast.Expression {
+fn parseIdentifier(self: *const Parser) ast.Expression {
     return .{ .identifier = .{ .value = self.cur_token.literal } };
 }
 
-fn parseTag(self: *Parser) anyerror!ast.Expression {
+fn parseTag(self: *Parser) ast.Expression {
     self.nextToken();
     return .{ .tag = .{ .value = self.cur_token.literal } };
 }
 
-fn parseReturn(self: *Parser) anyerror!ast.Statement {
+fn parseReturn(self: *Parser) !ast.Statement {
     var return_stmt: ast.Return = .{ .value = &NULL };
 
     self.nextToken();
@@ -189,7 +218,7 @@ fn parseReturn(self: *Parser) anyerror!ast.Statement {
     return .{ .@"return" = return_stmt };
 }
 
-fn parseBreak(self: *Parser) anyerror!ast.Statement {
+fn parseBreak(self: *Parser) !ast.Statement {
     var break_stmt: ast.Break = .{ .value = undefined };
 
     self.nextToken();
@@ -203,7 +232,7 @@ fn parseBreak(self: *Parser) anyerror!ast.Statement {
     return .{ .@"break" = break_stmt };
 }
 
-fn parseContinue(self: *Parser) anyerror!ast.Statement {
+fn parseContinue(self: *Parser) !ast.Statement {
     var break_stmt: ast.Continue = .{
         .value = undefined,
     };
@@ -219,7 +248,7 @@ fn parseContinue(self: *Parser) anyerror!ast.Statement {
     return .{ .@"continue" = break_stmt };
 }
 
-fn parseAssignment(self: *Parser, name: *ast.Expression) anyerror!ast.Expression {
+fn parseAssignment(self: *Parser, name: *ast.Expression) !ast.Expression {
     var stmt: ast.Assignment = .{
         .name = name,
         .operator = undefined,
@@ -234,7 +263,13 @@ fn parseAssignment(self: *Parser, name: *ast.Expression) anyerror!ast.Expression
 
     stmt.operator = switch (op.type) {
         .@"=", .@":=", .@"+=", .@"-=", .@"/=", .@"*=" => op.type,
-        else => return error.UnexpectedToken,
+        else => b: {
+            try self.errors.append(
+                "{}:{} At assignment: Invalid operator {s}\n",
+                .{ self.lexer.line_index, self.lexer.position, op.literal },
+            );
+            break :b op.type;
+        },
     };
 
     stmt.value = try self.parseExpression(.lowest);
@@ -242,13 +277,16 @@ fn parseAssignment(self: *Parser, name: *ast.Expression) anyerror!ast.Expression
     return .{ .assignment = stmt };
 }
 
-pub fn parseDefer(self: *Parser) anyerror!ast.Statement {
+pub fn parseDefer(self: *Parser) !ast.Statement {
     var defer_stmt: ast.Defer = .{
         .body = undefined,
     };
 
     if (!self.expectPeek(.@"{")) {
-        return error.ExpectSomeConditionOrIdentifier;
+        try self.errors.append(
+            "{}:{} At defer: Expect Identifier, found {s}\n",
+            .{ self.lexer.line_index, self.lexer.position, self.peek_token.literal },
+        );
     }
 
     defer_stmt.body = try self.parseBlock();
@@ -256,7 +294,7 @@ pub fn parseDefer(self: *Parser) anyerror!ast.Statement {
     return .{ .@"defer" = defer_stmt };
 }
 
-fn parseCon(self: *Parser) anyerror!ast.Statement {
+fn parseCon(self: *Parser) !ast.Statement {
     const tk = self.cur_token;
 
     if (self.expectPeek(.@"(")) return .{ .con_block = try self.parseConBlock(tk) };
@@ -267,8 +305,10 @@ fn parseCon(self: *Parser) anyerror!ast.Statement {
     };
 
     if (!self.expectPeek(.identifier)) {
-        std.log.err("Expect Identifier, found '{s}'", .{self.cur_token.literal});
-        return error.UnexpectedToken;
+        try self.errors.append(
+            "{}:{} At con: Expect Identifier, found {s}\n",
+            .{ self.lexer.line_index, self.lexer.position, self.peek_token.literal },
+        );
     }
 
     const_stmt.name = .{
@@ -276,8 +316,10 @@ fn parseCon(self: *Parser) anyerror!ast.Statement {
     };
 
     if (!self.expectPeek(.@"=")) {
-        std.log.err("Expect Assignment Token (=), found '{s}' (hint: U cannot use numbers in var names...)", .{self.cur_token.literal});
-        return error.UnexpectedToken;
+        try self.errors.append(
+            "{}:{} At con: Expect assignment operator (=), found {s}\n",
+            .{ self.lexer.line_index, self.lexer.position, self.peek_token.literal },
+        );
     }
 
     self.nextToken();
@@ -292,7 +334,7 @@ fn parseCon(self: *Parser) anyerror!ast.Statement {
     return .{ .con = const_stmt };
 }
 
-fn parseVarBlock(self: *Parser, _: Token) anyerror!ast.VarBlock {
+fn parseVarBlock(self: *Parser, _: Token) !ast.VarBlock {
     var stmt: ast.VarBlock = .{
         .vars_decl = undefined,
     };
@@ -305,13 +347,19 @@ fn parseVarBlock(self: *Parser, _: Token) anyerror!ast.VarBlock {
     self.nextToken();
 
     while (self.cur_token.type != .@")") {
-        const ident = try self.parseIdentifier();
+        const ident = self.parseIdentifier();
 
-        if (ident != .identifier) return error.ExprectIdentifier;
+        if (ident != .identifier) try self.errors.append(
+            "{}:{} At var block: Expect Identifier, found {s}\n",
+            .{ self.lexer.line_index, self.lexer.position, self.peek_token.literal },
+        );
 
         self.nextToken();
 
-        if (self.expectPeek(.@"=")) return error.MissingAssingmentOperator;
+        if (self.expectPeek(.@"=")) try self.errors.append(
+            "{}:{} At var block: Expect '=', found {s}\n",
+            .{ self.lexer.line_index, self.lexer.position, self.peek_token.literal },
+        );
 
         self.nextToken();
 
@@ -334,7 +382,7 @@ fn parseVarBlock(self: *Parser, _: Token) anyerror!ast.VarBlock {
     return stmt;
 }
 
-fn parseConBlock(self: *Parser, _: Token) anyerror!ast.ConBlock {
+fn parseConBlock(self: *Parser, _: Token) !ast.ConBlock {
     var stmt: ast.ConBlock = .{
         .const_decl = undefined,
     };
@@ -347,13 +395,13 @@ fn parseConBlock(self: *Parser, _: Token) anyerror!ast.ConBlock {
     self.nextToken();
 
     while (self.cur_token.type != .@")") {
-        const ident = try self.parseIdentifier();
+        const ident = self.parseIdentifier();
 
-        if (ident != .identifier) return error.ExprectIdentifier;
+        if (ident != .identifier) try self.missing(.identifier);
 
         self.nextToken();
 
-        if (self.expectPeek(.@"=")) return error.MissingAssingmentOperator;
+        if (self.expectPeek(.@"=")) try self.missing(.@"=");
 
         self.nextToken();
 
@@ -381,7 +429,7 @@ fn line(self: *Parser) []const u8 {
     return input[self.lexer.position..];
 }
 
-fn parseVar(self: *Parser) anyerror!ast.Statement {
+fn parseVar(self: *Parser) !ast.Statement {
     const tk = self.cur_token;
 
     if (self.expectPeek(.@"(")) return .{ .var_block = try self.parseVarBlock(tk) };
@@ -391,10 +439,10 @@ fn parseVar(self: *Parser) anyerror!ast.Statement {
         .value = undefined,
     };
 
-    if (!self.expectPeek(.identifier)) {
-        std.log.err("Expect Identifier, found '{s}' ", .{self.cur_token.literal});
-        return error.UnexpectedToken;
-    }
+    if (!self.expectPeek(.identifier)) try self.errors.append(
+        "{}:{} At 'var' statement: Expect an identifier, found '{s}'\n",
+        .{ self.lexer.line_index, self.lexer.position, self.peek_token.literal },
+    );
 
     var_stmt.name = .{
         .value = self.cur_token.literal,
@@ -451,7 +499,7 @@ fn parseStatement(self: *Parser) !ast.Statement {
 }
 
 /// if, for, match, etc...
-fn parseExpStatement(self: *Parser) anyerror!ast.Statement {
+fn parseExpStatement(self: *Parser) !ast.Statement {
     const exp_stmt: ast.ExpStatement = .{
         .expression = try self.parseExpression(.lowest),
     };
@@ -465,6 +513,7 @@ fn parseExpStatement(self: *Parser) anyerror!ast.Statement {
 
 fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
     const left_exp = try self.prefixExp();
+
     const allocator = self.arena.allocator();
 
     while (@intFromEnum(precedence) < @intFromEnum(self.peekPrecedence())) {
@@ -502,18 +551,13 @@ pub fn parse(self: *Parser) !ast.Node {
     return .{ .statement = .{ .program = program } };
 }
 
-fn parseFloat(self: *Parser) anyerror!ast.Expression {
-    return .{
-        .float = .{
-            .value = std.fmt.parseFloat(f32, self.cur_token.literal) catch |err| {
-                std.log.err("Could not parse {s} as float", .{self.cur_token.literal});
-                return err;
-            },
-        },
-    };
+fn parseFloat(self: *Parser) !ast.Expression {
+    return .{ .float = .{
+        .value = try std.fmt.parseFloat(f32, self.cur_token.literal),
+    } };
 }
 
-fn parseChar(self: *Parser) anyerror!ast.Expression {
+fn parseChar(self: *Parser) ast.Expression {
     var value: u8 = self.cur_token.literal[0];
 
     if (self.cur_token.literal.len > 1) {
@@ -529,15 +573,10 @@ fn parseChar(self: *Parser) anyerror!ast.Expression {
     return .{ .char = .{ .value = value } };
 }
 
-fn parseInteger(self: *Parser) anyerror!ast.Expression {
-    return .{
-        .integer = .{
-            .value = std.fmt.parseInt(i32, self.cur_token.literal, 10) catch |err| {
-                std.log.err("Could not parse {s} as integer", .{self.cur_token.literal});
-                return err;
-            },
-        },
-    };
+fn parseInteger(self: *Parser) !ast.Expression {
+    return .{ .integer = .{
+        .value = try std.fmt.parseInt(i32, self.cur_token.literal, 10),
+    } };
 }
 
 fn parseIntegerFrom(self: *Parser, i: usize) !*ast.Expression {
@@ -547,26 +586,26 @@ fn parseIntegerFrom(self: *Parser, i: usize) !*ast.Expression {
     return int;
 }
 
-fn parseBoolean(self: *Parser) anyerror!ast.Expression {
+fn parseBoolean(self: *Parser) ast.Expression {
     return .{ .boolean = .{ .value = self.curTokenIs(.true) } };
 }
 
-fn parseNull(_: *Parser) anyerror!ast.Expression {
+fn parseNull(_: *Parser) ast.Expression {
     return .null;
 }
 
 //  BUG
-fn parseGroup(self: *Parser) anyerror!ast.Expression {
+fn parseGroup(self: *Parser) !ast.Expression {
     self.nextToken();
 
     const exp = try self.parseExpression(.lowest);
 
-    if (!self.expectPeek(.@")")) return error.MissingParentese;
+    if (!self.expectPeek(.@")")) try self.missing(.@")");
 
     return exp.*;
 }
 
-fn parsePrefix(self: *Parser) anyerror!ast.Expression {
+fn parsePrefix(self: *Parser) !ast.Expression {
     var expression: ast.Prefix = .{
         .operator = self.cur_token.type,
         .right = undefined,
@@ -581,7 +620,7 @@ fn parsePrefix(self: *Parser) anyerror!ast.Expression {
     return .{ .prefix = expression };
 }
 
-fn parseInfix(self: *Parser, left: *ast.Expression) anyerror!ast.Expression {
+fn parseInfix(self: *Parser, left: *ast.Expression) !ast.Expression {
     var infix = ast.Infix{
         .operator = self.cur_token.type,
         .left = left,
@@ -597,7 +636,7 @@ fn parseInfix(self: *Parser, left: *ast.Expression) anyerror!ast.Expression {
     return .{ .infix = infix };
 }
 
-fn parseIf(self: *Parser) anyerror!ast.Expression {
+fn parseIf(self: *Parser) !ast.Expression {
     var expression: ast.If = .{
         .condition = undefined,
         .consequence = undefined,
@@ -607,13 +646,13 @@ fn parseIf(self: *Parser) anyerror!ast.Expression {
 
     expression.condition = try self.parseExpression(.lowest);
 
-    if (!self.expectPeek(.@"{")) return error.MissingBrance;
+    if (!self.expectPeek(.@"{")) try self.missing(.@"{");
 
     expression.consequence = try self.parseBlock();
 
     if (self.peekTokenIs(.@"else")) {
         self.nextToken();
-        if (!self.expectPeek(.@"{")) return error.MissingBrance;
+        if (!self.expectPeek(.@"{")) try self.missing(.@"{");
         expression.alternative = try self.parseBlock();
     }
 
@@ -645,15 +684,14 @@ fn parseBlock(self: *Parser) anyerror!ast.Block {
     return block;
 }
 
-fn parseFn(self: *Parser) anyerror!ast.Statement {
+fn parseFn(self: *Parser) !ast.Statement {
     var func_stmt: ast.FunctionStatement = .{
         .func = undefined,
         .name = undefined,
     };
 
     if (!self.expectPeek(.identifier)) {
-        std.log.err("Expect Identifier, found '{s}'", .{self.cur_token.literal});
-        return error.UnexpectedToken;
+        try self.missing(.identifier);
     }
 
     func_stmt.name = .{
@@ -665,10 +703,10 @@ fn parseFn(self: *Parser) anyerror!ast.Statement {
     return .{ .@"fn" = func_stmt };
 }
 
-fn parseType(self: *Parser) anyerror!ast.Expression {
+fn parseType(self: *Parser) !ast.Expression {
     var struc: ast.Type = .{ .type = self.cur_token.type };
 
-    if (!self.expectPeek(.@"{")) return error.MissingParentese;
+    if (!self.expectPeek(.@"{")) try self.missing(.@"{");
 
     var fields: std.ArrayList(ast.Type.Field) = .init(self.arena.allocator());
     errdefer fields.deinit();
@@ -681,7 +719,7 @@ fn parseType(self: *Parser) anyerror!ast.Expression {
 
         if (self.curTokenIs(.identifier)) {
             var field: ast.Type.Field = .{
-                .name = (try self.parseIdentifier()).identifier,
+                .name = self.parseIdentifier().identifier,
                 .value = &NULL,
             };
 
@@ -700,11 +738,10 @@ fn parseType(self: *Parser) anyerror!ast.Expression {
 
         if (self.curTokenIs(.@"fn")) {
             if (!self.expectPeek(.identifier)) {
-                std.log.err("Expect Identifier, found '{s}'", .{self.cur_token.literal});
-                return error.UnexpectedToken;
+                try self.missing(.identifier);
             }
 
-            const name = (try self.parseIdentifier()).identifier;
+            const name = self.parseIdentifier().identifier;
 
             const func = (try self.parseFunction()).function;
 
@@ -715,12 +752,12 @@ fn parseType(self: *Parser) anyerror!ast.Expression {
             continue;
         }
 
-        return error.InvalidStruct;
+        try self.errlog("Invalid Struct");
     }
 
     self.nextToken();
 
-    if (!self.curTokenIs(.@"}")) return error.MissingBrance;
+    if (!self.curTokenIs(.@"}")) try self.missing(.@"}");
 
     struc.fields = try fields.toOwnedSlice();
     struc.desc = try descs.toOwnedSlice();
@@ -728,24 +765,24 @@ fn parseType(self: *Parser) anyerror!ast.Expression {
     return .{ .type = struc };
 }
 
-fn parseFunction(self: *Parser) anyerror!ast.Expression {
+fn parseFunction(self: *Parser) !ast.Expression {
     var func: ast.Function = .{
         .parameters = undefined,
         .body = undefined,
     };
 
-    if (!self.expectPeek(.@"(")) return error.MissingParentese;
+    if (!self.expectPeek(.@"(")) try self.missing(.@"(");
 
     func.parameters = try self.parseFunctionParameters();
 
-    if (!self.expectPeek(.@"{")) return error.MissingBrance;
+    if (!self.expectPeek(.@"{")) try self.missing(.@"{");
 
     func.body = try self.parseBlock();
 
     return .{ .function = func };
 }
 
-fn parseFunctionParameters(self: *Parser) anyerror![]ast.Identifier {
+fn parseFunctionParameters(self: *Parser) ![]ast.Identifier {
     const allocator = self.arena.allocator();
 
     var indentifiers: std.ArrayList(ast.Identifier) = .init(allocator);
@@ -775,15 +812,14 @@ fn parseFunctionParameters(self: *Parser) anyerror![]ast.Identifier {
         try indentifiers.append(ident2);
     }
 
-    if (!self.expectPeek(.@")"))
-        return error.MissingParentese;
+    if (!self.expectPeek(.@")")) try self.missing(.@")");
 
     const ident_owner = try indentifiers.toOwnedSlice();
 
     return ident_owner;
 }
 
-fn parseMethod(self: *Parser, caller: *ast.Expression) anyerror!ast.Expression {
+fn parseMethod(self: *Parser, caller: *ast.Expression) !ast.Expression {
     var method_exp: ast.Method = .{
         .caller = caller,
         .method = undefined,
@@ -791,20 +827,20 @@ fn parseMethod(self: *Parser, caller: *ast.Expression) anyerror!ast.Expression {
 
     self.nextToken();
 
-    const exp_mathod = try self.parseIdentifier();
+    const exp_mathod = self.parseIdentifier();
 
-    if (exp_mathod != .identifier) return error.ExpectIdentifier;
+    if (exp_mathod != .identifier) try self.missing(.identifier);
 
     method_exp.method = exp_mathod.identifier;
 
     return .{ .method = method_exp };
 }
 
-fn parseInstance(self: *Parser, type_exp: *ast.Expression) anyerror!ast.Expression {
+fn parseInstance(self: *Parser, type_exp: *ast.Expression) !ast.Expression {
     return .{ .instance = .{ .type = type_exp, .fields = try self.parseInstanceArguments() } };
 }
 
-fn parseInstance2(self: *Parser) anyerror!ast.Expression {
+fn parseInstance2(self: *Parser) !ast.Expression {
     self.nextToken();
     return .{ .instance = .{
         .type = try self.parseExpression(.lowest),
@@ -812,12 +848,12 @@ fn parseInstance2(self: *Parser) anyerror!ast.Expression {
     } };
 }
 
-fn parseInstanceArguments(self: *Parser) anyerror![]ast.Type.Field {
+fn parseInstanceArguments(self: *Parser) ![]ast.Type.Field {
     var fields: std.ArrayList(ast.Type.Field) = .init(self.arena.allocator());
     errdefer fields.deinit();
 
     if (!self.peekTokenIs(.@"{")) {
-        return error.InvalidInstanceSyntax;
+        try self.missing(.@"{");
     }
 
     self.nextToken();
@@ -832,7 +868,7 @@ fn parseInstanceArguments(self: *Parser) anyerror![]ast.Type.Field {
 
         if (self.curTokenIs(.identifier)) {
             var field: ast.Type.Field = .{
-                .name = (try self.parseIdentifier()).identifier,
+                .name = self.parseIdentifier().identifier,
                 .value = &NULL,
             };
 
@@ -845,27 +881,27 @@ fn parseInstanceArguments(self: *Parser) anyerror![]ast.Type.Field {
 
             if (!self.expectPeek(.@",")) {
                 if (self.peekTokenIs(.@"}")) break;
-                return error.MissingComma;
+                try self.missing(.@",");
             }
 
             continue;
         }
 
-        return error.InvalidInstance;
+        try self.errlog("Syntax error: Invalid Initialization");
     }
 
     self.nextToken();
 
-    if (!self.curTokenIs(.@"}")) return error.MissingBrance;
+    if (!self.curTokenIs(.@"}")) try self.missing(.@"}");
 
     return fields.toOwnedSlice();
 }
 
-fn parseCall(self: *Parser, func: *ast.Expression) anyerror!ast.Expression {
+fn parseCall(self: *Parser, func: *ast.Expression) !ast.Expression {
     return .{ .call = .{ .function = func, .arguments = try self.parseCallArguments() } };
 }
 
-fn parseCallArguments(self: *Parser) anyerror![]*ast.Expression {
+fn parseCallArguments(self: *Parser) ![]*ast.Expression {
     const allocator = self.arena.allocator();
     var args: std.ArrayList(*ast.Expression) = .init(allocator);
     errdefer args.deinit();
@@ -888,14 +924,14 @@ fn parseCallArguments(self: *Parser) anyerror![]*ast.Expression {
         try args.append(exp2);
     }
 
-    if (!self.expectPeek(.@")")) return error.MissingRightParenteses;
+    if (!self.expectPeek(.@")")) try self.missing(.@")");
 
     const args_owned = try args.toOwnedSlice();
 
     return args_owned;
 }
 
-pub fn parseString(self: *Parser) anyerror!ast.Expression {
+pub fn parseString(self: *Parser) ast.Expression {
     return .{
         .string = .{
             .value = self.cur_token.literal,
@@ -903,7 +939,7 @@ pub fn parseString(self: *Parser) anyerror!ast.Expression {
     };
 }
 
-pub fn parseArray(self: *Parser) anyerror!ast.Expression {
+pub fn parseArray(self: *Parser) !ast.Expression {
     // const token = self.cur_token;
 
     if (self.peekTokenIs(.@"]")) {
@@ -928,15 +964,14 @@ pub fn parseArray(self: *Parser) anyerror!ast.Expression {
         try elements.append(element_n);
     }
 
-    if (!self.expectPeek(.@"]")) return error.UnexpectedToken;
-
+    if (!self.expectPeek(.@"]")) try self.missing(.@"]");
     return .{
         .array = .{ .elements = try elements.toOwnedSlice() },
     };
 }
 
 // var hash = {1:1, 2:2, 3:3}
-pub fn parseHash(self: *Parser) anyerror!ast.Expression {
+pub fn parseHash(self: *Parser) !ast.Expression {
     // const token = self.cur_token;
     const allocator = self.arena.allocator();
 
@@ -962,8 +997,7 @@ pub fn parseHash(self: *Parser) anyerror!ast.Expression {
                 continue;
             }
 
-            std.log.warn("syntax error: expect ':'\n", .{});
-            return error.MissingValueInHash;
+            try self.missing(.@":");
         }
 
         self.nextToken();
@@ -972,21 +1006,18 @@ pub fn parseHash(self: *Parser) anyerror!ast.Expression {
         try pairs.append(.{ key, val });
 
         if (!self.peekTokenIs(.@"}") and !self.expectPeek(.@",")) {
-            std.log.warn("syntax error: expect ',' or '}}'\n", .{});
-            return error.UnexpectedToken;
+            try self.missing(.@",");
+            try self.missing(.@"}");
         }
     }
 
-    if (!self.expectPeek(.@"}")) {
-        std.log.warn("syntax error: expect '}}'\n", .{});
-        return error.MissingRightBrace;
-    }
+    if (!self.expectPeek(.@"}")) try self.missing(.@"}");
 
     return .{ .hash = .{ .pairs = try pairs.toOwnedSlice() } };
 }
 
 // (...)
-// pub fn parseExpressionList(self: *Parser, exp1: *ast.Expression, end: Token.Type) anyerror![]ast.Expression {
+// pub fn parseExpressionList(self: *Parser, exp1: *ast.Expression, end: Token.Type) ![]ast.Expression {
 //     const allocator = self.arena.allocator();
 //     var list = std.ArrayList(ast.Expression).init(allocator);
 //     errdefer list.deinit();
@@ -1017,7 +1048,7 @@ pub fn parseHash(self: *Parser) anyerror!ast.Expression {
 // }
 
 // v[exp]
-pub fn parseIndex(self: *Parser, left: *ast.Expression) anyerror!ast.Expression {
+pub fn parseIndex(self: *Parser, left: *ast.Expression) !ast.Expression {
     var exp: ast.Index = .{
         .left = left,
         .index = undefined,
@@ -1027,12 +1058,12 @@ pub fn parseIndex(self: *Parser, left: *ast.Expression) anyerror!ast.Expression 
 
     exp.index = try self.parseExpression(.lowest);
 
-    if (!self.expectPeek(.@"]")) return error.MissingRightBracket;
+    if (!self.expectPeek(.@"]")) try self.missing(.@"]");
 
     return .{ .index = exp };
 }
 
-pub fn parseMatch(self: *Parser) anyerror!ast.Expression {
+pub fn parseMatch(self: *Parser) !ast.Expression {
     var match: ast.Match = .{
         .value = undefined,
         .arms = undefined,
@@ -1044,7 +1075,7 @@ pub fn parseMatch(self: *Parser) anyerror!ast.Expression {
         match.value = &TRUE;
     } else {
         match.value = try self.parseExpression(.lowest);
-        if (!self.expectPeek(.@"{")) return error.MissingBrance;
+        if (!self.expectPeek(.@"{")) try self.missing(.@"{");
     }
 
     self.nextToken();
@@ -1059,15 +1090,15 @@ pub fn parseMatch(self: *Parser) anyerror!ast.Expression {
         // the else arm
         if (self.curTokenIs(.@"else")) {
             if (match.else_block != null) {
-                return error.DuplicateElseArm;
+                try self.errlog("Duplicated Tag");
             }
 
             if (!self.expectPeek(.@"=>")) {
-                return error.MissingMatchToken;
+                try self.missing(.@"=>");
             }
 
             if (!self.expectPeek(.@"{")) {
-                return error.MissingBrance;
+                try self.missing(.@"{");
             }
 
             match.else_block = try self.parseBlock();
@@ -1083,11 +1114,11 @@ pub fn parseMatch(self: *Parser) anyerror!ast.Expression {
         };
 
         if (!self.expectPeek(.@"=>")) {
-            return error.MissingMatchToken;
+            try self.missing(.@"=>");
         }
 
         if (!self.expectPeek(.@"{")) {
-            return error.MissingBrance;
+            try self.missing(.@"{");
         }
 
         arm.block = try self.parseBlock();
@@ -1106,7 +1137,7 @@ pub fn parseMatch(self: *Parser) anyerror!ast.Expression {
     return .{ .match = match };
 }
 
-pub fn parseRange(self: *Parser, left: *ast.Expression) anyerror!ast.Expression {
+pub fn parseRange(self: *Parser, left: *ast.Expression) !ast.Expression {
     var range = ast.Range{
         .start = left,
         .end = undefined,
@@ -1120,7 +1151,7 @@ pub fn parseRange(self: *Parser, left: *ast.Expression) anyerror!ast.Expression 
     return .{ .range = range };
 }
 //
-// pub fn parseMultiForLoopRange(self: *Parser, flr: ast.ForLoopRange) anyerror!ast.Expression {
+// pub fn parseMultiForLoopRange(self: *Parser, flr: ast.ForLoopRange) !ast.Expression {
 //     const allocator = self.arena.allocator();
 //
 //     var mflr = ast.MultiForLoopRange{
@@ -1176,7 +1207,7 @@ pub fn parseRange(self: *Parser, left: *ast.Expression) anyerror!ast.Expression 
 //     return .{ .multi_forloop_range = mflr };
 // }
 //
-pub fn parseForRange(self: *Parser, ident: ast.Identifier) anyerror!ast.Expression {
+pub fn parseForRange(self: *Parser, ident: ast.Identifier) !ast.Expression {
     var flr = ast.ForRange{
         .ident = ident.value, // for <ident>[, <idx>] in <range> {
         .body = undefined,
@@ -1190,7 +1221,7 @@ pub fn parseForRange(self: *Parser, ident: ast.Identifier) anyerror!ast.Expressi
     // }
     //
     if (!self.expectPeek(.in)) {
-        return error.ExpectTheInIdentifier;
+        try self.missing(.in);
     }
 
     self.nextToken();
@@ -1201,20 +1232,20 @@ pub fn parseForRange(self: *Parser, ident: ast.Identifier) anyerror!ast.Expressi
     //     return self.parseMultiForLoopRange(flr);
     // }
 
-    if (!self.expectPeek(.@"{")) return error.MissingBrance1;
+    if (!self.expectPeek(.@"{")) try self.missing(.@"{");
 
     flr.body = try self.parseBlock();
 
     return .{ .for_range = flr };
 }
 
-pub fn parseForLoopCondition(self: *Parser, cond: *ast.Expression) anyerror!ast.Expression {
+pub fn parseForLoopCondition(self: *Parser, cond: *ast.Expression) !ast.Expression {
     var fl = ast.For{
         .condition = cond,
         .consequence = undefined,
     };
 
-    if (!self.expectPeek(.@"{")) return error.MissingBrance;
+    if (!self.expectPeek(.@"{")) try self.missing(.@"{");
 
     fl.consequence = try self.parseBlock();
 
@@ -1222,7 +1253,7 @@ pub fn parseForLoopCondition(self: *Parser, cond: *ast.Expression) anyerror!ast.
 }
 
 // /// for true { } or for idx, val in list {}
-pub fn parseFor(self: *Parser) anyerror!ast.Expression {
+pub fn parseFor(self: *Parser) !ast.Expression {
     if (self.expectPeek(.@"{")) {
         return .{ .@"for" = .{ .condition = &TRUE, .consequence = try self.parseBlock() } };
     }
@@ -1240,7 +1271,7 @@ pub fn parseFor(self: *Parser) anyerror!ast.Expression {
     return self.parseForLoopCondition(condition_or_ident);
 }
 
-// fn parseEnum(self: *Parser) anyerror!ast.Expression {
+// fn parseEnum(self: *Parser) !ast.Expression {
 //     var enu = ast.Enum{
 //         .token = self.cur_token,
 //         .tags = undefined, // hash(ident, value)

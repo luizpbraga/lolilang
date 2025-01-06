@@ -10,7 +10,7 @@ const Token = @import("Token.zig");
 const TokenType = Token.Type;
 
 pub fn init(input: []const u8) Self {
-    var lexer = Self{ .input = input, .line_index = input.len };
+    var lexer = Self{ .input = input };
     lexer.readChar();
     return lexer;
 }
