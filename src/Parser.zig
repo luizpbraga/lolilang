@@ -20,10 +20,30 @@ const Error = struct {
 };
 
 fn missing(p: *Parser, tk: Token.Type) !void {
+    const lin = p.line();
     try p.errors.append(
-        "{}:{} Syntax error: Expect '{s}', found '{s}'\n",
-        .{ p.lexer.line_index, p.lexer.position, @tagName(tk), p.peek_token.literal },
+        "Syntax error: Expect '{s}', found '{s}'\n{}:{} {s}\n",
+        .{ @tagName(tk), p.peek_token.literal, p.lexer.line_index, p.lexer.position, lin },
     );
+    try p.errors.msg.writer().writeByteNTimes('~', p.lexer.read_position);
+    try p.errors.msg.writer().writeByte('^');
+}
+
+fn line(p: *Parser) []const u8 {
+    const input = p.lexer.input;
+    var pos = p.lexer.position;
+
+    if (pos >= input.len) {
+        pos = p.lexer.read_position;
+        if (pos >= input.len) {
+            pos = input.len;
+        }
+    }
+
+    const start = std.mem.indexOf(u8, input[0..pos], "\n") orelse 0;
+    var end = std.mem.indexOf(u8, input[pos..], "\n") orelse input.len;
+    if (end != input.len) end += pos;
+    return std.mem.trim(u8, input[start..end], "\n");
 }
 
 fn errlog(p: *Parser, msg: []const u8) !void {
@@ -424,11 +444,6 @@ fn parseConBlock(self: *Parser, _: Token) !ast.ConBlock {
     return stmt;
 }
 
-fn line(self: *Parser) []const u8 {
-    const input = self.lexer.input;
-    return input[self.lexer.position..];
-}
-
 fn parseVar(self: *Parser) !ast.Statement {
     const tk = self.cur_token;
 
@@ -439,10 +454,7 @@ fn parseVar(self: *Parser) !ast.Statement {
         .value = undefined,
     };
 
-    if (!self.expectPeek(.identifier)) try self.errors.append(
-        "{}:{} At 'var' statement: Expect an identifier, found '{s}'\n",
-        .{ self.lexer.line_index, self.lexer.position, self.peek_token.literal },
-    );
+    if (!self.expectPeek(.identifier)) try self.missing(.identifier);
 
     var_stmt.name = .{
         .value = self.cur_token.literal,
