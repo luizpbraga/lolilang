@@ -14,9 +14,8 @@ pub fn runVm(allocator: std.mem.Allocator, input: []const u8) !void {
 
     const node = try parser.parse();
 
-    if (parser.errors.msg.items.len != 0) {
+    if (parser.errors.counter != 0) {
         const stderr = std.io.getStdErr();
-
         try stderr.writeAll(
             parser.errors.msg.items,
         );

@@ -11,11 +11,18 @@ peek_token: Token,
 arena: std.heap.ArenaAllocator,
 errors: Error,
 
+/// use a fixbuffer writer to STDOUT
 const Error = struct {
     msg: std.ArrayList(u8),
+    counter: usize = 0,
+
+    const RED = "\x1b[31m";
+    const BOLD = "\x1b[1m";
+    const END = "\x1b[0m]";
 
     fn append(err: *Error, comptime fmt: []const u8, args: anytype) !void {
         try err.msg.writer().print(fmt, args);
+        err.counter += 1;
     }
 };
 
@@ -24,11 +31,11 @@ fn missing(p: *Parser, tk: Token.Type) !void {
     const lin = l.line;
     const at = p.lexer.position - l.start - 1;
     try p.errors.append(
-        "\x1b[1m{}:{}: \x1b[31mSyntax error:\x1b[0m\x1b[1m Expected '{s}', found '{s}' ({s}) \x1b[0m\n\t{s}\n",
+        "\x1b[1m{}:{}: \x1b[31mSyntax error:\x1b[0m\x1b[1m Expected '{s}', found '{s}' ({s}) \x1b[0m\n\t{s}\n\t",
         .{ p.lexer.line_index, at, @tagName(tk), p.peek_token.literal, @tagName(p.peek_token.type), lin },
     );
     try p.errors.msg.writer().writeByteNTimes(' ', at - 1);
-    try p.errors.msg.writer().writeAll("\t\x1b[32m^\x1b[0m\n");
+    try p.errors.msg.writer().writeAll("\x1b[32m^\x1b[0m\n");
 }
 
 fn unexpected(p: *Parser, tk: Token.Type) !void {
@@ -36,11 +43,20 @@ fn unexpected(p: *Parser, tk: Token.Type) !void {
     const lin = l.line;
     const at = p.lexer.position - l.start - 1;
     try p.errors.append(
-        "\x1b[1m{}:{}: \x1b[31mSyntax error:\x1b[0m\x1b[1m Unexpected token '{s}'\x1b[0m\n\t{s}\n",
+        "\x1b[1m{}:{}: \x1b[31mSyntax error:\x1b[0m\x1b[1m Unexpected token '{s}'\x1b[0m\n\t{s}\n\t",
         .{ p.lexer.line_index, at, @tagName(tk), lin },
     );
     try p.errors.msg.writer().writeByteNTimes(' ', at - 1);
-    try p.errors.msg.writer().writeAll("\t\x1b[32m^\x1b[0m\n");
+    try p.errors.msg.writer().writeAll("\x1b[32m^\x1b[0m\n");
+}
+
+fn errlog(p: *Parser, msg: []const u8) !void {
+    const l = p.line();
+    const at = p.lexer.position - l.start - 1;
+    try p.errors.append(
+        "\x1b[1m{}:{}: \x1b[31mSyntax error:\x1b[0m\x1b[1m {s} \x1b[0m\n",
+        .{ p.lexer.line_index, at, msg },
+    );
 }
 
 const Line = struct {
@@ -66,13 +82,6 @@ fn line(p: *Parser) Line {
     if (end != input.len) end += pos;
 
     return .{ .line = std.mem.trim(u8, input[start..end], "\n"), .end = end, .start = start };
-}
-
-fn errlog(p: *Parser, msg: []const u8) !void {
-    try p.errors.append(
-        "{}:{} {s}\n",
-        .{ p.lexer.line_index, p.lexer.position, msg },
-    );
 }
 
 var NULL: ast.Expression = .null;
@@ -134,7 +143,7 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
         .@"(" => try p.parseGroup(),
         else => b: {
             try p.unexpected(p.cur_token.type);
-            break :b NULL;
+            break :b .bad;
         },
     };
 
@@ -305,10 +314,8 @@ fn parseAssignment(self: *Parser, name: *ast.Expression) !ast.Expression {
     stmt.operator = switch (op.type) {
         .@"=", .@":=", .@"+=", .@"-=", .@"/=", .@"*=" => op.type,
         else => b: {
-            try self.errors.append(
-                "{}:{} At assignment: Invalid operator {s}\n",
-                .{ self.lexer.line_index, self.lexer.position, op.literal },
-            );
+            try self.unexpected(op.type);
+            try self.errlog("Invalid Operator");
             break :b op.type;
         },
     };
@@ -324,10 +331,7 @@ pub fn parseDefer(self: *Parser) !ast.Statement {
     };
 
     if (!self.expectPeek(.@"{")) {
-        try self.errors.append(
-            "{}:{} At defer: Expect Identifier, found {s}\n",
-            .{ self.lexer.line_index, self.lexer.position, self.peek_token.literal },
-        );
+        try self.missing(.@"{");
     }
 
     defer_stmt.body = try self.parseBlock();
@@ -346,10 +350,7 @@ fn parseCon(self: *Parser) !ast.Statement {
     };
 
     if (!self.expectPeek(.identifier)) {
-        try self.errors.append(
-            "{}:{} At con: Expect Identifier, found {s}\n",
-            .{ self.lexer.line_index, self.lexer.position, self.peek_token.literal },
-        );
+        try self.missing(.identifier);
     }
 
     const_stmt.name = .{
@@ -357,10 +358,7 @@ fn parseCon(self: *Parser) !ast.Statement {
     };
 
     if (!self.expectPeek(.@"=")) {
-        try self.errors.append(
-            "{}:{} At con: Expect assignment operator (=), found {s}\n",
-            .{ self.lexer.line_index, self.lexer.position, self.peek_token.literal },
-        );
+        try self.missing(.@"=");
     }
 
     self.nextToken();
@@ -390,17 +388,11 @@ fn parseVarBlock(self: *Parser, _: Token) !ast.VarBlock {
     while (self.cur_token.type != .@")") {
         const ident = self.parseIdentifier();
 
-        if (ident != .identifier) try self.errors.append(
-            "{}:{} At var block: Expect Identifier, found {s}\n",
-            .{ self.lexer.line_index, self.lexer.position, self.peek_token.literal },
-        );
+        if (ident != .identifier) try self.missing(.identifier);
 
         self.nextToken();
 
-        if (self.expectPeek(.@"=")) try self.errors.append(
-            "{}:{} At var block: Expect '=', found {s}\n",
-            .{ self.lexer.line_index, self.lexer.position, self.peek_token.literal },
-        );
+        if (!self.expectPeek(.@"=")) try self.missing(.@"=");
 
         self.nextToken();
 
@@ -763,6 +755,8 @@ fn parseType(self: *Parser) !ast.Expression {
                 field.value = try self.parseExpression(.lowest);
             }
 
+            if (self.peekTokenIs(.@":")) try self.unexpected(.@":");
+
             if (self.peekTokenIs(.@",") or self.curTokenIs(.@";")) {
                 self.nextToken();
             }
@@ -788,6 +782,7 @@ fn parseType(self: *Parser) !ast.Expression {
         }
 
         try self.errlog("Invalid Struct");
+        return .bad;
     }
 
     self.nextToken();

@@ -726,10 +726,10 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 c.type_index += 1;
             },
 
-            // else => |exx| {
-            //     std.debug.print("{}\n", .{exx});
-            //     @panic("Invalid Expression");
-            // },
+            else => |exx| {
+                std.debug.print("{}\n", .{exx});
+                @panic("Invalid Expression");
+            },
         },
     }
 }

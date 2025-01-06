@@ -1,4 +1,4 @@
-Loli is a  bytecode compiler
+### Loli, the  bytecode compiler
 
 > > loli gos brrr
 

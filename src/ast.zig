@@ -59,6 +59,7 @@ pub const TypeLiteral = union(enum) {
 /// implements Node,
 pub const Expression = union(enum) {
     null,
+    bad,
     // type: TypeLiteral,
     boolean: Boolean,
     float: Float,
