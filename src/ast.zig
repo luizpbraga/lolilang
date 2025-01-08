@@ -12,6 +12,12 @@ pub const Node = union(enum) {
             inline else => |node| node.tokenLiteral(),
         };
     }
+
+    pub fn position(self: *const Node) usize {
+        switch (self.*) {
+            inline else => |node| return node.position(),
+        }
+    }
 };
 
 /// implements Node,
@@ -48,6 +54,12 @@ pub const Statement = union(enum) {
         return switch (self.*) {
             inline else => |x| x.tokenLiteral(),
         };
+    }
+
+    pub fn position(self: *const Statement) usize {
+        switch (self.*) {
+            inline else => |s| return s.at,
+        }
     }
 };
 
@@ -102,9 +114,17 @@ pub const Expression = union(enum) {
             inline else => |exp| exp.tokenLiteral(),
         };
     }
+
+    pub fn position(self: *const Expression) usize {
+        switch (self.*) {
+            .null, .bad => return 0,
+            inline else => |s| return s.at,
+        }
+    }
 };
 
 pub const If = struct {
+    at: usize = 0,
     condition: *Expression,
     consequence: Block,
     alternative: ?Block = null,
@@ -115,6 +135,7 @@ pub const If = struct {
 };
 
 pub const Prefix = struct {
+    at: usize = 0,
     operator: Token.Type,
     right: *Expression,
 
@@ -126,10 +147,10 @@ pub const Prefix = struct {
 };
 
 pub const Infix = struct {
+    at: usize = 0,
     left: *Expression,
     operator: Token.Type,
     right: *Expression,
-    at: usize,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return @tagName(self.operator);
@@ -137,6 +158,7 @@ pub const Infix = struct {
 };
 
 pub const Index = struct {
+    at: usize = 0,
     // [
     left: *Expression,
     index: *Expression,
@@ -149,9 +171,9 @@ pub const Index = struct {
 //--------------------------------------------
 
 pub const Identifier = struct {
+    at: usize = 0,
     //= .identifier,
     value: []const u8,
-    at: usize,
 
     pub fn expressionNode(self: *const @This()) void {
         _ = self;
@@ -162,6 +184,7 @@ pub const Identifier = struct {
 };
 
 pub const Program = struct {
+    at: usize = 0,
     statements: std.ArrayList(Statement),
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
@@ -171,6 +194,7 @@ pub const Program = struct {
 
 // ------------------------------------------------------------------------
 pub const Con = struct {
+    at: usize = 0,
     //= .@"var",
     name: Identifier,
     value: *Expression,
@@ -185,16 +209,19 @@ pub const Con = struct {
 };
 
 pub const VarBlock = struct {
+    at: usize = 0,
     //= .@"var",
     vars_decl: []Var,
 };
 
 pub const ConBlock = struct {
+    at: usize = 0,
     //= .@"var",
     const_decl: []Con,
 };
 
 pub const Var = struct {
+    at: usize = 0,
     //= .@"var",
     name: Identifier,
     value: *Expression,
@@ -210,6 +237,7 @@ pub const Var = struct {
 };
 
 pub const Return = struct {
+    at: usize = 0,
     value: *Expression,
 
     pub fn statementNode(self: *const @This()) void {
@@ -222,6 +250,7 @@ pub const Return = struct {
 };
 
 pub const Continue = struct {
+    at: usize = 0,
     value: *Expression,
 
     pub fn statementNode(self: *const @This()) void {
@@ -234,6 +263,7 @@ pub const Continue = struct {
 };
 
 pub const Break = struct {
+    at: usize = 0,
     value: *Expression,
 
     pub fn statementNode(self: *const @This()) void {
@@ -248,6 +278,7 @@ pub const Break = struct {
 // identifier = expression
 //  = , +=, -=, *=, /=,
 pub const Assignment = struct {
+    at: usize = 0,
     name: *Expression,
     operator: Token.Type,
     value: *Expression,
@@ -262,6 +293,7 @@ pub const Assignment = struct {
 };
 
 pub const ExpStatement = struct {
+    at: usize = 0,
     // fist token only
     expression: *Expression,
 
@@ -275,6 +307,7 @@ pub const ExpStatement = struct {
 };
 
 pub const Block = struct {
+    at: usize = 0,
     statements: []Statement,
 
     pub fn tokenLiteral(_: *const @This()) []const u8 {
@@ -284,6 +317,7 @@ pub const Block = struct {
 // --------------------------------------------------------------------
 
 pub const Float = struct {
+    at: usize = 0,
     value: f32,
 
     pub fn expressionNode() void {}
@@ -294,6 +328,7 @@ pub const Float = struct {
 };
 
 pub const Integer = struct {
+    at: usize = 0,
     value: i32,
 
     pub fn expressionNode() void {}
@@ -305,6 +340,7 @@ pub const Integer = struct {
 };
 
 pub const Char = struct {
+    at: usize = 0,
     value: u8,
 
     pub fn expressionNode() void {}
@@ -315,6 +351,7 @@ pub const Char = struct {
 };
 
 pub const String = struct {
+    at: usize = 0,
     value: []const u8,
 
     pub fn expressionNode() void {}
@@ -325,6 +362,7 @@ pub const String = struct {
 };
 
 pub const Boolean = struct {
+    at: usize = 0,
     value: bool,
 
     pub fn typeIs() BuiltinType {
@@ -337,6 +375,7 @@ pub const Boolean = struct {
 };
 
 pub const Array = struct {
+    at: usize = 0,
     elements: []*Expression,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
@@ -345,6 +384,7 @@ pub const Array = struct {
 };
 
 pub const Range = struct {
+    at: usize = 0,
     start: *Expression,
     end: *Expression,
     inc: enum { yes, no } = .no,
@@ -354,7 +394,7 @@ pub const Range = struct {
     }
 };
 
-// pub const Hash = struct {
+// pub const Hash = struct { at: usize = 0,
 //     pairs: std.AutoHashMap(*Expression, *Expression),
 //
 //     pub fn tokenLiteral(self: *const @This()) []const u8 {
@@ -363,6 +403,7 @@ pub const Range = struct {
 // };
 
 pub const Hash = struct {
+    at: usize = 0,
     pairs: [][2]*Expression,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
@@ -371,6 +412,7 @@ pub const Hash = struct {
 };
 
 pub const EnumLiteral = struct {
+    at: usize = 0,
     tags: std.StringHashMap(*Expression),
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
@@ -379,6 +421,7 @@ pub const EnumLiteral = struct {
 };
 
 pub const Tag = struct {
+    at: usize = 0,
     value: []const u8,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
@@ -387,6 +430,7 @@ pub const Tag = struct {
 };
 
 pub const FunctionStatement = struct {
+    at: usize = 0,
     name: Identifier,
     func: Function,
 
@@ -396,6 +440,7 @@ pub const FunctionStatement = struct {
 };
 
 pub const Defer = struct {
+    at: usize = 0,
     body: Block,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
@@ -404,6 +449,7 @@ pub const Defer = struct {
 };
 
 pub const Function = struct {
+    at: usize = 0,
     name: ?Identifier = null,
     parameters: []Identifier,
     body: Block,
@@ -414,6 +460,7 @@ pub const Function = struct {
 };
 
 pub const Call = struct {
+    at: usize = 0,
     // (
     function: *Expression, // Identifier or FunctionLiteral
     arguments: []*Expression,
@@ -424,12 +471,14 @@ pub const Call = struct {
 };
 
 pub const Type = struct {
+    at: usize = 0,
     type: Token.Type,
     name: ?[]const u8 = null,
     fields: []Field = &.{},
     desc: []FunctionStatement = &.{},
 
     pub const Field = struct {
+        at: usize = 0,
         name: Identifier,
         value: *Expression,
     };
@@ -440,6 +489,7 @@ pub const Type = struct {
 };
 
 pub const Instance = struct {
+    at: usize = 0,
     type: *Expression, // Identifier or FunctionLiteral
     fields: []Type.Field,
 
@@ -449,6 +499,7 @@ pub const Instance = struct {
 };
 
 pub const Method = struct {
+    at: usize = 0,
     // .
     caller: *Expression, //
     method: Identifier,
@@ -460,6 +511,7 @@ pub const Method = struct {
 const ForLoopMode = enum { infinity, decl_infinity, decl_cond, dec_cond_inc, cond, cond_inc, range, multi_range };
 // for i = 0, i < 10, i++, i in 0..10
 pub const For = struct {
+    at: usize = 0,
     //TODO: list of conditions
     condition: *Expression,
     consequence: Block,
@@ -472,11 +524,13 @@ pub const For = struct {
 
 pub const MultiForLoopRange = struct {
     pub const LoopVars = struct {
+        at: usize = 0,
         ident: []const u8,
         index: ?[]const u8 = null,
         iterable: *Expression,
     };
 
+    at: usize = 0,
     loops: []LoopVars,
     body: Block,
 
@@ -486,6 +540,7 @@ pub const MultiForLoopRange = struct {
 };
 
 pub const ForRange = struct {
+    at: usize = 0,
     ident: []const u8,
     index: ?[]const u8 = null,
     iterable: *Expression,
@@ -497,11 +552,13 @@ pub const ForRange = struct {
 };
 
 pub const Match = struct {
+    at: usize = 0,
     value: *Expression,
     arms: []Arm,
     else_block: ?Block = null,
 
     pub const Arm = struct {
+        at: usize = 0,
         // =>
         condition: *Expression,
         block: Block,
@@ -524,6 +581,7 @@ const BuiltinType = union(enum) {
     string,
 
     func: struct {
+        at: usize = 0,
         args_type: []const TypeLiteral,
         return_type: TypeLiteral,
     },

@@ -23,9 +23,10 @@ allocator: std.mem.Allocator,
 gray_stack: std.ArrayList(*Object),
 gray_count: usize = 0,
 bytes_allocated: usize = 0,
+positions: []usize,
+cursor: usize = 0,
 /// GC: allocated objects linked list
 objects: ?*Object = null,
-
 errors: Error,
 
 /// use a fixbuffer writer to STDOUT
@@ -49,6 +50,7 @@ const Error = struct {
 pub fn init(allocator: std.mem.Allocator, b: *Compiler.Bytecode) !Vm {
     var vm: Vm = .{
         .constants = b.constants,
+        .positions = b.positions,
         .allocator = allocator,
         .gray_stack = try .initCapacity(allocator, 100),
         .stack = try allocator.alloc(Value, STACK_SIZE),
@@ -147,13 +149,13 @@ pub fn run(vm: *Vm) anyerror!void {
     var ip: usize = 0;
     var instructions: code.Instructions = undefined;
     var op: code.Opcode = undefined;
-
     var fm = vm.currentFrame();
     while (fm.ip + 1 < fm.instructions().len) {
         fm.ip += 1;
         ip = @intCast(fm.ip);
         instructions = fm.instructions();
         op = @enumFromInt(instructions[ip]);
+        defer vm.cursor += 1;
 
         switch (op) {
             .set_range => {
@@ -161,7 +163,7 @@ pub fn run(vm: *Vm) anyerror!void {
                 const end = vm.pop();
 
                 if (start != .integer or end != .integer) {
-                    return vm.errors.append("Invalid Range\n", .{});
+                    return vm.errors.append("Invalid Range at {}\n", .{vm.positions[vm.cursor]});
                 }
 
                 try vm.push(.{ .range = .{

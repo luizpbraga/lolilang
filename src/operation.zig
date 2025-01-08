@@ -225,7 +225,7 @@ pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
 
     std.debug.print("{} {} {}", .{ left, op, right });
 
-    return vm.errors.append("Invalid Operation", .{});
+    return vm.errors.append("Invalid Operation at {}", .{vm.positions[vm.cursor]});
 }
 
 pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {

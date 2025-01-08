@@ -5,6 +5,9 @@ read_position: usize = 0,
 line_index: usize = 0,
 ch: u8 = 0,
 
+// line_start: usize = 0,
+// line_end: usize = 0,
+// x: usize = 0,
 const std = @import("std");
 const Token = @import("Token.zig");
 const TokenType = Token.Type;
@@ -39,9 +42,12 @@ fn readChar(self: *Self) void {
     self.ch = if (self.read_position >= self.input.len) 0 else self.input[self.read_position];
     self.position = self.read_position;
     self.read_position += 1;
+    // self.x = self.position - self.line_start;
 
     if (self.ch == '\n') {
         self.line_index += 1;
+        // self.line_start = self.x + 1;
+        // self.line_end = self.x - 1;
     }
 }
 

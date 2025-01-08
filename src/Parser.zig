@@ -122,7 +122,8 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
     const left_exp = try allocator.create(ast.Expression);
     errdefer allocator.destroy(left_exp);
 
-    left_exp.* = switch (p.cur_token.type) {
+    const tk = p.cur_token;
+    left_exp.* = switch (tk.type) {
         .identifier => p.parseIdentifier(),
         .@"." => p.parseTag(),
         .integer => try p.parseInteger(),
@@ -147,46 +148,65 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
         },
     };
 
+    switch (left_exp.*) {
+        .bad, .null => {},
+        inline else => |*exp| exp.at = tk.at,
+    }
+
     return left_exp;
 }
 
 fn infixExp(p: *Parser, lx: *ast.Expression) anyerror!?ast.Expression {
-    switch (p.peek_token.type) {
+    var tk: Token = p.peek_token;
+    var left_exp: ?ast.Expression = b: switch (tk.type) {
         .@"[" => {
             p.nextToken();
-            return try p.parseIndex(lx);
+            tk = p.cur_token;
+            break :b try p.parseIndex(lx);
         },
         .@"..", .@"..=" => {
             p.nextToken();
-            return try p.parseRange(lx);
+            tk = p.cur_token;
+            break :b try p.parseRange(lx);
         },
         .@"." => {
             p.nextToken();
-            return try p.parseMethod(lx);
+            tk = p.cur_token;
+            break :b try p.parseMethod(lx);
         },
         // .@"{" => {
         //     // if (p.cur_token.type != .identifier) {
-        //     //     return null;
+        //     //     break :b null;
         //     // }
         //
         //     p.nextToken();
-        //     return try p.parseInstance(lx);
+        //     break :b try p.parseInstance(lx);
         // },
         .@"(" => {
             p.nextToken();
-            return try p.parseCall(lx);
+            tk = p.cur_token;
+            break :b try p.parseCall(lx);
         },
         .@"%", .@"+", .@"-", .@"==", .@"!=", .@"*", .@"or", .@"and", .@"/", .@">", .@">=", .@"<", .@"<=" => {
             p.nextToken();
-            return try p.parseInfix(lx);
+            tk = p.cur_token;
+            break :b try p.parseInfix(lx);
         },
         .@"=", .@":=", .@"+=", .@"-=", .@"*=", .@"/=" => {
             p.nextToken();
-            return try p.parseAssignment(lx);
+            tk = p.cur_token;
+            break :b try p.parseAssignment(lx);
         },
 
-        else => return null,
-    }
+        else => break :b null,
+    };
+
+    if (left_exp) |*lf| switch (lf.*) {
+        .bad, .null => {},
+        inline else => |*exp| exp.at = tk.at,
+    };
+
+    return left_exp;
 }
 
 pub fn init(child_alloc: std.mem.Allocator, lexer: *Lexer) Parser {
@@ -501,7 +521,8 @@ fn parseVar(self: *Parser) !ast.Statement {
 }
 
 fn parseStatement(self: *Parser) !ast.Statement {
-    return switch (self.cur_token.type) {
+    const tk = self.cur_token;
+    var stmt: ast.Statement = switch (tk.type) {
         .@"var" => try self.parseVar(),
 
         .con => try self.parseCon(),
@@ -520,6 +541,12 @@ fn parseStatement(self: *Parser) !ast.Statement {
 
         else => try self.parseExpStatement(),
     };
+
+    switch (stmt) {
+        inline else => |*st| st.at = tk.at,
+    }
+
+    return stmt;
 }
 
 /// if, for, match, etc...
