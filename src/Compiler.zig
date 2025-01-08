@@ -18,9 +18,27 @@ scopes: std.ArrayList(Scope),
 scope_index: usize,
 /// testing the logic
 loop: struct { top: usize = 0, start: usize = 0 } = .{},
-
 struct_fields: std.ArrayList(struct { index: usize, fields: [][]const u8 = &.{} }),
 type_index: usize = 0,
+errors: Error,
+
+/// use a fixbuffer writer to STDOUT
+const Error = struct {
+    msg: std.ArrayList(u8),
+
+    const RED = "\x1b[31m";
+    const BOLD = "\x1b[1m";
+    const END = "\x1b[0m";
+
+    const CompilerError = error{
+        Compilation,
+    };
+
+    fn append(err: *Error, comptime fmt: []const u8, args: anytype) anyerror {
+        try err.msg.writer().print(RED ++ "Compilation Error: " ++ fmt ++ END ++ "\n", args);
+        return error.Compilation;
+    }
+};
 
 const Loop = struct {
     loops: [10]struct { start: usize, end: usize },
@@ -52,6 +70,7 @@ pub fn init(alloc: std.mem.Allocator) !Compiler {
         .symbols = s,
         .scopes = scopes,
         .scope_index = 0,
+        .errors = .{ .msg = .init(alloc) },
     };
 }
 
@@ -68,6 +87,8 @@ pub fn deinit(c: *Compiler) void {
         s.deinit();
         c.allocator.destroy(s);
     }
+
+    c.errors.msg.deinit();
 }
 
 fn loadSymbol(c: *Compiler, s: *SymbolTable.Symbol) !void {
@@ -107,6 +128,101 @@ pub fn leaveScope(c: *Compiler) !code.Instructions {
     return try std.mem.concat(c.allocator, u8, last_scope.instructions.items);
 }
 
+fn emitFunction(c: *Compiler, func_stmt: *const ast.FunctionStatement) anyerror!void {
+    const symbol = try c.symbols.?.define(func_stmt.name.value);
+    const func = func_stmt.func;
+
+    try c.enterScope();
+
+    // integer overflow! With the fallowing line commented,
+    // the internal function error like UndefinedVariable is returned
+    // errdefer if (c.symbols) |s| c.allocator.destroy(s);
+    // but leaks memory
+
+    for (func.parameters) |parameter| {
+        _ = try c.symbols.?.define(parameter.value);
+    }
+
+    try c.compile(.{ .statement = .{ .block = func.body } });
+
+    // return the last value if no return statement
+    if (c.lastInstructionIs(.pop)) try c.replaceLastPopWithReturn();
+
+    // return null
+    if (!c.lastInstructionIs(.retv)) try c.emit(.retn, &.{});
+
+    const obj = try c.allocator.create(Object);
+    errdefer c.allocator.destroy(obj);
+
+    const num_locals = if (c.symbols) |s| s.def_number else 0;
+
+    const instructions = try c.leaveScope();
+    errdefer c.allocator.free(instructions);
+
+    obj.type = .{
+        .function = .{
+            // TODO
+            .name = func_stmt.name.value,
+            .instructions = instructions,
+            .num_locals = num_locals,
+            .num_parameters = func.parameters.len,
+        },
+    };
+
+    const pos = try c.addConstants(.{ .obj = obj });
+
+    try c.emit(.constant, &.{pos});
+    const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+    try c.emit(op, &.{symbol.index});
+}
+
+fn emitDesc(c: *Compiler, func_stmt: *const ast.FunctionStatement) anyerror!usize {
+    // const symbol = try c.symbols.?.define(func_stmt.name.value);
+    const func = func_stmt.func;
+
+    try c.enterScope();
+
+    // integer overflow! With the fallowing line commented,
+    // the internal function error like UndefinedVariable is returned
+    // errdefer if (c.symbols) |s| c.allocator.destroy(s);
+    // but leaks memory
+
+    for (func.parameters) |parameter| {
+        _ = try c.symbols.?.define(parameter.value);
+    }
+
+    try c.compile(.{ .statement = .{ .block = func.body } });
+
+    // return the last value if no return statement
+    if (c.lastInstructionIs(.pop)) try c.replaceLastPopWithReturn();
+
+    // return null
+    if (!c.lastInstructionIs(.retv)) try c.emit(.retn, &.{});
+
+    const obj = try c.allocator.create(Object);
+    errdefer c.allocator.destroy(obj);
+
+    const num_locals = if (c.symbols) |s| s.def_number else 0;
+
+    const instructions = try c.leaveScope();
+    errdefer c.allocator.free(instructions);
+
+    obj.type = .{
+        .desc = .{
+            .name = func_stmt.name.value,
+            .instructions = instructions,
+            .num_locals = num_locals,
+            .num_parameters = func.parameters.len,
+        },
+    };
+
+    const pos = try c.addConstants(.{ .obj = obj });
+    try c.emit(.constant, &.{pos});
+    return pos;
+    // const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+    // try c.emit(op, &.{symbol.index});
+}
+
 /// Walks the AST recursively and evaluate the node, and add it the the pool
 pub fn compile(c: *Compiler, node: ast.Node) !void {
     switch (node) {
@@ -123,16 +239,9 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             .block => |block| {
-                // try c.enterScope();
-                // const len = block.statements.len;
                 for (block.statements) |_stmt| {
                     try c.compile(.{ .statement = _stmt });
-                    // if ((_stmt == .@"return" or _stmt == .@"break") and i < len - 1) {
-                    //     std.debug.print("UnreachbleCode!\n\n", .{});
-                    //     @panic("UnreachbleCode");
-                    // }
                 }
-                // try c.leaveScope();
             },
 
             .@"var" => |var_stmt| {
@@ -149,7 +258,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
             .@"return" => |ret| {
                 if (c.scope_index == 0) {
-                    return error.InvalidReturnStatementOutsideAFunctionBody;
+                    return c.errors.append("Invalid Return Statement Outside Function Body", .{});
                 }
                 try c.compile(.{ .expression = ret.value });
                 try c.emit(.retv, &.{});
@@ -167,58 +276,18 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             .@"fn" => |func_stmt| {
-                const symbol = try c.symbols.?.define(func_stmt.name.value);
-                const func = func_stmt.func;
-
-                try c.enterScope();
-
-                // integer overflow! With the fallowing line commented,
-                // the internal function error like UndefinedVariable is returned
-                // errdefer if (c.symbols) |s| c.allocator.destroy(s);
-                // but leaks memory
-
-                for (func.parameters) |parameter| {
-                    _ = try c.symbols.?.define(parameter.value);
-                }
-
-                try c.compile(.{ .statement = .{ .block = func.body } });
-
-                // return the last value if no return statement
-                if (c.lastInstructionIs(.pop)) try c.replaceLastPopWithReturn();
-
-                // return null
-                if (!c.lastInstructionIs(.retv)) try c.emit(.retn, &.{});
-
-                const obj = try c.allocator.create(Object);
-                errdefer c.allocator.destroy(obj);
-
-                const num_locals = if (c.symbols) |s| s.def_number else 0;
-
-                const instructions = try c.leaveScope();
-                errdefer c.allocator.free(instructions);
-
-                obj.type = .{
-                    .function = .{
-                        .instructions = instructions,
-                        .num_locals = num_locals,
-                        .num_parameters = func.parameters.len,
-                    },
-                };
-
-                const pos = try c.addConstants(.{ .obj = obj });
-
-                try c.emit(.constant, &.{pos});
-                const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
-                try c.emit(op, &.{symbol.index});
+                try c.emitFunction(&func_stmt);
             },
 
-            else => return error.InvalidStatemend,
+            else => {
+                return c.errors.append("Invalid Statement", .{});
+            },
         },
 
         .expression => |exp| switch (exp.*) {
             .identifier => |ident| {
                 const symbol = try c.symbols.?.resolve(ident.value) orelse {
-                    return error.UndefinedVariable;
+                    return c.errors.append("Undefined Variable at '{}'", .{ident.at});
                 };
                 try c.loadSymbol(symbol);
             },
@@ -241,7 +310,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
                 if (assignment.name.* == .identifier) {
                     const symbol = try c.symbols.?.resolve(assignment.name.identifier.value) orelse {
-                        return error.UndefinedVariable;
+                        return c.errors.append("Undefined Variable", .{});
                     };
 
                     switch (assignment.operator) {
@@ -267,7 +336,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                             try c.emit(.mul, &.{});
                         },
 
-                        else => return error.InvalidAssingmentOperation,
+                        else => return c.errors.append("Invalid Assignment Operator", .{}),
                     }
 
                     const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
@@ -309,7 +378,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                         //     try c.emit(.mul, &.{});
                         // },
 
-                        else => return error.InvalidAssingmentOperation,
+                        else => return c.errors.append("Invalid Assignment Operator", .{}),
                     }
 
                     try c.emit(.index_set, &.{});
@@ -324,7 +393,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     return;
                 }
 
-                return error.InvalidAssingmentOperation;
+                return c.errors.append("Invalid Assignment Operator", .{});
             },
 
             .infix => |infix| {
@@ -358,7 +427,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     .@"==" => .eq,
                     .@"!=" => .neq,
                     .@"%" => .mod,
-                    else => return error.UnknowOperator,
+                    else => return c.errors.append("Unkow Operator", .{}),
                 };
                 try c.emit(op, &.{});
             },
@@ -476,7 +545,6 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.compile(.{ .expression = instance.type });
                 for (instance.fields) |field| {
                     const ident = field.name;
-
                     const pos = try c.addConstants(.{ .tag = ident.value });
                     try c.emit(.constant, &.{pos});
                     try c.compile(.{ .expression = field.value });
@@ -486,7 +554,6 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
             .function => |func| {
                 try c.enterScope();
-                errdefer if (c.symbols) |s| c.allocator.destroy(s);
 
                 // TODO: ast
                 if (func.name) |name| {
@@ -683,11 +750,15 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(.null, &.{});
             },
 
+            // TODO: make it like a function
             .type => |ty| {
                 const fields = ty.fields;
                 const descs = ty.desc;
 
                 const e: Object.BuiltinType.BT = if (ty.type == .@"struct") .@"struct" else .@"enum";
+
+                const pos_name = try c.addConstants(.{ .tag = ty.name orelse "annon" });
+                try c.emit(.constant, &.{pos_name});
 
                 if (ty.type == .@"struct") {
                     for (fields) |field| {
@@ -718,17 +789,26 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     }
                 }
 
-                for (descs) |desc| {
-                    _ = desc;
+                for (descs) |dec| {
+                    // function name as a field
+                    const pos = try c.addConstants(.{ .tag = dec.name.value });
+                    try c.emit(.constant, &.{pos});
+                    _ = try c.emitDesc(&dec);
                 }
 
-                try c.emit(.type, &.{ c.type_index, fields.len, @intFromEnum(e) });
+                // const pos = c.addConstants(.{ .@"struct" = .{
+                //     .fields_len = fields.len,
+                //     .desc_len = descs.len,
+                //     .name = name
+                //     .instructions = ...
+                // } })
+
+                try c.emit(.type, &.{ c.type_index, fields.len + descs.len + 1, @intFromEnum(e) });
                 c.type_index += 1;
             },
 
             else => |exx| {
-                std.debug.print("{}\n", .{exx});
-                @panic("Invalid Expression");
+                return c.errors.append("Invalid Expression '{}'", .{exx});
             },
         },
     }
@@ -835,49 +915,3 @@ test {
     // _ = SymbolTable;
     // _ = Scope;
 }
-
-// pub fn enterScope(c: *Compiler) !void {
-//     // const idx = c.currentInstruction().items.len;
-//     try c.scopes.append(.{
-//         .prev_ins = undefined,
-//         .last_ins = undefined,
-//         .instructions = .init(c.allocator),
-//         // .instructions = c.currentInstruction(),
-//         // .idx = idx,
-//     });
-//     c.scope_index += 1;
-//     c.symbols = if (c.symbols) |s| try s.initEnclosed() else null;
-// }
-
-// pub fn leaveScope(c: *Compiler) !void {
-//     c.scope_index -= 1;
-//     _ = c.scopes.pop();
-//     c.symbols = if (c.symbols) |s| b: {
-//         defer s.deinitEnclosed();
-//         break :b s.outer;
-//     } else null;
-// }
-//
-// pub fn leaveScopeFn(c: *Compiler) !code.Instructions {
-//     c.scope_index -= 1;
-//     const last_scope = c.scopes.pop();
-//
-//     defer {
-//
-//     }
-//
-//     c.symbols = if (c.symbols) |s| b: {
-//         defer s.deinitEnclosed();
-//         break :b s.outer;
-//     } else null;
-//
-//     const ins = try std.mem.concat(c.allocator, u8, last_scope.instructions.items[last_scope.idx..]);
-
-// var len = last_scope.instructions.items.len - 1;
-// while (last_scope.idx < len) {
-//     const el = last_scope.instructions.orderedRemove(len);
-//     c.allocator.free(el);
-//     len -= 1;
-// }
-//     return ins;
-// }

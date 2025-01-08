@@ -16,6 +16,7 @@ pub const Type = union(enum) {
     hash: Hash,
     function: CompiledFn,
     closure: Closure,
+    desc: CompiledFn,
     type: BuiltinType,
     instance: Instance,
 };
@@ -184,11 +185,13 @@ fn arrayToRange(value: *Value) Range {
 }
 
 pub const CompiledFn = struct {
+    name: ?[]const u8 = null,
     /// function bytecode
     instructions: code.Instructions,
     /// number of local bindings
     num_locals: usize = 0,
     num_parameters: usize = 0,
+    method: ?*Object = null,
 };
 
 pub const Closure = struct {

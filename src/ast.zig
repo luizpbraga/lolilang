@@ -129,6 +129,7 @@ pub const Infix = struct {
     left: *Expression,
     operator: Token.Type,
     right: *Expression,
+    at: usize,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return @tagName(self.operator);
@@ -150,6 +151,7 @@ pub const Index = struct {
 pub const Identifier = struct {
     //= .identifier,
     value: []const u8,
+    at: usize,
 
     pub fn expressionNode(self: *const @This()) void {
         _ = self;

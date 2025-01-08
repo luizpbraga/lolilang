@@ -2,6 +2,7 @@ const Self = @This();
 
 type: Type,
 literal: []const u8,
+at: usize = 0,
 
 const std = @import("std");
 

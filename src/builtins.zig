@@ -115,8 +115,20 @@ fn print(value: Value) void {
                 std.debug.print("}}", .{});
             },
 
-            .function => {
-                std.debug.print("[function]", .{});
+            .function => |f| {
+                std.debug.print("fn {s}()", .{f.name orelse "?"});
+            },
+
+            .desc => |f| {
+                var typename: []const u8 = "";
+
+                if (f.method) |m| {
+                    if (m.type == .instance) {
+                        typename = m.type.instance.type.name orelse "";
+                    }
+                }
+
+                std.debug.print("fn {s}.{s}()", .{ typename, f.name orelse "?" });
             },
 
             .closure => {
@@ -124,7 +136,7 @@ fn print(value: Value) void {
             },
 
             .type => |ty| {
-                std.debug.print("{}_{s}.{any}", .{ ty.index, @tagName(ty.type), ty.name });
+                std.debug.print("{s}_{s}", .{ @tagName(ty.type), ty.name orelse "annon" });
             },
 
             .instance => |ty| {
@@ -138,8 +150,6 @@ fn print(value: Value) void {
                 }
                 std.debug.print("}}", .{});
             },
-
-            // inline else => |x| std.debug.print("{}", .{x}),
         },
 
         .char => |s| std.debug.print("{c}", .{s}),

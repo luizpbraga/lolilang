@@ -5,10 +5,11 @@ const Object = @import("Object.zig");
 const Value = Object.Value;
 const Vm = @import("Vm.zig");
 
+/// [], .
 pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
     if (left.* != .obj) {
         std.debug.print("{} {}", .{ left, index });
-        return error.InvalidIndexOperation;
+        return vm.errors.append("Invalid Index Operation", .{});
     }
 
     switch (left.obj.type) {
@@ -17,15 +18,19 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
                 return try vm.push(.null);
             }
             const value = ins.fields.get(index.tag) orelse .null;
+
+            if (value == .obj and value.obj.type == .desc) {
+                value.obj.type.desc.method = left.obj;
+            }
+
             return try vm.push(value);
         },
 
         .type => |y| {
-            if (y.type != .@"enum") {
-                return error.StructNotIndex;
-            }
-
-            const value = y.fields.get(index.tag) orelse .null;
+            // if (y.type != .@"enum") {
+            //     return vm.errors.append("Struct Not Indexable", .{});
+            // }
+            const value = y.fields.get(index.tag) orelse return vm.errors.append("Undefined Struct/Enum Declaration", .{});
             return try vm.push(value);
         },
 
@@ -33,15 +38,10 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
             if (index.* == .integer) {
                 const i = index.integer;
                 const len = string.len;
-
                 if (i >= 0 and i < len) {
                     const char = string[@intCast(i)];
                     return try vm.push(.{ .char = char });
-                    // const str = try vm.allocator.dupe(u8, &.{char});
-                    // const obj = try memory.allocateObject(vm, .{ .string = str });
-                    // return try vm.push(.{ .obj = obj });
                 }
-
                 return;
             }
 
@@ -49,15 +49,12 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
             if (index.* == .range) {
                 var start = index.range.start;
                 var end = index.range.end;
-
                 if (end > string.len) {
                     end = string.len;
                 }
-
                 if (start > string.len) {
                     start = string.len;
                 }
-
                 const str = try vm.allocator.dupe(u8, string[start..end]);
                 const obj = try memory.allocateObject(vm, .{ .string = str });
                 return try vm.push(.{ .obj = obj });
@@ -68,7 +65,6 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
             if (index.* == .integer) {
                 const i = index.integer;
                 const len = array.items.len;
-
                 if (i >= 0 and i < len) {
                     return try vm.push(array.items[@intCast(i)]);
                 }
@@ -78,20 +74,15 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
             if (index.* == .range) {
                 var start = index.range.start;
                 var end = index.range.end;
-
                 if (end > array.items.len) {
                     end = array.items.len;
                 }
-
                 if (start > array.items.len) {
                     start = array.items.len;
                 }
-
                 var arr = try std.ArrayList(Value).initCapacity(vm.allocator, end - start);
                 errdefer arr.deinit();
-
                 try arr.appendSlice(array.items[start..end]);
-
                 const obj = try memory.allocateObject(vm, .{ .array = arr });
                 return try vm.push(.{ .obj = obj });
             }
@@ -105,7 +96,7 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
             return vm.push(pair.value);
         },
 
-        else => return error.InvalidIndexOperation,
+        else => return vm.errors.append("Invalid Index Operation", .{}),
     }
 
     return try vm.push(.null);
@@ -121,7 +112,7 @@ pub fn setIndex(vm: *Vm, left: *Value, index: Value, value: Value) !void {
             },
 
             .string => |string| {
-                if (index != .integer) return error.InvalidIndexType;
+                if (index != .integer) return vm.errors.append("Invalid Index Type", .{});
 
                 const i = index.integer;
                 const len = string.len;
@@ -133,7 +124,7 @@ pub fn setIndex(vm: *Vm, left: *Value, index: Value, value: Value) !void {
             },
 
             .array => |array| {
-                if (index != .integer) return error.InvalidIndexType;
+                if (index != .integer) return vm.errors.append("Invalid Index Type", .{});
 
                 const i = index.integer;
                 const len = array.items.len;
@@ -153,12 +144,12 @@ pub fn setIndex(vm: *Vm, left: *Value, index: Value, value: Value) !void {
                 // WARN: potential bug? need to generate a new key?
                 pair.value = value;
             },
-            else => return error.InvalidIndexOperation,
+            else => return vm.errors.append("Invalid Index Operation", .{}),
         },
 
         else => {
             std.debug.print("{} {}", .{ left, index });
-            return error.InvalidIndexOperation;
+            return vm.errors.append("Invalid Index Operation", .{});
         },
     }
 
@@ -167,38 +158,14 @@ pub fn setIndex(vm: *Vm, left: *Value, index: Value, value: Value) !void {
 
 pub fn executePrefix(vm: *Vm, op: code.Opcode) !void {
     const obj = vm.pop();
-
     switch (obj) {
-        .integer => |integer| {
-            if (op == .min) {
-                return try vm.push(.{ .integer = -integer });
-            }
-            return error.UnknowIntegerOperation;
-        },
-
-        .float => |float| {
-            if (op == .min) {
-                return try vm.push(.{ .float = -float });
-            }
-            return error.UnknowIntegerOperation;
-        },
-
-        .boolean => |boolean| {
-            if (op == .not) {
-                return try vm.push(.{ .boolean = !boolean });
-            }
-            return error.UnknowBooleanOperation;
-        },
-
-        .null => {
-            if (op == .not) {
-                return try vm.push(.null);
-            }
-            return error.UnknowBooleanOperation;
-        },
-
-        else => return error.UnsupportedOperation,
+        .integer => |integer| if (op == .min) return try vm.push(.{ .integer = -integer }),
+        .float => |float| if (op == .min) return try vm.push(.{ .float = -float }),
+        .boolean => |boolean| if (op == .not) return try vm.push(.{ .boolean = !boolean }),
+        .null => if (op == .not) return try vm.push(.null),
+        else => {},
     }
+    return vm.errors.append("Invalid Prefix Operation", .{});
 }
 
 pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
@@ -248,7 +215,7 @@ pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
             const left_val = left.obj.type.string;
             const right_val = right.obj.type.string;
             if (op != .add) {
-                return error.UnsupportedStringOperation;
+                return vm.errors.append("Invalid String Operation", .{});
             }
             const string = try std.mem.concat(vm.allocator, u8, &.{ left_val, right_val });
             const obj = try memory.allocateObject(vm, .{ .string = string });
@@ -258,7 +225,7 @@ pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
 
     std.debug.print("{} {} {}", .{ left, op, right });
 
-    return error.UnsupportedOperation;
+    return vm.errors.append("Invalid Operation", .{});
 }
 
 pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
@@ -277,11 +244,11 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val != right_val,
                     .land => left_val and right_val,
                     .lor => left_val or right_val,
-                    else => return error.UnknowBooleanOperation,
+                    else => return vm.errors.append("Invalid Operation", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
-            else => return error.InvalidOperation,
+            else => return vm.errors.append("Invalid Operation", .{}),
         },
 
         .integer => |left_val| switch (right) {
@@ -291,7 +258,7 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val != right_val,
                     .gt => left_val > right_val,
                     .gte => left_val >= right_val,
-                    else => return error.UnknowIntegerOperation,
+                    else => return vm.errors.append("Invalid Operation", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
@@ -303,14 +270,14 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val != right_val0,
                     .gt => left_val > right_val0,
                     .gte => left_val >= right_val0,
-                    else => return error.UnknowBooleanOperation,
+                    else => return vm.errors.append("Invalid Operation", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
 
             else => {
                 std.debug.print("int int op {}", .{op});
-                return error.InvalidOperation;
+                return vm.errors.append("Invalid Operation", .{});
             },
         },
 
@@ -321,13 +288,13 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val != right_val,
                     .gt => left_val > right_val,
                     .gte => left_val >= right_val,
-                    else => return error.UnknowIntegerOperation,
+                    else => return vm.errors.append("Invalid Operation", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
             else => {
                 std.debug.print("float float op {}", .{op});
-                return error.InvalidOperation;
+                return vm.errors.append("Invalid Operation", .{});
             },
         },
 
@@ -338,7 +305,7 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val != right_val,
                     .gt => left_val > right_val,
                     .gte => left_val >= right_val,
-                    else => return error.UnknowBooleanOperation,
+                    else => return vm.errors.append("Invalid Operation", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
@@ -350,13 +317,13 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val != right_val0,
                     .gt => left_val > right_val0,
                     .gte => left_val >= right_val0,
-                    else => return error.UnknowBooleanOperation,
+                    else => return vm.errors.append("Invalid Operation", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
             else => {
-                std.debug.print("{} {} op {}\n", .{ left, right, op });
-                return error.InvalidOperation;
+                std.debug.print("{} {} op {}", .{ left, right, op });
+                return vm.errors.append("Invalid Operation", .{});
             },
         },
 
@@ -365,11 +332,11 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                 const result = switch (op) {
                     .eq => right == .null and left == .null,
                     .neq => right != .null or left != .null,
-                    else => return error.UnknowBooleanOperation,
+                    else => return vm.errors.append("Invalid Operation", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
-            else => return error.InvalidOperation,
+            else => return vm.errors.append("Invalid Operation", .{}),
         },
 
         .obj => |left_val_obj| switch (right) {

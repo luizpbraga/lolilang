@@ -73,7 +73,7 @@ pub fn freeObject(vm: *Vm, obj: *Object) void {
             vm.allocator.destroy(obj);
         },
 
-        .function => |func| {
+        .function, .desc => |func| {
             vm.allocator.free(func.instructions);
             vm.allocator.destroy(obj);
         },
@@ -116,7 +116,7 @@ pub fn blackenObject(vm: *Vm, obj: *Object) !void {
 }
 
 pub fn markRoots(vm: *Vm) !void {
-    for (&vm.stack) |values| {
+    for (vm.stack) |values| {
         try markValue(vm, values);
     }
 

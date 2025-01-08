@@ -10,11 +10,11 @@ const GLOBALS_SIZE = 65536;
 
 constants: []Value,
 /// in scope objects
-stack: [STACK_SIZE]Value,
+stack: []Value,
 /// points to the next value. top is stack[sp - 1]
 sp: usize = 0,
 /// Global Declared
-globals: [GLOBALS_SIZE]?Value,
+globals: []?Value,
 // frames: std.ArrayList(Frame),
 frames: [FRAME_SIZE]Frame,
 frames_index: usize = 1,
@@ -26,16 +26,37 @@ bytes_allocated: usize = 0,
 /// GC: allocated objects linked list
 objects: ?*Object = null,
 
-pub fn init(allocator: anytype, b: *Compiler.Bytecode) !Vm {
+errors: Error,
+
+/// use a fixbuffer writer to STDOUT
+const Error = struct {
+    msg: std.ArrayList(u8),
+
+    const RED = "\x1b[31m";
+    const BOLD = "\x1b[1m";
+    const END = "\x1b[0m";
+
+    const CompilerError = error{
+        Compilation,
+    };
+
+    pub fn append(err: *Error, comptime fmt: []const u8, args: anytype) anyerror {
+        try err.msg.writer().print(RED ++ "" ++ fmt ++ END ++ "\n", args);
+        return error.Runtime;
+    }
+};
+
+pub fn init(allocator: std.mem.Allocator, b: *Compiler.Bytecode) !Vm {
     var vm: Vm = .{
         .constants = b.constants,
         .allocator = allocator,
         .gray_stack = try .initCapacity(allocator, 100),
-        .stack = .{.null} ** STACK_SIZE,
-        .globals = .{null} ** GLOBALS_SIZE,
+        .stack = try allocator.alloc(Value, STACK_SIZE),
+        .globals = try allocator.alloc(?Value, GLOBALS_SIZE),
         .sp = 0,
         .bytes_allocated = 0,
         .frames = undefined,
+        .errors = .{ .msg = .init(allocator) },
     };
 
     // main frame
@@ -74,6 +95,9 @@ fn freeObjects(vm: *Vm) void {
 pub fn deinit(vm: *Vm) void {
     vm.gray_stack.deinit();
     vm.freeObjects();
+    vm.allocator.free(vm.stack);
+    vm.allocator.free(vm.globals);
+    vm.errors.msg.deinit();
 }
 
 // return a pointer?
@@ -119,7 +143,7 @@ fn popFrame(vm: *Vm) *Frame {
 }
 
 /// decode cycle
-pub fn run(vm: *Vm) !void {
+pub fn run(vm: *Vm) anyerror!void {
     var ip: usize = 0;
     var instructions: code.Instructions = undefined;
     var op: code.Opcode = undefined;
@@ -137,7 +161,7 @@ pub fn run(vm: *Vm) !void {
                 const end = vm.pop();
 
                 if (start != .integer or end != .integer) {
-                    return error.InvalidRange;
+                    return vm.errors.append("Invalid Range\n", .{});
                 }
 
                 try vm.push(.{ .range = .{
@@ -347,8 +371,7 @@ pub fn run(vm: *Vm) !void {
                     continue;
                 }
 
-                std.debug.print("\ngot {}\n", .{condition});
-                return error.InvalidCondition;
+                return vm.errors.append("Invalid Condition\n", .{});
             },
 
             .pop => vm.pop2(),
@@ -403,9 +426,10 @@ pub fn run(vm: *Vm) !void {
                 };
                 errdefer struct_type.fields.deinit();
 
-                const start_index = vm.sp - fields_number * 2;
+                const start_index = vm.sp - (fields_number - 1) * 2;
                 const end_index = vm.sp;
                 var i = start_index;
+                struct_type.name = vm.stack[i - 1].tag;
                 while (i < end_index) : (i += 2) {
                     const name = vm.stack[i].tag;
                     const value = vm.stack[i + 1];
@@ -431,6 +455,12 @@ pub fn run(vm: *Vm) !void {
 
                 var iter = value_type.fields.iterator();
                 while (iter.next()) |entry| {
+                    // const value = entry.value_ptr;
+                    // if (value.* == .obj and value.obj.type == .function) {
+                    //     if (value.obj.type.function.num_parameters > 0) {
+                    //         value.obj.type.function.method = obj;
+                    //     }
+                    // }
                     try instance.fields.put(entry.key_ptr.*, entry.value_ptr.*);
                 }
 
@@ -448,18 +478,80 @@ pub fn run(vm: *Vm) !void {
                 try vm.push(.{ .obj = obj });
             },
 
+            // TODO: better method call logic
             .call => {
                 const args_number = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
                 fm.ip += 1;
-                const value = vm.stack[vm.sp - 1 - args_number];
 
-                switch (value) {
-                    .obj => |ob| {
-                        if (ob.type == .function) {
-                            const func = ob.type.function;
+                // the second -1: i added a null, for method call
+                // const caller_value = vm.stack[vm.sp - 1 - args_number - 1];
+                // if (caller_value != .obj) {
+                //     caller_value = vm.stack[vm.sp - 1 - args_number];
+                // }
+                const caller_value = vm.stack[vm.sp - 1 - args_number];
+
+                switch (caller_value) {
+                    .obj => |ob| switch (ob.type) {
+                        .desc => |func| {
+                            const bp: isize = @intCast(vm.sp - args_number);
+
+                            if (func.method) |self| {
+                                if (args_number + 1 != func.num_parameters) {
+                                    return vm.errors.append("Desc: Arguments Mismatched", .{});
+                                }
+
+                                try vm.push(.{ .obj = self });
+
+                                // BIG FUCK ME!
+                                if (args_number + 1 > 1) {
+                                    const last = vm.stack[vm.sp - 1];
+                                    var i = vm.sp - 1;
+                                    while (i > 0) : (i -= 1) {
+                                        vm.stack[i] = vm.stack[i - 1];
+                                    }
+                                    vm.stack[vm.sp - 1 - args_number] = last;
+                                }
+
+                                // the null, first arg will be the self obj
+                                const frame: Frame = .init(.{ .func = func }, bp);
+                                vm.pushFrame(frame);
+                                fm = vm.currentFrame();
+                                // the call stack space allocation
+                                vm.sp = @as(usize, @intCast(fm.bp)) + func.num_locals;
+                                continue;
+                            }
 
                             if (args_number != func.num_parameters) {
-                                return error.ArgumentsMismatch;
+                                return vm.errors.append("Function: Arguments Mismatched: expect {}, got {} ", .{ func.num_parameters, args_number });
+                            }
+
+                            const frame: Frame = .init(.{ .func = func }, bp);
+                            vm.pushFrame(frame);
+                            fm = vm.currentFrame();
+                            // the call stack space allocation
+                            vm.sp = @as(usize, @intCast(fm.bp)) + func.num_locals;
+                            continue;
+                        },
+
+                        .function => |func| {
+                            const bp: isize = @intCast(vm.sp - args_number);
+
+                            if (args_number != func.num_parameters) {
+                                return vm.errors.append("Function: Arguments Mismatched: expect {}, got {} ", .{ func.num_parameters, args_number });
+                            }
+
+                            const frame: Frame = .init(.{ .func = func }, bp);
+                            vm.pushFrame(frame);
+                            fm = vm.currentFrame();
+                            // the call stack space allocation
+                            vm.sp = @as(usize, @intCast(fm.bp)) + func.num_locals;
+                            continue;
+                        },
+
+                        .closure => |cl| {
+                            const func = cl.func;
+                            if (args_number != func.num_parameters) {
+                                return vm.errors.append("Closure Arguments Mismatched", .{});
                             }
 
                             const frame: Frame = .init(.{ .func = func }, @intCast(vm.sp - args_number));
@@ -468,26 +560,12 @@ pub fn run(vm: *Vm) !void {
                             // the call stack space allocation
                             vm.sp = @as(usize, @intCast(frame.bp)) + func.num_locals;
                             continue;
-                        }
+                        },
 
-                        if (ob.type == .closure) {
-                            const func = ob.type.closure.func;
-
-                            if (args_number != func.num_parameters) {
-                                return error.ArgumentsMismatch;
-                            }
-
-                            const frame: Frame = .init(.{ .func = func }, @intCast(vm.sp - args_number));
-                            vm.pushFrame(frame);
-                            fm = vm.currentFrame();
-                            // the call stack space allocation
-                            vm.sp = @as(usize, @intCast(frame.bp)) + func.num_locals;
-                            continue;
-                        }
-
-                        std.debug.print("got {}", .{ob});
-
-                        return error.CallerIsNoFunction;
+                        else => {
+                            std.debug.print("got {}", .{ob});
+                            return vm.errors.append("Caller is not a Function", .{});
+                        },
                     },
 
                     .builtin => |bui| {
@@ -497,8 +575,9 @@ pub fn run(vm: *Vm) !void {
                     },
 
                     else => {
-                        std.debug.print("got {}\n", .{value});
-                        return error.ValueNotCallable;
+                        const cv = vm.stack[vm.sp - 1 - args_number];
+                        std.debug.print("else got: {}\n{}\n", .{ caller_value, cv });
+                        return vm.errors.append("Caller is not a Function", .{});
                     },
                 }
             },

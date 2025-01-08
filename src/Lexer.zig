@@ -24,15 +24,15 @@ fn readNumber(self: *Self) Token {
         self.readChar();
     }
 
-    if (self.ch != '.') return .{ .literal = self.input[position..self.position], .type = .integer };
+    if (self.ch != '.') return self.newTokenLiteral(.integer, self.input[position..self.position]);
 
-    if (self.peekChar() == '.') return .{ .literal = self.input[position..self.position], .type = .integer };
+    if (self.peekChar() == '.') return self.newTokenLiteral(.integer, self.input[position..self.position]);
 
     self.readChar();
 
     while (isDigit(self.ch)) self.readChar();
 
-    return .{ .literal = self.input[position..self.position], .type = .float };
+    return self.newTokenLiteral(.float, self.input[position..self.position]);
 }
 
 fn readChar(self: *Self) void {
@@ -90,11 +90,13 @@ fn readCharacter(self: *Self) []const u8 {
     return self.input[position..self.position];
 }
 
-fn newToken(token_type: TokenType) Token {
-    return .{
-        .type = token_type,
-        .literal = @tagName(token_type),
-    };
+fn newToken(self: *Self, token_type: TokenType) Token {
+    const literal = @tagName(token_type);
+    return self.newTokenLiteral(token_type, literal);
+}
+
+fn newTokenLiteral(self: *Self, token_type: TokenType, literal: []const u8) Token {
+    return .{ .type = token_type, .literal = literal, .at = self.position };
 }
 
 pub fn nextToken(self: *Self) Token {
@@ -107,76 +109,76 @@ pub fn nextToken(self: *Self) Token {
     }
 
     const tok = switch (self.ch) {
-        '^' => newToken(.@"^"),
-        '%' => newToken(.@"%"),
-        ';' => newToken(.@";"),
-        ',' => newToken(.@","),
-        '(' => newToken(.@"("),
-        ')' => newToken(.@")"),
-        '{' => newToken(.@"{"),
-        '}' => newToken(.@"}"),
-        '[' => newToken(.@"["),
-        ']' => newToken(.@"]"),
+        '^' => self.newToken(.@"^"),
+        '%' => self.newToken(.@"%"),
+        ';' => self.newToken(.@";"),
+        ',' => self.newToken(.@","),
+        '(' => self.newToken(.@"("),
+        ')' => self.newToken(.@")"),
+        '{' => self.newToken(.@"{"),
+        '}' => self.newToken(.@"}"),
+        '[' => self.newToken(.@"["),
+        ']' => self.newToken(.@"]"),
         '=' => switch (self.peekChar()) {
             '=' => x: {
                 self.readChar();
-                break :x newToken(.@"==");
+                break :x self.newToken(.@"==");
             },
             '>' => x: {
                 self.readChar();
-                break :x newToken(.@"=>");
+                break :x self.newToken(.@"=>");
             },
-            else => newToken(.@"="),
+            else => self.newToken(.@"="),
         },
         '!' => switch (self.peekChar()) {
             '=' => x: {
                 self.readChar();
-                break :x newToken(.@"!=");
+                break :x self.newToken(.@"!=");
             },
-            else => newToken(.@"!"),
+            else => self.newToken(.@"!"),
         },
         '>' => switch (self.peekChar()) {
             '=' => x: {
                 self.readChar();
-                break :x newToken(.@">=");
+                break :x self.newToken(.@">=");
             },
-            else => newToken(.@">"),
+            else => self.newToken(.@">"),
         },
         '<' => switch (self.peekChar()) {
             '=' => x: {
                 self.readChar();
-                break :x newToken(.@"<=");
+                break :x self.newToken(.@"<=");
             },
-            else => newToken(.@"<"),
+            else => self.newToken(.@"<"),
         },
         '+' => switch (self.peekChar()) {
             '=' => x: {
                 self.readChar();
-                break :x newToken(.@"+=");
+                break :x self.newToken(.@"+=");
             },
             '+' => x: {
                 self.readChar();
-                break :x newToken(.@"++");
+                break :x self.newToken(.@"++");
             },
-            else => newToken(.@"+"),
+            else => self.newToken(.@"+"),
         },
         '-' => switch (self.peekChar()) {
             '=' => x: {
                 self.readChar();
-                break :x newToken(.@"-=");
+                break :x self.newToken(.@"-=");
             },
             '-' => x: {
                 self.readChar();
-                break :x newToken(.@"--");
+                break :x self.newToken(.@"--");
             },
-            else => newToken(.@"-"),
+            else => self.newToken(.@"-"),
         },
         '*' => switch (self.peekChar()) {
             '=' => x: {
                 self.readChar();
-                break :x newToken(.@"*=");
+                break :x self.newToken(.@"*=");
             },
-            else => newToken(.@"*"),
+            else => self.newToken(.@"*"),
         },
         '.' => switch (self.peekChar()) {
             '.' => x: {
@@ -184,47 +186,41 @@ pub fn nextToken(self: *Self) Token {
 
                 if (self.peekChar() == '=') {
                     self.readChar();
-                    break :x newToken(.@"..=");
+                    break :x self.newToken(.@"..=");
                 }
 
-                break :x newToken(.@"..");
+                break :x self.newToken(.@"..");
             },
-            else => newToken(.@"."),
+            else => self.newToken(.@"."),
         },
         '/' => switch (self.peekChar()) {
             '=' => x: {
                 self.readChar();
-                break :x newToken(.@"/=");
+                break :x self.newToken(.@"/=");
             },
-            else => newToken(.@"/"),
+            else => self.newToken(.@"/"),
         },
         ':' => switch (self.peekChar()) {
             '=' => x: {
                 self.readChar();
-                break :x newToken(.@":=");
+                break :x self.newToken(.@":=");
             },
-            else => newToken(.@":"),
+            else => self.newToken(.@":"),
         },
-        '\'' => Token{
-            .type = .char,
-            .literal = self.readCharacter(),
-        },
-        '"' => Token{
-            .type = .string,
-            .literal = self.readString(),
-        },
-        0 => newToken(.eof),
+        '\'' => self.newTokenLiteral(.char, self.readCharacter()),
+        '"' => self.newTokenLiteral(.string, self.readString()),
+        0 => self.newToken(.eof),
         // identifiers
         'a'...'z', 'A'...'Z', '_', '@' => {
             // TODO: handle error
             const literal = self.readIdentifier() catch unreachable;
             const token_type = Token.lookupIdentfier(literal);
-            return Token{ .type = token_type, .literal = literal };
+            return self.newTokenLiteral(token_type, literal);
         },
         '0'...'9' => {
             return self.readNumber();
         },
-        else => newToken(.illegal),
+        else => self.newToken(.illegal),
     };
 
     // this code is unrechable for identifiers

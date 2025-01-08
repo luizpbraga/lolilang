@@ -107,6 +107,7 @@ pub fn defineLocal(t: *SymbolTable, name: []const u8) !?*Symbol {
 
 pub fn resolve(s: *SymbolTable, name: []const u8) !?*Symbol {
     var obj = s.store.getPtr(name);
+
     if (obj == null and s.outer != null) {
         obj = try s.outer.?.resolve(name);
 

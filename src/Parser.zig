@@ -246,7 +246,7 @@ fn currentPrecedence(self: *const Parser) Precedence {
 
 // parsers fn -----------------------------------------------------------
 fn parseIdentifier(self: *const Parser) ast.Expression {
-    return .{ .identifier = .{ .value = self.cur_token.literal } };
+    return .{ .identifier = .{ .value = self.cur_token.literal, .at = self.lexer.position } };
 }
 
 fn parseTag(self: *Parser) ast.Expression {
@@ -353,9 +353,7 @@ fn parseCon(self: *Parser) !ast.Statement {
         try self.missing(.identifier);
     }
 
-    const_stmt.name = .{
-        .value = self.cur_token.literal,
-    };
+    const_stmt.name = self.parseIdentifier().identifier;
 
     if (!self.expectPeek(.@"=")) {
         try self.missing(.@"=");
@@ -471,6 +469,7 @@ fn parseVar(self: *Parser) !ast.Statement {
 
     var_stmt.name = .{
         .value = self.cur_token.literal,
+        .at = self.lexer.position,
     };
 
     if (!self.expectPeek(.@"=")) {
@@ -650,6 +649,7 @@ fn parseInfix(self: *Parser, left: *ast.Expression) !ast.Expression {
         .operator = self.cur_token.type,
         .left = left,
         .right = undefined,
+        .at = self.lexer.position,
     };
 
     const precedence = self.currentPrecedence();
@@ -721,9 +721,7 @@ fn parseFn(self: *Parser) !ast.Statement {
         try self.missing(.identifier);
     }
 
-    func_stmt.name = .{
-        .value = self.cur_token.literal,
-    };
+    func_stmt.name = self.parseIdentifier().identifier;
 
     func_stmt.func = (try self.parseFunction()).function;
 
@@ -827,6 +825,7 @@ fn parseFunctionParameters(self: *Parser) ![]ast.Identifier {
 
     const ident: ast.Identifier = .{
         .value = self.cur_token.literal,
+        .at = self.lexer.position,
     };
 
     try indentifiers.append(ident);
@@ -835,9 +834,7 @@ fn parseFunctionParameters(self: *Parser) ![]ast.Identifier {
         self.nextToken();
         self.nextToken();
 
-        const ident2: ast.Identifier = .{
-            .value = self.cur_token.literal,
-        };
+        const ident2 = self.parseIdentifier().identifier;
 
         try indentifiers.append(ident2);
     }
@@ -862,6 +859,8 @@ fn parseMethod(self: *Parser, caller: *ast.Expression) !ast.Expression {
     if (exp_mathod != .identifier) try self.missing(.identifier);
 
     method_exp.method = exp_mathod.identifier;
+
+    // std.debug.print("{}", .{self.peekTokenIs(.@"(")});
 
     return .{ .method = method_exp };
 }
