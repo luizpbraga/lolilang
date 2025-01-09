@@ -3,11 +3,15 @@ const Lexer = @import("Lexer.zig");
 const Parser = @import("Parser.zig");
 const Compiler = @import("Compiler.zig");
 const Vm = @import("Vm.zig");
+const Error = @import("Error.zig");
 
 pub var emitbytecode = false;
 
 pub fn runVm(allocator: std.mem.Allocator, input: []const u8) !void {
     const stderr = std.io.getStdErr();
+
+    var err: Error = .{ .input = input, .msg = .init(allocator) };
+    defer err.deinit();
 
     var lexer: Lexer = .init(input);
 
@@ -23,16 +27,15 @@ pub fn runVm(allocator: std.mem.Allocator, input: []const u8) !void {
         return;
     }
 
-    var compiler: Compiler = try .init(allocator);
+    var compiler: Compiler = try .init(allocator, &err);
     defer compiler.deinit();
 
-    compiler.compile(node) catch |err| switch (err) {
-        error.Compilation => {
-            return try stderr.writeAll(
-                compiler.errors.msg.items,
-            );
-        },
-        else => return err,
+    compiler.compile(node) catch |comp_err|
+        return switch (comp_err) {
+        error.Compilation => try stderr.writeAll(
+            compiler.errors.msg.items,
+        ),
+        else => comp_err,
     };
 
     // // assert the bytecodes
@@ -45,18 +48,16 @@ pub fn runVm(allocator: std.mem.Allocator, input: []const u8) !void {
         std.log.info("bytecode instructions:\n{s}", .{fmt});
     }
 
-    var vm: Vm = try .init(allocator, &code);
+    var vm: Vm = try .init(allocator, &code, &err);
     defer vm.deinit();
 
-    vm.run() catch |err| switch (err) {
-        error.Runtime => {
-            return try stderr.writeAll(
+    vm.run() catch |vm_err| {
+        try @import("memory.zig").collectGarbage(&vm);
+        return switch (vm_err) {
+            error.Runtime => try stderr.writeAll(
                 vm.errors.msg.items,
-            );
-        },
-        else => {
-            try @import("memory.zig").collectGarbage(&vm);
-            return err;
-        },
+            ),
+            else => vm_err,
+        };
     };
 }

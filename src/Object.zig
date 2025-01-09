@@ -48,6 +48,13 @@ pub const Value = union(enum) {
     builtin: Builtin,
     obj: *Object,
 
+    pub fn name(v: *const Value) []const u8 {
+        if (v.* == .obj) {
+            return @tagName(v.obj.type);
+        }
+        return @tagName(v.*);
+    }
+
     pub fn toRange(val: *const Value) Range {
         var end: usize = 0;
         var start: usize = 0;

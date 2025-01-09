@@ -7,12 +7,17 @@ const memory = @import("memory.zig");
 const SymbolTable = @import("SymbolTable.zig");
 const Scope = @import("Scope.zig");
 const builtins = @import("builtins.zig");
+const Line = @import("Line.zig");
+const Error = @import("Error.zig");
 
 /// compiler: transverse the AST, find the ast nodes and evakueate then to objects, and add it to the pool
 const Compiler = @This();
+errors: *Error,
 allocator: std.mem.Allocator,
 /// constants pool
 constants: std.ArrayList(Value),
+/// token positions
+positions: std.ArrayList(usize),
 symbols: ?*SymbolTable,
 scopes: std.ArrayList(Scope),
 scope_index: usize,
@@ -20,32 +25,24 @@ scope_index: usize,
 loop: struct { top: usize = 0, start: usize = 0 } = .{},
 struct_fields: std.ArrayList(struct { index: usize, fields: [][]const u8 = &.{} }),
 type_index: usize = 0,
-errors: Error,
-positions: std.ArrayList(usize),
-/// use a fixbuffer writer to STDOUT
-const Error = struct {
-    msg: std.ArrayList(u8),
-
-    const RED = "\x1b[31m";
-    const BOLD = "\x1b[1m";
-    const END = "\x1b[0m";
-
-    const CompilerError = error{
-        Compilation,
-    };
-
-    fn append(err: *Error, comptime fmt: []const u8, args: anytype) anyerror {
-        try err.msg.writer().print(RED ++ "Compilation Error: " ++ fmt ++ END ++ "\n", args);
-        return error.Compilation;
-    }
-};
 
 const Loop = struct {
     loops: [10]struct { start: usize, end: usize },
     idx: usize = 0,
 };
 
-pub fn init(alloc: std.mem.Allocator) !Compiler {
+fn newError(c: *Compiler, comptime fmt: []const u8, args: anytype) anyerror {
+    const pos = c.positions.getLast();
+    const line: Line = .init(c.errors.input, pos);
+    try c.errors.msg.writer().print(Error.BOLD ++ "{}:{}: ", .{ line.start, line.index });
+    try c.errors.msg.writer().print(Error.RED ++ "Compilation Error: " ++ Error.END ++ fmt ++ "\n", args);
+    try c.errors.msg.writer().print("\t{s}\n\t", .{line.line});
+    try c.errors.msg.writer().writeByteNTimes(' ', line.start - 1);
+    try c.errors.msg.writer().writeAll("\x1b[32m^\x1b[0m\n");
+    return error.Compilation;
+}
+
+pub fn init(alloc: std.mem.Allocator, errors: *Error) !Compiler {
     const main_scope: Scope = .{
         .instructions = .init(alloc),
         .last_ins = undefined,
@@ -64,6 +61,7 @@ pub fn init(alloc: std.mem.Allocator) !Compiler {
     }
 
     return .{
+        .errors = errors,
         .allocator = alloc,
         .constants = .init(alloc),
         .struct_fields = .init(alloc),
@@ -71,7 +69,6 @@ pub fn init(alloc: std.mem.Allocator) !Compiler {
         .symbols = s,
         .scopes = scopes,
         .scope_index = 0,
-        .errors = .{ .msg = .init(alloc) },
     };
 }
 
@@ -260,7 +257,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
             .@"return" => |ret| {
                 if (c.scope_index == 0) {
-                    return c.errors.append("Invalid Return Statement Outside Function Body at {}", .{ret.at});
+                    return c.newError("Invalid Return Statement Outside Function Body", .{});
                 }
                 try c.compile(.{ .expression = ret.value });
                 try c.emit(.retv, &.{});
@@ -282,14 +279,14 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             else => {
-                return c.errors.append("Invalid Statement", .{});
+                return c.newError("Invalid Statement", .{});
             },
         },
 
         .expression => |exp| switch (exp.*) {
             .identifier => |ident| {
                 const symbol = try c.symbols.?.resolve(ident.value) orelse {
-                    return c.errors.append("Undefined Variable at '{}'", .{ident.at});
+                    return c.newError("Undefined Variable", .{});
                 };
                 try c.loadSymbol(symbol);
             },
@@ -312,7 +309,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
                 if (assignment.name.* == .identifier) {
                     const symbol = try c.symbols.?.resolve(assignment.name.identifier.value) orelse {
-                        return c.errors.append("Undefined Variable", .{});
+                        return c.newError("Undefined Variable", .{});
                     };
 
                     switch (assignment.operator) {
@@ -338,7 +335,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                             try c.emit(.mul, &.{});
                         },
 
-                        else => return c.errors.append("Invalid Assignment Operator", .{}),
+                        else => return c.newError("Invalid Assignment Operator", .{}),
                     }
 
                     const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
@@ -380,7 +377,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                         //     try c.emit(.mul, &.{});
                         // },
 
-                        else => return c.errors.append("Invalid Assignment Operator", .{}),
+                        else => return c.newError("Invalid Assignment Operator", .{}),
                     }
 
                     try c.emit(.index_set, &.{});
@@ -395,7 +392,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     return;
                 }
 
-                return c.errors.append("Invalid Assignment Operator", .{});
+                return c.newError("Invalid Assignment Operator", .{});
             },
 
             .infix => |infix| {
@@ -429,7 +426,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     .@"==" => .eq,
                     .@"!=" => .neq,
                     .@"%" => .mod,
-                    else => return c.errors.append("Unkow Operator", .{}),
+                    else => return c.newError("Unkow Operator", .{}),
                 };
                 try c.emit(op, &.{});
             },
@@ -810,7 +807,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             else => |exx| {
-                return c.errors.append("Invalid Expression '{}'", .{exx});
+                return c.newError("Invalid Expression '{}'", .{exx});
             },
         },
     }

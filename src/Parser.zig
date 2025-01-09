@@ -3,6 +3,7 @@ const Token = @import("Token.zig");
 const Lexer = @import("Lexer.zig");
 const ast = @import("ast.zig");
 const Parser = @This();
+const File = @import("Line.zig");
 
 lexer: *Lexer,
 cur_token: Token,
@@ -18,7 +19,7 @@ const Error = struct {
 
     const RED = "\x1b[31m";
     const BOLD = "\x1b[1m";
-    const END = "\x1b[0m]";
+    const END = "\x1b[0m";
 
     fn append(err: *Error, comptime fmt: []const u8, args: anytype) !void {
         try err.msg.writer().print(fmt, args);

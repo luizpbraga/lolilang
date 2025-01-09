@@ -27,27 +27,20 @@ positions: []usize,
 cursor: usize = 0,
 /// GC: allocated objects linked list
 objects: ?*Object = null,
-errors: Error,
+errors: *Error,
 
-/// use a fixbuffer writer to STDOUT
-const Error = struct {
-    msg: std.ArrayList(u8),
+pub fn newError(vm: *Vm, comptime fmt: []const u8, args: anytype) anyerror {
+    const pos = vm.positions[if (vm.cursor < vm.positions.len) vm.cursor else vm.positions.len - 1];
+    const line: Line = .init(vm.errors.input, pos);
+    try vm.errors.msg.writer().print(Error.BOLD ++ "{}:{}: ", .{ line.start, line.index });
+    try vm.errors.msg.writer().print(Error.RED ++ "Compilation Error: " ++ Error.END ++ fmt ++ "\n", args);
+    try vm.errors.msg.writer().print("\t{s}\n\t", .{line.line});
+    try vm.errors.msg.writer().writeByteNTimes(' ', line.start);
+    try vm.errors.msg.writer().writeAll("\x1b[32m^\x1b[0m\n");
+    return error.Runtime;
+}
 
-    const RED = "\x1b[31m";
-    const BOLD = "\x1b[1m";
-    const END = "\x1b[0m";
-
-    const CompilerError = error{
-        Compilation,
-    };
-
-    pub fn append(err: *Error, comptime fmt: []const u8, args: anytype) anyerror {
-        try err.msg.writer().print(RED ++ "" ++ fmt ++ END ++ "\n", args);
-        return error.Runtime;
-    }
-};
-
-pub fn init(allocator: std.mem.Allocator, b: *Compiler.Bytecode) !Vm {
+pub fn init(allocator: std.mem.Allocator, b: *Compiler.Bytecode, errors: *Error) !Vm {
     var vm: Vm = .{
         .constants = b.constants,
         .positions = b.positions,
@@ -58,7 +51,7 @@ pub fn init(allocator: std.mem.Allocator, b: *Compiler.Bytecode) !Vm {
         .sp = 0,
         .bytes_allocated = 0,
         .frames = undefined,
-        .errors = .{ .msg = .init(allocator) },
+        .errors = errors,
     };
 
     // main frame
@@ -99,7 +92,6 @@ pub fn deinit(vm: *Vm) void {
     vm.freeObjects();
     vm.allocator.free(vm.stack);
     vm.allocator.free(vm.globals);
-    vm.errors.msg.deinit();
 }
 
 // return a pointer?
@@ -163,7 +155,7 @@ pub fn run(vm: *Vm) anyerror!void {
                 const end = vm.pop();
 
                 if (start != .integer or end != .integer) {
-                    return vm.errors.append("Invalid Range at {}\n", .{vm.positions[vm.cursor]});
+                    return vm.newError("Invalid Range", .{});
                 }
 
                 try vm.push(.{ .range = .{
@@ -373,7 +365,7 @@ pub fn run(vm: *Vm) anyerror!void {
                     continue;
                 }
 
-                return vm.errors.append("Invalid Condition\n", .{});
+                return vm.newError("Invalid Condition\n", .{});
             },
 
             .pop => vm.pop2(),
@@ -499,7 +491,7 @@ pub fn run(vm: *Vm) anyerror!void {
 
                             if (func.method) |self| {
                                 if (args_number + 1 != func.num_parameters) {
-                                    return vm.errors.append("Desc: Arguments Mismatched", .{});
+                                    return vm.newError("Desc: Arguments Mismatched", .{});
                                 }
 
                                 try vm.push(.{ .obj = self });
@@ -524,7 +516,7 @@ pub fn run(vm: *Vm) anyerror!void {
                             }
 
                             if (args_number != func.num_parameters) {
-                                return vm.errors.append("Function: Arguments Mismatched: expect {}, got {} ", .{ func.num_parameters, args_number });
+                                return vm.newError("Function: Arguments Mismatched: expect {}, got {} ", .{ func.num_parameters, args_number });
                             }
 
                             const frame: Frame = .init(.{ .func = func }, bp);
@@ -539,7 +531,7 @@ pub fn run(vm: *Vm) anyerror!void {
                             const bp: isize = @intCast(vm.sp - args_number);
 
                             if (args_number != func.num_parameters) {
-                                return vm.errors.append("Function: Arguments Mismatched: expect {}, got {} ", .{ func.num_parameters, args_number });
+                                return vm.newError("Function: Arguments Mismatched: expect {}, got {} ", .{ func.num_parameters, args_number });
                             }
 
                             const frame: Frame = .init(.{ .func = func }, bp);
@@ -553,7 +545,7 @@ pub fn run(vm: *Vm) anyerror!void {
                         .closure => |cl| {
                             const func = cl.func;
                             if (args_number != func.num_parameters) {
-                                return vm.errors.append("Closure Arguments Mismatched", .{});
+                                return vm.newError("Closure Arguments Mismatched", .{});
                             }
 
                             const frame: Frame = .init(.{ .func = func }, @intCast(vm.sp - args_number));
@@ -565,8 +557,7 @@ pub fn run(vm: *Vm) anyerror!void {
                         },
 
                         else => {
-                            std.debug.print("got {}", .{ob});
-                            return vm.errors.append("Caller is not a Function", .{});
+                            return vm.newError("Caller is not a Function: got {s}", .{caller_value.name()});
                         },
                     },
 
@@ -577,9 +568,7 @@ pub fn run(vm: *Vm) anyerror!void {
                     },
 
                     else => {
-                        const cv = vm.stack[vm.sp - 1 - args_number];
-                        std.debug.print("else got: {}\n{}\n", .{ caller_value, cv });
-                        return vm.errors.append("Caller is not a Function", .{});
+                        return vm.newError("Caller is not a Function: got {s}", .{caller_value.name()});
                     },
                 }
             },
@@ -596,6 +585,8 @@ const Value = Object.Value;
 const operation = @import("operation.zig");
 const Frame = @import("Frame.zig");
 const builtins = @import("builtins.zig");
+const Line = @import("Line.zig");
+const Error = @import("Error.zig");
 
 // test {
 //     _ = @import("vm_test.zig");
