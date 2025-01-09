@@ -85,8 +85,6 @@ pub fn deinit(c: *Compiler) void {
         s.deinit();
         c.allocator.destroy(s);
     }
-
-    c.errors.msg.deinit();
 }
 
 fn loadSymbol(c: *Compiler, s: *SymbolTable.Symbol) !void {

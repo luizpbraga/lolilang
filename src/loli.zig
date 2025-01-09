@@ -45,6 +45,7 @@ pub fn runVm(allocator: std.mem.Allocator, input: []const u8) !void {
     if (emitbytecode) {
         const fmt = try @import("code.zig").formatInstruction(allocator, code.instructions);
         defer allocator.free(fmt);
+        std.log.info("token postion:\n{d}", .{code.positions});
         std.log.info("bytecode instructions:\n{s}", .{fmt});
     }
 

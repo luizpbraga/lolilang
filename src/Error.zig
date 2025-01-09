@@ -4,7 +4,6 @@ const Error = @This();
 
 msg: std.ArrayList(u8),
 input: []const u8,
-
 pub const BOLD = "\x1b[1m";
 pub const RED = "\x1b[31m";
 pub const GREEN = "\x1b[32m";

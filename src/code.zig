@@ -218,7 +218,7 @@ pub fn formatInstruction(alloc: anytype, ins: Instructions) ![]const u8 {
             0 => try out.writer().print("{:0>4} {s}\n", .{ i, @tagName(op) }),
             1 => try out.writer().print("{:0>4} {s} {d}\n", .{ i, @tagName(op), operands[0] }),
             2 => try out.writer().print("{:0>4} {s} {d} {d}\n", .{ i, @tagName(op), operands[0], operands[1] }),
-            //3 => try out.writer().print("{:0>4} {s} {d} {d} {d}\n", .{ i, @tagName(op), operands[0], operands[1], operands[2] }),
+            3 => try out.writer().print("{:0>4} {s} {d} {d} {d}\n", .{ i, @tagName(op), operands[0], operands[1], operands[2] }),
             else => try out.writer().print("{d} Error: operand len {d} does not match defined {d}\n", .{ i, operands.len, operand_count }),
         }
 

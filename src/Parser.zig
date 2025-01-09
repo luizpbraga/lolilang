@@ -126,6 +126,7 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
     const tk = p.cur_token;
     left_exp.* = switch (tk.type) {
         .identifier => p.parseIdentifier(),
+        //if (p.peekTokenIs(.@"{")) try p.parseInstance3() else
         .@"." => p.parseTag(),
         .integer => try p.parseInteger(),
         .float => try p.parseFloat(),
@@ -895,6 +896,13 @@ fn parseMethod(self: *Parser, caller: *ast.Expression) !ast.Expression {
 
 fn parseInstance(self: *Parser, type_exp: *ast.Expression) !ast.Expression {
     return .{ .instance = .{ .type = type_exp, .fields = try self.parseInstanceArguments() } };
+}
+
+fn parseInstance3(self: *Parser) !ast.Expression {
+    return .{ .instance = .{
+        .type = try self.parseExpression(.lowest),
+        .fields = try self.parseInstanceArguments(),
+    } };
 }
 
 fn parseInstance2(self: *Parser) !ast.Expression {

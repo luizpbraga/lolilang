@@ -142,12 +142,11 @@ pub fn run(vm: *Vm) anyerror!void {
     var instructions: code.Instructions = undefined;
     var op: code.Opcode = undefined;
     var fm = vm.currentFrame();
-    while (fm.ip + 1 < fm.instructions().len) {
+    while (fm.ip + 1 < fm.instructions().len) : (vm.cursor += 1) {
         fm.ip += 1;
         ip = @intCast(fm.ip);
         instructions = fm.instructions();
         op = @enumFromInt(instructions[ip]);
-        defer vm.cursor += 1;
 
         switch (op) {
             .set_range => {
