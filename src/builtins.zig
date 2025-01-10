@@ -144,6 +144,13 @@ fn print(value: Value) void {
                 var iter = ty.fields.iterator();
                 while (iter.next()) |entry| {
                     const key = entry.key_ptr;
+
+                    // dont print the methods, only fields
+                    if (entry.value_ptr.* == .obj) {
+                        if (entry.value_ptr.obj.type == .desc) continue;
+                        if (entry.value_ptr.obj.type == .function) continue;
+                    }
+
                     std.debug.print("{s}: ", .{key.*});
                     print(entry.value_ptr.*);
                     std.debug.print(", ", .{});
