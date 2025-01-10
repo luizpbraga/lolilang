@@ -25,20 +25,7 @@ pub fn main() !void {
         return;
     }
 
-    const input: []const u8 = std.fs.cwd().readFileAlloc(allocator, file_name, std.math.maxInt(usize)) catch |err| switch (err) {
-        error.FileNotFound => {
-            std.log.err("file {s} not found", .{file_name});
-            return;
-        },
-        else => return err,
-    };
-    defer allocator.free(input);
-
     if (loli_args) |arg| {
-        if (std.mem.eql(u8, arg, "--fmt")) {
-            return loli.format(allocator, input);
-        }
-
         if (std.mem.eql(u8, arg, "--emit-bytecode")) {
             loli.emitbytecode = true;
         }
@@ -47,6 +34,15 @@ pub fn main() !void {
             loli.emitbytecode = true;
         }
     }
+
+    const input: []const u8 = std.fs.cwd().readFileAlloc(allocator, file_name, std.math.maxInt(usize)) catch |err| switch (err) {
+        error.FileNotFound => {
+            std.log.err("file {s} not found", .{file_name});
+            return;
+        },
+        else => return err,
+    };
+    defer allocator.free(input);
 
     try loli.runVm(allocator, input);
 }

@@ -125,37 +125,15 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
 
     const tk = p.cur_token;
     left_exp.* = switch (tk.type) {
-        .identifier => b: {
-            const identifier = p.parseIdentifier();
-            //
-            // const lt = p.peek_token;
-            // if (lt.type == .@"{") {
-            //     const ltt = p.last_token.type;
-            //     if (ltt == .in or ltt == .@"if" or ltt == .@"for" or ltt == .match) {
-            //         break :b identifier;
-            //     }
-            //     for (types) |name| {
-            //         if (std.mem.eql(u8, name, p.cur_token.literal)) {
-            //             const type_exp = try allocator.create(ast.Expression);
-            //             type_exp.* = identifier;
-            //             break :b try p.parseInstance(type_exp);
-            //         }
-            //     }
-            // }
-
-            break :b identifier;
-        },
-
-        // .identifier => if (p.peekTokenIs(.@"{")) try p.parseInstance3() else p.parseIdentifier(),
+        .identifier => p.parseIdentifier(),
+        //if (p.peekTokenIs(.@"{")) try p.parseInstance3() else
         .@"." => p.parseTag(),
         .integer => try p.parseInteger(),
         .float => try p.parseFloat(),
         .true, .false => p.parseBoolean(),
         .null, .@";", .@"}" => p.parseNull(),
         .@"[" => try p.parseArray(),
-        .@"{" => b: {
-            break :b try p.parseHash();
-        },
+        .@"{" => try p.parseHash(),
         .new => try p.parseInstance2(),
         .@"fn" => try p.parseFunction(),
         .@"struct", .@"enum" => try p.parseType(),
@@ -536,11 +514,6 @@ fn parseVar(self: *Parser) !ast.Statement {
 
     // TODO: pointer?
     var_stmt.value = try self.parseExpression(.lowest);
-
-    // if (var_stmt.value.* == .type) {
-    //     types[types_idx] = var_stmt.name.value;
-    //     types_idx += 1;
-    // }
 
     if (self.peekTokenIs(.@";")) {
         self.nextToken();
