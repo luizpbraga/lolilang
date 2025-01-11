@@ -1,5 +1,6 @@
 const std = @import("std");
 const loli = @import("loli.zig");
+const fmt = @import("fmt.zig");
 
 pub fn main() !void {
     var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
@@ -25,16 +26,6 @@ pub fn main() !void {
         return;
     }
 
-    if (loli_args) |arg| {
-        if (std.mem.eql(u8, arg, "--emit-bytecode")) {
-            loli.emitbytecode = true;
-        }
-
-        if (std.mem.eql(u8, arg, "--eb")) {
-            loli.emitbytecode = true;
-        }
-    }
-
     const input: []const u8 = std.fs.cwd().readFileAlloc(allocator, file_name, std.math.maxInt(usize)) catch |err| switch (err) {
         error.FileNotFound => {
             std.log.err("file {s} not found", .{file_name});
@@ -43,6 +34,21 @@ pub fn main() !void {
         else => return err,
     };
     defer allocator.free(input);
+
+    if (loli_args) |arg| f: {
+        if (std.mem.eql(u8, arg, "--fmt")) {
+            try fmt.format(allocator, input);
+            return;
+        }
+        if (std.mem.eql(u8, arg, "--emit-bytecode")) {
+            loli.emitbytecode = true;
+            break :f;
+        }
+        if (std.mem.eql(u8, arg, "--eb")) {
+            loli.emitbytecode = true;
+            break :f;
+        }
+    }
 
     try loli.runVm(allocator, input);
 }
