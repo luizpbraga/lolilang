@@ -90,6 +90,7 @@ Lexer := struct {
     fn nextTk(l) {
         l.skipWhiteSpace();
 
+        ch := l.ch
         tk := match l.ch {
             '[' => {  Type.LBRACKET }
             ']' => {  Type.RBRACKET }
@@ -126,7 +127,7 @@ Lexer := struct {
         }
 
         l.readChar()
-        return Token.init(tk, tk)
+        return Token.init(tk, ch)
     }
 
     fn init(file_name) {
@@ -139,7 +140,7 @@ Lexer := struct {
 
 l := Lexer.init("./test_file")
 tk := l.nextTk()
-for tk.type != Type.EOF_TOK {
+for tk.type != Type.EOF_TOK or tk.type != Type.ILLEGAL {
     @print(tk)
     tk = l.nextTk()
 }

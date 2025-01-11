@@ -227,7 +227,7 @@ pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
         }
     }
 
-    return vm.newError("Invalid Operation '{s}' between {s} and {s}", .{ @tagName(op), left.name(), right.name() });
+    return vm.newError("Invalid operation '{s}' between {s} and {s}", .{ @tagName(op), left.name(), right.name() });
 }
 
 pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
@@ -246,11 +246,11 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val != right_val,
                     .land => left_val and right_val,
                     .lor => left_val or right_val,
-                    else => return vm.newError("Invalid Operation", .{}),
+                    else => return vm.newError("Invalid operation", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
-            else => return vm.newError("Invalid Operation", .{}),
+            else => {},
         },
 
         .integer => |left_val| switch (right) {
@@ -260,7 +260,7 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val != right_val,
                     .gt => left_val > right_val,
                     .gte => left_val >= right_val,
-                    else => return vm.newError("Invalid Operation", .{}),
+                    else => return vm.newError("Invalid operation 1", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
@@ -272,14 +272,12 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val != right_val0,
                     .gt => left_val > right_val0,
                     .gte => left_val >= right_val0,
-                    else => return vm.newError("Invalid Operation", .{}),
+                    else => return vm.newError("Invalid operation", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
 
-            else => {
-                return vm.newError("Invalid Operation", .{});
-            },
+            else => {},
         },
 
         .float => |left_val| switch (right) {
@@ -289,13 +287,11 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val != right_val,
                     .gt => left_val > right_val,
                     .gte => left_val >= right_val,
-                    else => return vm.newError("Invalid Operation", .{}),
+                    else => return vm.newError("Invalid operation", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
-            else => {
-                return vm.newError("Invalid Operation", .{});
-            },
+            else => {},
         },
 
         .char => |left_val| switch (right) {
@@ -305,7 +301,7 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val != right_val,
                     .gt => left_val > right_val,
                     .gte => left_val >= right_val,
-                    else => return vm.newError("Invalid Operation", .{}),
+                    else => return vm.newError("Invalid operation", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
@@ -317,13 +313,11 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val != right_val0,
                     .gt => left_val > right_val0,
                     .gte => left_val >= right_val0,
-                    else => return vm.newError("Invalid Operation", .{}),
+                    else => return vm.newError("Invalid operation", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
-            else => {
-                return vm.newError("Invalid Operation", .{});
-            },
+            else => {}, //return vm.newError("Invalid operation", .{}),
         },
 
         .null => switch (right) {
@@ -331,11 +325,11 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                 const result = switch (op) {
                     .eq => right == .null and left == .null,
                     .neq => right != .null or left != .null,
-                    else => return vm.newError("Invalid Operation", .{}),
+                    else => return vm.newError("Invalid operation", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
-            else => return vm.newError("Invalid Operation", .{}),
+            else => {}, //return vm.newError("Invalid operation", .{}),
         },
 
         .obj => |left_val_obj| switch (right) {
