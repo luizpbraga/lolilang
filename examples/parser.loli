@@ -59,7 +59,7 @@ Lexer := struct {
     }
 
     fn isLetter(ch) { 
-        return ('a' <= ch) and (ch <= 'z') or ('A' <= ch) and (ch <= 'Z') or (ch == '_')
+        return ('a' <= ch) and (ch <= 'z') or ('A' <= ch) and (ch <= 'Z') or (ch == '_') or (ch == '@')
     }
 
     fn readNumber(l) {
@@ -90,7 +90,7 @@ Lexer := struct {
     fn nextTk(l) {
         l.skipWhiteSpace();
 
-        ch := l.ch
+        c := l.ch
         tk := match l.ch {
             '[' => {  Type.LBRACKET }
             ']' => {  Type.RBRACKET }
@@ -127,7 +127,7 @@ Lexer := struct {
         }
 
         l.readChar()
-        return Token.init(tk, ch)
+        return Token.init(tk, c)
     }
 
     fn init(file_name) {
@@ -140,7 +140,7 @@ Lexer := struct {
 
 l := Lexer.init("./test_file")
 tk := l.nextTk()
-for tk.type != Type.EOF_TOK or tk.type != Type.ILLEGAL {
+for tk.type != Type.EOF_TOK {
     @print(tk)
     tk = l.nextTk()
 }
