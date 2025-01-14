@@ -3,8 +3,7 @@ const Self = @This();
 type: Type,
 literal: []const u8,
 at: usize = 0,
-x: usize = 0,
-y: usize = 0,
+end: usize = 0,
 
 const std = @import("std");
 
@@ -39,6 +38,9 @@ pub const keywords = std.StaticStringMap(Type).initComptime(.{
 pub const Type = enum {
     illegal,
     eof,
+
+    new_line,
+    comment,
 
     // identifiers + literals
     identifier, // add, foobar, x, y, ...

@@ -17,6 +17,11 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
                 return vm.newError("Invalid Index Operation", .{});
                 // return try vm.push(.null);
             }
+
+            if (!ins.fields.contains(index.tag)) {
+                return vm.newError("No field named '{s}' in type {s}", .{ index.tag, ins.type.name orelse "anon" });
+            }
+
             const value = ins.fields.get(index.tag) orelse .null;
 
             if (value == .obj and value.obj.type == .desc) {
@@ -108,6 +113,9 @@ pub fn setIndex(vm: *Vm, left: *Value, index: Value, value: Value) !void {
         .obj => |ob| switch (ob.type) {
             .instance => |*ins| {
                 if (index == .tag) {
+                    if (!ins.fields.contains(index.tag)) {
+                        return vm.newError("No field named '{s}' in type {s}", .{ index.tag, ins.type.name orelse "anon" });
+                    }
                     return try ins.fields.put(index.tag, value);
                 }
                 return vm.newError("Invalid Index Operation", .{});

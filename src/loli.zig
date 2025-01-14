@@ -14,7 +14,6 @@ pub fn runVm(allocator: std.mem.Allocator, input: []const u8) !void {
     defer err.deinit();
 
     var lexer: Lexer = .init(input);
-
     var parser: Parser = .init(allocator, &lexer);
     defer parser.deinit();
 

@@ -33,7 +33,7 @@ pub fn newError(vm: *Vm, comptime fmt: []const u8, args: anytype) anyerror {
     const pos = vm.positions[if (vm.cursor < vm.positions.len) vm.cursor else vm.positions.len - 1];
     const line: Line = .init(vm.errors.input, pos);
     try vm.errors.msg.writer().print(Error.BOLD ++ "{}:{}: ", .{ line.start, line.index });
-    try vm.errors.msg.writer().print(Error.RED ++ "Compilation Error: " ++ Error.END ++ fmt ++ "\n", args);
+    try vm.errors.msg.writer().print(Error.RED ++ "Runtime Error: " ++ Error.END ++ fmt ++ "\n", args);
     try vm.errors.msg.writer().print("\t{s}\n\t", .{line.line});
     try vm.errors.msg.writer().writeByteNTimes(' ', line.start);
     try vm.errors.msg.writer().writeAll("\x1b[32m^\x1b[0m\n");

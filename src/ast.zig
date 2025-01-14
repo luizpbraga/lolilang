@@ -43,6 +43,8 @@ pub const Statement = union(enum) {
 
     program: Program,
 
+    comment: Comment,
+
     fn statementNode(self: *const Statement) void {
         switch (self.*) {
             inline else => |x| x.statementNode(),
@@ -121,6 +123,11 @@ pub const Expression = union(enum) {
             inline else => |s| return s.at,
         }
     }
+};
+
+pub const Comment = struct {
+    at: usize,
+    end: usize,
 };
 
 pub const If = struct {

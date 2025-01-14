@@ -50,20 +50,24 @@ pub fn format(allocator: std.mem.Allocator, input: []const u8) !void {
         return;
     }
 
-    var w: Write = .init(allocator);
+    var w: Write = .init(allocator, input);
     defer w.deinit();
 
     try w.write(node);
 
-    std.debug.print("{s}", .{w.buffer.items});
+    var file = try std.fs.cwd().createFile("fotmated.loli", .{});
+    defer file.close();
+
+    try file.writeAll(w.buffer.items);
 }
 
 pub const Write = struct {
+    input: []const u8,
     buffer: std.ArrayList(u8),
     block: usize = 0,
 
-    fn init(allocator: anytype) Write {
-        return .{ .buffer = .init(allocator) };
+    fn init(allocator: anytype, input: []const u8) Write {
+        return .{ .buffer = .init(allocator), .input = input };
     }
 
     fn deinit(w: *Write) void {
@@ -152,6 +156,10 @@ pub const Write = struct {
                     try w.write(.{ .statement = .{ .block = func.body } });
                     try w.append("\n");
                 },
+
+                // .comment => |co| {
+                //     try w.append(std.mem.trim(u8, w.input[co.at..co.end], "\n"));
+                // },
 
                 else => |a| {
                     std.debug.print("{}", .{a});
@@ -365,6 +373,10 @@ pub const Write = struct {
                     for (ty.fields) |field| {
                         try w.tab();
                         // try w.buffer.writer().writeByteNTimes('\t', w.block);
+                        if (field.value.* == .null) {
+                            try w.print("{s}\n", .{field.name.value});
+                            continue;
+                        }
                         try w.print("{s} = ", .{field.name.value});
                         try w.write(.{ .expression = field.value });
                         try w.append("\n");
@@ -403,7 +415,7 @@ pub const Write = struct {
                     w.block -= 1;
                     try w.append("\n");
                     try w.tab();
-                    try w.append("}");
+                    try w.append("}\n");
                 },
 
                 else => |a| {

@@ -126,7 +126,6 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
     const tk = p.cur_token;
     left_exp.* = switch (tk.type) {
         .identifier => p.parseIdentifier(),
-        //if (p.peekTokenIs(.@"{")) try p.parseInstance3() else
         .@"." => p.parseTag(),
         .integer => try p.parseInteger(),
         .float => try p.parseFloat(),
@@ -177,11 +176,8 @@ fn infixExp(p: *Parser, lx: *ast.Expression) anyerror!?ast.Expression {
             break :b try p.parseMethod(lx);
         },
         // .@"{" => {
-        //     // if (p.cur_token.type != .identifier) {
-        //     //     break :b null;
-        //     // }
-        //
-        //     p.nextToken();
+        //     // p.nextToken();
+        //     tk = p.cur_token;
         //     break :b try p.parseInstance(lx);
         // },
         .@"(" => {
@@ -541,6 +537,10 @@ fn parseStatement(self: *Parser) !ast.Statement {
 
         .@"{" => .{ .block = try self.parseBlock() },
 
+        // .comment => b: {
+        //     break :b .{ .comment = .{ .at = tk.at, .end = tk.end } };
+        // },
+
         else => try self.parseExpStatement(),
     };
 
@@ -635,6 +635,7 @@ fn parseInteger(self: *Parser) !ast.Expression {
 fn parseIntegerFrom(self: *Parser, i: usize) !*ast.Expression {
     const alloc = self.arena.allocator();
     const int = try alloc.create(ast.Expression);
+    errdefer alloc.destroy(int);
     int.* = .{ .integer = .{ .value = @intCast(i) } };
     return int;
 }
@@ -771,6 +772,7 @@ fn parseType(self: *Parser) !ast.Expression {
     while (!self.peekTokenIs(.@"}") and !self.curTokenIs(.eof)) {
         self.nextToken();
 
+        // if (self.curTokenIs(.comment)) continue;
         if (self.curTokenIs(.identifier)) {
             var field: ast.Type.Field = .{
                 .name = self.parseIdentifier().identifier,
@@ -895,7 +897,9 @@ fn parseMethod(self: *Parser, caller: *ast.Expression) !ast.Expression {
 }
 
 fn parseInstance(self: *Parser, type_exp: *ast.Expression) !ast.Expression {
-    return .{ .instance = .{ .type = type_exp, .fields = try self.parseInstanceArguments() } };
+    return .{
+        .instance = .{ .type = type_exp, .fields = try self.parseInstanceArguments() },
+    };
 }
 
 fn parseInstance3(self: *Parser) !ast.Expression {
@@ -1281,8 +1285,8 @@ pub fn parseForRange(self: *Parser, ident: ast.Identifier) !ast.Expression {
 
     // if (self.expectPeek(.@",")) {
     //     self.nextToken();
-    //     const index = try self.parseIdentifier();
-    //     flr.index = index.identifier.value;
+    //     const index = self.parseIdentifier();
+    //     flr.index = index.identifier;
     // }
     //
     if (!self.expectPeek(.in)) {

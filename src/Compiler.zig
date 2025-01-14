@@ -276,6 +276,8 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emitFunction(&func_stmt);
             },
 
+            // .comment => {},
+
             else => {
                 return c.newError("Invalid Statement", .{});
             },

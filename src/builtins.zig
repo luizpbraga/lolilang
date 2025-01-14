@@ -10,9 +10,28 @@ pub var list = [_]Object.Builtin{
     .{ .name = "@append", .function = appendBuiltin },
     .{ .name = "@read", .function = readBuiltin },
     .{ .name = "@write", .function = writeBuiltin },
+    .{ .name = "@typeOf", .function = typeOfBuiltin },
 };
 
+pub fn typeOfBuiltin(_: *Vm, arg: []const Value) Value {
+    return switch (arg[0]) {
+        .obj => |ob| switch (ob.type) {
+            .instance => |i| .{ .tag = i.type.name orelse "instance" },
+            else => .{ .tag = @tagName(ob.type) },
+        },
+        else => .{ .tag = @tagName(arg[0]) },
+    };
+}
+
 pub fn readBuiltin(vm: *Vm, arg: []const Value) Value {
+    if (arg.len == 0) {
+        const content = std.io.getStdIn().reader().readUntilDelimiterAlloc(vm.allocator, '\n', 10000) catch return .null;
+        const obj = vm.allocator.create(Object) catch return .null;
+        obj.type = .{ .string = content };
+        vm.instantiateAtVm(obj) catch return .null;
+        return .{ .obj = obj };
+    }
+
     if (arg[0] != .obj) return .null;
 
     switch (arg[0].obj.type) {
@@ -56,13 +75,30 @@ pub fn lenBuiltin(_: *Vm, arg: []const Value) Value {
     };
 }
 
-pub fn appendBuiltin(_: *Vm, arg: []const Value) Value {
+pub fn appendBuiltin(vm: *Vm, arg: []const Value) Value {
     if (arg[0] != .obj) return .null;
 
     switch (arg[0].obj.type) {
         .array => |*arr| {
             for (arg[1..]) |val| {
                 arr.append(val) catch return .null;
+            }
+        },
+
+        .string => |*str| {
+            for (arg[1..]) |value| {
+                const string = switch (value) {
+                    .obj => |ob| switch (ob.type) {
+                        .string => |s| std.fmt.allocPrint(vm.allocator, "{s}{s}", .{ str.*, s }) catch return .null,
+                        else => return .null,
+                    },
+                    inline .integer, .float, .boolean => |val| std.fmt.allocPrint(vm.allocator, "{s}{}", .{ str.*, val }) catch return .null,
+                    .tag => |val| std.fmt.allocPrint(vm.allocator, "{s}{s}", .{ str.*, val }) catch return .null,
+                    else => return .null,
+                };
+                // const string = std.mem.allocPrint(vm.allocator, "{s}{}", .{ str.*, val }) catch .null;
+                const obj = memory.allocateObject(vm, .{ .string = string }) catch return .null;
+                return .{ .obj = obj };
             }
         },
         else => {},
@@ -140,7 +176,7 @@ fn print(value: Value) void {
             },
 
             .instance => |ty| {
-                std.debug.print("{{", .{});
+                std.debug.print("{s}{{", .{ty.type.name orelse "annon"});
                 var iter = ty.fields.iterator();
                 while (iter.next()) |entry| {
                     const key = entry.key_ptr;
@@ -167,7 +203,7 @@ fn print(value: Value) void {
         },
 
         .tag => |b| {
-            std.debug.print(".{s}", .{b});
+            std.debug.print("{s}", .{b});
         },
 
         .range => |r| std.debug.print("[range:{s}:{}:{}]", .{ @tagName(r.value.*), r.start, r.end }),

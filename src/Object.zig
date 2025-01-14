@@ -22,7 +22,7 @@ pub const Type = union(enum) {
 };
 
 pub const BuiltinType = struct {
-    pub const BT = enum { @"struct", @"enum" };
+    pub const BT = enum { @"struct", @"enum", @"error" };
 
     index: usize,
     type: BT,

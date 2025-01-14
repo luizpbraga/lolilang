@@ -115,6 +115,15 @@ pub fn nextToken(self: *Self) Token {
     }
 
     const tok = switch (self.ch) {
+        // '#' => {
+        //     const start = self.position;
+        //     self.skipComments();
+        //     const end = self.position;
+        //     var tk = self.newToken(.comment);
+        //     tk.at = start;
+        //     tk.end = end;
+        //     return tk;
+        // },
         '^' => self.newToken(.@"^"),
         '%' => self.newToken(.@"%"),
         ';' => self.newToken(.@";"),
