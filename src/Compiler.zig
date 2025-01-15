@@ -21,6 +21,7 @@ positions: std.ArrayList(usize),
 symbols: ?*SymbolTable,
 scopes: std.ArrayList(Scope),
 scope_index: usize,
+block_index: usize = 0,
 /// TODO: labels
 loop: Loop = .{},
 
@@ -242,9 +243,11 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             .block => |block| {
+                c.block_index += 1;
                 for (block.statements) |_stmt| {
                     try c.compile(.{ .statement = _stmt });
                 }
+                c.block_index -= 1;
             },
 
             .@"var" => |var_stmt| {
@@ -270,12 +273,18 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
             // TODO: make it work in if/match/for
             .@"break" => |ret| {
+                if (c.block_index == 0) {
+                    return c.newError("Invalid break Statement Outside Body", .{});
+                }
                 try c.compile(.{ .expression = ret.value });
                 const pos = try c.emitPos(.jump, &.{9999});
                 c.loop.info[c.loop.idx].end = pos;
             },
 
             .@"continue" => |ret| {
+                if (c.block_index == 0) {
+                    return c.newError("Invalid continue Statement Outside Body", .{});
+                }
                 try c.compile(.{ .expression = ret.value });
                 try c.emit(.jump, &.{c.loop.info[c.loop.idx].start});
             },
@@ -343,6 +352,12 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                             try c.emit(.mul, &.{});
                         },
 
+                        .@"/=" => {
+                            try c.compile(.{ .expression = assignment.name });
+                            try c.compile(.{ .expression = assignment.value });
+                            try c.emit(.div, &.{});
+                        },
+
                         else => return c.newError("Invalid Assignment Operator", .{}),
                     }
 
@@ -357,45 +372,81 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     const index = assignment.name.index.index;
                     const value = assignment.value;
 
+                    try c.compile(.{ .expression = left });
+                    try c.compile(.{ .expression = index });
                     switch (assignment.operator) {
                         .@"=" => {
-                            try c.compile(.{ .expression = left });
-                            try c.compile(.{ .expression = index });
                             try c.compile(.{ .expression = value });
                         },
 
-                        // .@"+=" => {
-                        //     try c.compile(.{ .expression = left });
-                        //     try c.compile(.{ .expression = index });
-                        //     try c.compile(.{ .expression = value });
-                        //     try c.emit(.add, &.{});
-                        // },
-                        //
-                        // .@"-=" => {
-                        //     try c.compile(.{ .expression = left });
-                        //     try c.compile(.{ .expression = index });
-                        //     try c.compile(.{ .expression = value });
-                        //     try c.emit(.sub, &.{});
-                        // },
-                        //
-                        // .@"*=" => {
-                        //     try c.compile(.{ .expression = left });
-                        //     try c.compile(.{ .expression = index });
-                        //     try c.compile(.{ .expression = value });
-                        //     try c.emit(.mul, &.{});
-                        // },
+                        .@"+=" => {
+                            try c.compile(.{ .expression = assignment.name });
+                            try c.compile(.{ .expression = value });
+                            try c.emit(.add, &.{});
+                        },
+                        .@"-=" => {
+                            try c.compile(.{ .expression = assignment.name });
+                            try c.compile(.{ .expression = value });
+                            try c.emit(.sub, &.{});
+                        },
+
+                        .@"*=" => {
+                            try c.compile(.{ .expression = assignment.name });
+                            try c.compile(.{ .expression = value });
+                            try c.emit(.mul, &.{});
+                        },
+
+                        .@"/=" => {
+                            try c.compile(.{ .expression = assignment.name });
+                            try c.compile(.{ .expression = value });
+                            try c.emit(.div, &.{});
+                        },
 
                         else => return c.newError("Invalid Assignment Operator", .{}),
                     }
 
-                    try c.emit(.index_set, &.{});
-                    return;
+                    return try c.emit(.index_set, &.{});
                 }
 
                 if (assignment.name.* == .method) {
-                    try c.compile(.{ .expression = assignment.name.method.caller });
-                    const pos = try c.addConstants(.{ .tag = assignment.name.method.method.value });
-                    try c.compile(.{ .expression = assignment.value });
+                    const left = assignment.name.method.caller;
+                    const method: Value = .{ .tag = assignment.name.method.method.value };
+                    const value = assignment.value;
+
+                    try c.compile(.{ .expression = left });
+                    const pos = try c.addConstants(method);
+
+                    switch (assignment.operator) {
+                        .@"=" => {
+                            try c.compile(.{ .expression = value });
+                        },
+                        .@"+=" => {
+                            try c.compile(.{ .expression = assignment.name });
+                            try c.compile(.{ .expression = value });
+                            try c.emit(.add, &.{});
+                        },
+
+                        .@"-=" => {
+                            try c.compile(.{ .expression = assignment.name });
+                            try c.compile(.{ .expression = value });
+                            try c.emit(.sub, &.{});
+                        },
+
+                        .@"*=" => {
+                            try c.compile(.{ .expression = assignment.name });
+                            try c.compile(.{ .expression = value });
+                            try c.emit(.mul, &.{});
+                        },
+
+                        .@"/=" => {
+                            try c.compile(.{ .expression = assignment.name });
+                            try c.compile(.{ .expression = value });
+                            try c.emit(.div, &.{});
+                        },
+
+                        else => return c.newError("Invalid Assignment Operator", .{}),
+                    }
+
                     try c.emit(.method_set, &.{pos});
                     return;
                 }
@@ -712,7 +763,6 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 // this is the real jumpifnottrue position. this is how deep the compiled forloop.consequence is
                 // const after_consequence_position = c.insLen() + start_pos;
                 const after_consequence_position = c.insLen();
-
                 try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
 
                 // // break statement

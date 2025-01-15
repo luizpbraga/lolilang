@@ -142,7 +142,7 @@ pub fn setIndex(vm: *Vm, left: *Value, index: Value, value: Value) !void {
 
                 if (i >= 0 and i < len) {
                     array.items[@intCast(i)] = value;
-                    return;
+                    return vm.push(.null);
                 }
                 return vm.newError("Index Out of Bound", .{});
             },
