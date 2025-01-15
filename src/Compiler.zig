@@ -509,15 +509,15 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             // TODO: rework
             .method => |method| {
                 try c.compile(.{ .expression = method.caller });
-                const symbol = try c.symbols.?.resolve(method.method.value) orelse {
-                    const pos = try c.addConstants(.{
-                        .tag = method.method.value,
-                    });
-                    try c.emit(.constant, &.{pos});
-                    try c.emit(.index_get, &.{});
-                    return;
-                };
-                try c.emit(.method_get, &.{symbol.index});
+                // const symbol = try c.symbols.?.resolve(method.method.value) orelse {
+                const pos = try c.addConstants(.{
+                    .tag = method.method.value,
+                });
+                try c.emit(.constant, &.{pos});
+                try c.emit(.index_get, &.{});
+                return;
+                // };
+                // try c.emit(.method_get, &.{symbol.index});
             },
 
             .boolean => |boolean| {

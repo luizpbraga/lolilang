@@ -40,6 +40,12 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
         },
 
         .string => |string| {
+            if (index.* == .tag) {
+                if (std.mem.eql(u8, index.tag, "len")) {
+                    return vm.push(.{ .integer = @intCast(string.len) });
+                }
+            }
+
             if (index.* == .integer) {
                 const i = index.integer;
                 const len = string.len;
@@ -67,6 +73,12 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
         },
 
         .array => |array| {
+            if (index.* == .tag) {
+                if (std.mem.eql(u8, index.tag, "len")) {
+                    return vm.push(.{ .integer = @intCast(array.items.len) });
+                }
+            }
+
             if (index.* == .integer) {
                 const i = index.integer;
                 const len = array.items.len;

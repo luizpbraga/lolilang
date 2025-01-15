@@ -6,7 +6,7 @@ const Vm = @import("Vm.zig");
 
 pub var builtin_functions = [_]Object.Builtin{
     .{ .name = "@print", .function = Builtin.print },
-    .{ .name = "len", .function = Builtin.len },
+    .{ .name = "@length", .function = Builtin.length },
     .{ .name = "@append", .function = Builtin.append },
     .{ .name = "@read", .function = Builtin.read },
     .{ .name = "@write", .function = Builtin.write },
@@ -45,15 +45,11 @@ const Builtin = struct {
                 break :l;
             }
             return .{ .char = @intCast(value.integer) };
-        }
-
-        if (value == .char) return value;
-
-        if (value == .boolean) {
+        } else if (value == .char) {
+            return value;
+        } else if (value == .boolean) {
             return .{ .char = if (value.boolean) 0 else 1 };
-        }
-
-        if (value == .obj) {
+        } else if (value == .obj) {
             if (value.obj.type == .string) {
                 if (value.obj.type.string.len == 1) {
                     return .{ .char = value.obj.type.string[0] };
@@ -105,7 +101,7 @@ const Builtin = struct {
         return .{ .integer = @intCast(content.len) };
     }
 
-    pub fn len(vm: *Vm, arg: []const Value) anyerror!Value {
+    pub fn length(vm: *Vm, arg: []const Value) anyerror!Value {
         if (arg.len != 1) return vm.newError("Argument Mismatch", .{});
 
         if (arg[0] != .obj) return vm.newError("Type '{s}' don't have a length", .{arg[0].name()});

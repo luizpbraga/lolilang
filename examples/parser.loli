@@ -1,6 +1,6 @@
-# bugs: tags and variables
-# available tokens
+# bugs: tags and variables 
 
+# available tokens
 Type := enum {
     ILLEGAL EOF_TOK
 
@@ -24,10 +24,6 @@ Type := enum {
 Token := struct { 
     type
     literal
-
-    fn init(type, literal) {
-        return new Token{ type: type, literal: literal }
-    }
 }
 
 Lexer := struct {
@@ -39,108 +35,111 @@ Lexer := struct {
     read_position = 0
     # current character
     ch
+}
 
-    fn readChar(l) {
-        l.ch = if l.read_position >= l.input.len { 0 } else { 
-            l.input[l.read_position] 
-        }
-        l.position = l.read_position
-        l.read_position = l.read_position + 1
+fn initToken(type, literal) {
+  return new Token{ type: type, literal: literal}
+}
+
+fn readChar(l) {
+    l.ch = if l.read_position >= l.input.len { 0 } else { 
+        l.input[l.read_position] 
     }
+    l.position = l.read_position
+    l.read_position = l.read_position + 1
+}
 
-    fn peekChar(l) {
-        return if l.read_position >= l.input.len { 0 } else { 
-            l.input[l.read_position] 
-        }
-    }
-
-    fn isDigit(ch) { 
-        return ('0' <= ch) and (ch <= '9') 
-    }
-
-    fn isLetter(ch) { 
-        return ('a' <= ch) and (ch <= 'z') or ('A' <= ch) and (ch <= 'Z') or (ch == '_') or (ch == '@')
-    }
-
-    fn readNumber(l) {
-        pos := l.position;
-        for Lexer.isDigit(l.ch) { 
-            l.readChar() 
-        }
-        return l.input[pos..l.position]
-    }
-
-    fn skipWhiteSpace(l) {
-        for (l.ch == ' ') or (l.ch == '\n') or (l.ch == '\t') {
-            l.readChar()
-        }
-    }
-
-    fn readIdentifer(l) {
-        pos := l.position;
-        if Lexer.isDigit(l.ch) { 
-            return;
-        }
-        for Lexer.isLetter(l.ch) or Lexer.isDigit(l.ch) { 
-            l.readChar()
-        }
-        return l.input[pos..l.position]
-    }
-
-    fn nextTk(l) {
-        l.skipWhiteSpace();
-
-        c := l.ch
-        tk := match l.ch {
-            '[' => {  Type.LBRACKET }
-            ']' => {  Type.RBRACKET }
-            '(' => {  Type.LPAREN }
-            ')' => {  Type.RPAREN }
-            '{' => {  Type.LBRACE }
-            '}' => {  Type.RBRACE }
-            ',' => {  Type.COMMA }
-            ';' => {  Type.SEMICOLON }
-            ':' => {  Type.COLON }
-            '+' => {  Type.PLUS }
-            '-' => {  Type.MINUS }
-            '*' => {  Type.STAR }
-            '/' => {  Type.SLASH }
-            '!' => {  Type.EXCLAMATION }
-            '=' => {  Type.EQUAL }
-            '>' => {  Type.GREATER }
-            '<' => {  Type.LESS }
-            '.' => {  Type.DOT }
-            0   => {  Type.EOF_TOK }
-            else => { 
-                ident := l.readIdentifer()
-                if ident != null {
-                    return Token.init(Type.IDENTIFIER, ident)
-                }
-
-                number := l.readNumber()
-                if number != null {
-                    return Token.init(Type.INTEGER, number)
-                }
-                
-                return Token.init(Type.ILLEGAL, l.ch)
-            }
-        }
-
-        l.readChar()
-        return Token.init(tk, c)
-    }
-
-    fn init(file_name) {
-        input := @read(file_name)
-        l := new Lexer { input: input }
-        l.readChar()
-        return l
+fn peekChar(l) {
+    return if l.read_position >= l.input.len { 0 } else { 
+      l.input[l.read_position] 
     }
 }
 
-l := Lexer.init("./test_file")
-tk := l.nextTk()
+fn isDigit(ch) { return ('0' <= ch) and (ch <= '9') }
+
+fn isLetter(ch) { 
+    return ('a' <= ch) and (ch <= 'z') or ('A' <= ch) and (ch <= 'Z') or (ch == '_') or (ch == '@')
+}
+
+fn readNumber(l) {
+    pos := l.position;
+    for isDigit(l.ch) { 
+        readChar(l) 
+    }
+    return l.input[pos..l.position]
+}
+
+fn readIdentifer(l) {
+    pos := l.position;
+    if isDigit(l.ch) { 
+        return;
+    }
+    for isLetter(l.ch) or isDigit(l.ch) { 
+        readChar(l)
+    }
+    return l.input[pos..l.position]
+}
+
+fn skipWhiteSpace(l) {
+    for (l.ch == ' ') or (l.ch == '\n') or (l.ch == '\t') {
+        readChar(l)
+    }
+}
+
+fn nextTk(l) {
+    skipWhiteSpace(l);
+
+    ch := l.ch
+    tk := match l.ch {
+        '[' => {  Type.LBRACKET }
+        ']' => {  Type.RBRACKET }
+        '(' => {  Type.LPAREN }
+        ')' => {  Type.RPAREN }
+        '{' => {  Type.LBRACE }
+        '}' => {  Type.RBRACE }
+        ',' => {  Type.COMMA }
+        ';' => {  Type.SEMICOLON }
+        ':' => {  Type.COLON }
+        '+' => {  Type.PLUS }
+        '-' => {  Type.MINUS }
+        '*' => {  Type.STAR }
+        '/' => {  Type.SLASH }
+        '!' => {  Type.EXCLAMATION }
+        '=' => {  Type.EQUAL }
+        '>' => {  Type.GREATER }
+        '<' => {  Type.LESS }
+        '.' => {  Type.DOT }
+        0   => {  Type.EOF_TOK }
+        else => { 
+            ident := readIdentifer(l)
+            if ident != null {
+                return initToken(Type.IDENTIFIER, ident)
+            }
+
+            number := readNumber(l)
+            if number != null {
+                return initToken(Type.INTEGER, number)
+            }
+            
+            return initToken(Type.ILLEGAL, l.ch)
+        }
+    }
+
+    readChar(l)
+    return initToken(tk, ch)
+}
+
+fn initLexer(file_name) {
+    input := @read(file_name)
+    l := new Lexer { input: input }
+    readChar(l)
+    return l
+}
+
+l := initLexer("./test_file")
+
+tk := nextTk(l)
 for tk.type != Type.EOF_TOK {
     @print(tk)
-    tk = l.nextTk()
+    tk = nextTk(l)
 }
