@@ -212,7 +212,7 @@ pub const Closure = struct {
 
 pub const Builtin = struct {
     name: []const u8,
-    function: *const fn (*@import("Vm.zig"), []const Value) Value,
+    function: *const fn (*@import("Vm.zig"), []const Value) anyerror!Value,
 };
 
 pub const Hash = struct {

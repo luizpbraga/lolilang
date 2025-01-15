@@ -249,8 +249,8 @@ pub fn run(vm: *Vm) anyerror!void {
                 const caller = vm.pop();
                 const builtin_index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
                 fm.ip += 1;
-                const builtin = builtins.list[builtin_index];
-                const value = builtin.function(vm, &.{caller});
+                const builtin = builtins.builtin_functions[builtin_index];
+                const value = try builtin.function(vm, &.{caller});
                 try vm.push(value);
             },
 
@@ -301,7 +301,7 @@ pub fn run(vm: *Vm) anyerror!void {
             .getbf => {
                 const builtin_index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
                 fm.ip += 1;
-                const builtin = builtins.list[builtin_index];
+                const builtin = builtins.builtin_functions[builtin_index];
                 try vm.push(.{ .builtin = builtin });
             },
 
@@ -563,7 +563,7 @@ pub fn run(vm: *Vm) anyerror!void {
                     .builtin => |bui| {
                         const args = vm.stack[vm.sp - args_number .. vm.sp];
                         vm.sp = vm.sp - args_number - 1;
-                        try vm.push(bui.function(vm, args));
+                        try vm.push(try bui.function(vm, args));
                     },
 
                     else => {

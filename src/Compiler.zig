@@ -21,13 +21,19 @@ positions: std.ArrayList(usize),
 symbols: ?*SymbolTable,
 scopes: std.ArrayList(Scope),
 scope_index: usize,
-/// testing the logic
-loop: struct { top: usize = 0, start: usize = 0 } = .{},
+/// TODO: labels
+loop: Loop = .{},
+
 struct_fields: std.ArrayList(struct { index: usize, fields: [][]const u8 = &.{} }),
 type_index: usize = 0,
 
 const Loop = struct {
-    loops: [10]struct { start: usize, end: usize },
+    info: [1]struct {
+        /// continue position
+        start: usize = 0,
+        /// break position
+        end: ?usize = null,
+    } = .{.{}} ** 1,
     idx: usize = 0,
 };
 
@@ -56,7 +62,7 @@ pub fn init(alloc: std.mem.Allocator, errors: *Error) !Compiler {
     errdefer alloc.destroy(s);
     s.* = .init(alloc);
 
-    for (0.., builtins.list) |i, b| {
+    for (0.., builtins.builtin_functions) |i, b| {
         _ = try s.defineBuiltin(i, b.name);
     }
 
@@ -258,18 +264,20 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     return c.newError("Invalid Return Statement Outside Function Body", .{});
                 }
                 try c.compile(.{ .expression = ret.value });
+
                 try c.emit(.retv, &.{});
             },
 
             // TODO: make it work in if/match/for
             .@"break" => |ret| {
                 try c.compile(.{ .expression = ret.value });
-                try c.emit(.jump, &.{c.loop.top});
+                const pos = try c.emitPos(.jump, &.{9999});
+                c.loop.info[c.loop.idx].end = pos;
             },
 
             .@"continue" => |ret| {
                 try c.compile(.{ .expression = ret.value });
-                try c.emit(.jump, &.{c.loop.start});
+                try c.emit(.jump, &.{c.loop.info[c.loop.idx].start});
             },
 
             .@"fn" => |func_stmt| {
@@ -683,7 +691,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
             .@"for" => |forloop| {
                 const jump_pos = c.insLen();
-                c.loop.start = jump_pos;
+                c.loop.info[c.loop.idx].start = jump_pos;
 
                 try c.compile(.{ .expression = forloop.condition });
 
@@ -704,10 +712,17 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 // this is the real jumpifnottrue position. this is how deep the compiled forloop.consequence is
                 // const after_consequence_position = c.insLen() + start_pos;
                 const after_consequence_position = c.insLen();
+
                 try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
 
-                c.loop.top = after_consequence_position;
-                try c.emit(.null, &.{});
+                // // break statement
+                if (c.loop.info[c.loop.idx].end) |pox| {
+                    try c.changeOperand(pox, after_consequence_position);
+                    c.loop.info[c.loop.idx].end = null;
+                } else {
+                    // // always jump: null is returned
+                    try c.emit(.null, &.{});
+                }
             },
 
             .for_range => |forloop| {
@@ -718,7 +733,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(.to_range, &.{pos});
 
                 const jump_pos = c.insLen();
-                c.loop.start = jump_pos;
+                c.loop.info[c.loop.idx].start = jump_pos;
                 // in this block, the last instruction must be boolean
                 {
                     try c.emit(.get_range, &.{pos});
@@ -740,13 +755,18 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
                 // this is the real jumpifnottrue position. this is how deep the compiled forloop.consequence is
                 const after_consequence_position = c.insLen();
-                c.loop.top = after_consequence_position;
 
                 // Replaces the 9999 (.jump_if_not_true_pos) to the correct operand (after_consequence_position);
                 try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
 
-                // // always jump: null is returned
-                try c.emit(.null, &.{});
+                // // break statement
+                if (c.loop.info[c.loop.idx].end) |pox| {
+                    try c.changeOperand(pox, after_consequence_position);
+                    c.loop.info[c.loop.idx].end = null;
+                } else {
+                    // // always jump: null is returned
+                    try c.emit(.null, &.{});
+                }
             },
 
             // TODO: make it like a function

@@ -8,13 +8,13 @@ const Vm = @import("Vm.zig");
 /// [], .
 pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
     if (left.* != .obj) {
-        return vm.newError("Invalid Index Operation", .{});
+        return vm.newError("Invalid Index Operation on type '{s}' with index '{s}'", .{ left.name(), index.name() });
     }
 
     switch (left.obj.type) {
         .instance => |ins| {
             if (index.* != .tag) {
-                return vm.newError("Invalid Index Operation", .{});
+                return vm.newError("Invalid Index Operation: instance is not indexable", .{});
                 // return try vm.push(.null);
             }
 
@@ -102,7 +102,7 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
             return vm.push(pair.value);
         },
 
-        else => return vm.newError("Invalid Index Operation", .{}),
+        else => return vm.newError("Invalid Index Operation on type '{s}'", .{left.name()}),
     }
 
     return try vm.push(.null);

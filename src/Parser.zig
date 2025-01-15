@@ -130,7 +130,7 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
         .integer => try p.parseInteger(),
         .float => try p.parseFloat(),
         .true, .false => p.parseBoolean(),
-        .null, .@";", .@"}" => p.parseNull(),
+        .null, .@";" => p.parseNull(),
         .@"[" => try p.parseArray(),
         .@"{" => try p.parseHash(),
         .new => try p.parseInstance2(),
@@ -275,6 +275,10 @@ fn parseTag(self: *Parser) ast.Expression {
 fn parseReturn(self: *Parser) !ast.Statement {
     var return_stmt: ast.Return = .{ .value = &NULL };
 
+    if (self.peekTokenIs(.@"}")) {
+        return .{ .@"return" = return_stmt };
+    }
+
     self.nextToken();
 
     return_stmt.value = try self.parseExpression(.lowest);
@@ -287,7 +291,11 @@ fn parseReturn(self: *Parser) !ast.Statement {
 }
 
 fn parseBreak(self: *Parser) !ast.Statement {
-    var break_stmt: ast.Break = .{ .value = undefined };
+    var break_stmt: ast.Break = .{ .value = &NULL };
+
+    if (self.peekTokenIs(.@"}")) {
+        return .{ .@"break" = break_stmt };
+    }
 
     self.nextToken();
 
@@ -301,19 +309,23 @@ fn parseBreak(self: *Parser) !ast.Statement {
 }
 
 fn parseContinue(self: *Parser) !ast.Statement {
-    var break_stmt: ast.Continue = .{
-        .value = undefined,
+    var continue_stmt: ast.Continue = .{
+        .value = &NULL,
     };
+
+    if (self.peekTokenIs(.@"}")) {
+        return .{ .@"continue" = continue_stmt };
+    }
 
     self.nextToken();
 
-    break_stmt.value = try self.parseExpression(.lowest);
+    continue_stmt.value = try self.parseExpression(.lowest);
 
     if (self.peekTokenIs(.@";")) {
         self.nextToken();
     }
 
-    return .{ .@"continue" = break_stmt };
+    return .{ .@"continue" = continue_stmt };
 }
 
 fn parseAssignment(self: *Parser, name: *ast.Expression) !ast.Expression {
