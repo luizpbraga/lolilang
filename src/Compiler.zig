@@ -262,6 +262,19 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(op, &.{symbol.index});
             },
 
+            // TODO: allow immutable data
+            .con => |con_stmt| {
+                const symbol = try c.symbols.?.define(con_stmt.name.value);
+
+                if (con_stmt.value.* == .type) {
+                    con_stmt.value.type.name = con_stmt.name.value;
+                }
+
+                try c.compile(.{ .expression = con_stmt.value });
+                const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+                try c.emit(op, &.{symbol.index});
+            },
+
             .@"return" => |ret| {
                 if (c.scope_index == 0) {
                     return c.newError("Invalid Return Statement Outside Function Body", .{});
@@ -293,7 +306,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emitFunction(&func_stmt);
             },
 
-            // .comment => {},
+            .comment => {},
 
             else => {
                 return c.newError("Invalid Statement", .{});
@@ -306,6 +319,10 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     return c.newError("Undefined Variable", .{});
                 };
                 try c.loadSymbol(symbol);
+            },
+
+            .group => |goup| {
+                try c.compile(.{ .expression = goup.exp });
             },
 
             // TODO: not fully implemented
@@ -793,9 +810,19 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
                 // compiling the consequence
                 if (forloop.body.statements.len != 0) {
-                    const symbol = try c.symbols.?.define(forloop.ident);
-                    const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
-                    try c.emit(op, &.{symbol.index});
+                    // item
+                    {
+                        const symbol = try c.symbols.?.define(forloop.ident);
+                        const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+                        try c.emit(op, &.{symbol.index});
+                    }
+                    // // index
+                    // if (forloop.index) |idx| {
+                    //     const symbol = try c.symbols.?.define(idx);
+                    //     const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+                    //     try c.emit(op, &.{symbol.index});
+                    // }
+
                     try c.compile(.{ .statement = .{ .block = forloop.body } });
                     // statements add a pop in the end, wee drop the last pop (if return)
                     if (c.lastInstructionIs(.pop)) c.removeLastPop();

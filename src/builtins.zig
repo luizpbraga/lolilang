@@ -220,8 +220,12 @@ fn printV(value: Value) void {
                 var iter = ty.fields.iterator();
                 while (iter.next()) |entry| {
                     const key = entry.key_ptr;
+                    const val = entry.value_ptr;
+
+                    if (val.* == .obj) if (val.obj.type == .desc) continue;
+
                     std.debug.print("{s}: ", .{key.*});
-                    printV(entry.value_ptr.*);
+                    printV(val.*);
                     std.debug.print(", ", .{});
                 }
                 std.debug.print("}}", .{});

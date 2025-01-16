@@ -4,6 +4,19 @@ const Lexer = @import("Lexer.zig");
 const Parser = @import("Parser.zig");
 const stderr = std.io.getStdErr();
 
+const Line = struct {
+    input: []const u8,
+    start: usize = 0,
+    end: usize = 0,
+    index: usize = 0,
+
+    pub fn line(input: []const u8, position: usize) usize {
+        const pos = if (position > input.len) input.len else position;
+        const index = std.mem.count(u8, input[0..pos], "\n") + 1;
+        return index;
+    }
+};
+
 test {
     const input =
         \\x := struct {
@@ -35,7 +48,7 @@ test {
     std.debug.print("{s}", .{w.buffer.items});
 }
 
-pub fn format(allocator: std.mem.Allocator, input: []const u8) !void {
+pub fn format(allocator: std.mem.Allocator, file_name: []const u8, input: []const u8) !void {
     var lexer: Lexer = .init(input);
 
     var parser: Parser = .init(allocator, &lexer);
@@ -55,7 +68,7 @@ pub fn format(allocator: std.mem.Allocator, input: []const u8) !void {
 
     try w.write(node);
 
-    var file = try std.fs.cwd().createFile("fotmated.loli", .{});
+    var file = try std.fs.cwd().createFile(file_name, .{});
     defer file.close();
 
     try file.writeAll(w.buffer.items);
@@ -65,6 +78,7 @@ pub const Write = struct {
     input: []const u8,
     buffer: std.ArrayList(u8),
     block: usize = 0,
+    line_number: usize = 1,
 
     fn init(allocator: anytype, input: []const u8) Write {
         return .{ .buffer = .init(allocator), .input = input };
@@ -72,6 +86,18 @@ pub const Write = struct {
 
     fn deinit(w: *Write) void {
         w.buffer.deinit();
+    }
+
+    fn findLine(w: *Write, pos: usize) !void {
+        const at = Line.line(w.input, pos);
+        if (at > w.line_number) for (w.line_number..at) |_| {
+            try w.newLine();
+        };
+    }
+
+    fn newLine(w: *Write) !void {
+        w.line_number += 1;
+        try w.append("\n");
     }
 
     fn print(w: *Write, comptime fmt: []const u8, args: anytype) !void {
@@ -91,8 +117,10 @@ pub const Write = struct {
             .statement => |stmt| switch (stmt) {
                 .program => |program| {
                     for (program.statements.items) |s| {
+                        try w.findLine(s.position());
                         try w.write(.{ .statement = s });
-                        try w.append("\n");
+
+                        if (s != .comment) try w.newLine();
                     }
                 },
 
@@ -101,13 +129,19 @@ pub const Write = struct {
                 },
 
                 .block => |block| {
-                    try w.append("{\n");
+                    if (block.statements.len == 0) {
+                        try w.append("{}");
+                        return;
+                    }
+
+                    try w.append("{");
+                    try w.newLine();
                     w.block += 1;
                     for (block.statements) |_stmt| {
                         // try w.buffer.writer().writeByteNTimes('\t', w.block);
                         try w.tab();
                         try w.write(.{ .statement = _stmt });
-                        try w.append("\n");
+                        try w.newLine();
                     }
                     w.block -= 1;
                     try w.tab();
@@ -116,6 +150,7 @@ pub const Write = struct {
                 },
 
                 .@"var" => |var_stmt| {
+                    // try w.findLine(var_stmt.at);
                     try w.print("var {s} = ", .{var_stmt.name.value});
                     try w.write(.{ .expression = var_stmt.value });
                 },
@@ -154,16 +189,16 @@ pub const Write = struct {
                     try w.append(") ");
 
                     try w.write(.{ .statement = .{ .block = func.body } });
-                    try w.append("\n");
+                    try w.newLine();
                 },
 
-                // .comment => |co| {
-                //     try w.append(std.mem.trim(u8, w.input[co.at..co.end], "\n"));
-                // },
+                .comment => |co| {
+                    try w.print("{s}", .{std.mem.trim(u8, w.input[co.at..co.end], " \n")});
+                },
 
                 else => |a| {
                     std.debug.print("{}", .{a});
-                    return error.B;
+                    return error.SorryMamaaaaaaaaaaaaaaaaaa;
                 },
             },
 
@@ -177,6 +212,12 @@ pub const Write = struct {
                     try w.write(.{ .expression = assignment.name });
                     try w.print(" {s} ", .{@tagName(assignment.operator)});
                     try w.write(.{ .expression = assignment.value });
+                },
+
+                .group => |group| {
+                    try w.append("(");
+                    try w.write(.{ .expression = group.exp });
+                    try w.append(")");
                 },
 
                 .infix => |infix| {
@@ -285,10 +326,12 @@ pub const Write = struct {
                     try w.write(.{ .expression = instance.type });
 
                     if (instance.fields.len == 0) {
-                        try w.append("{");
-                        w.block += 1;
+                        try w.append("{}");
+                        return;
+                        // w.block += 1;
                     } else {
-                        try w.append("{\n");
+                        try w.append("{");
+                        try w.newLine();
                         w.block += 1;
                     }
 
@@ -297,7 +340,8 @@ pub const Write = struct {
                         // try w.buffer.writer().writeByteNTimes('\t', w.block);
                         try w.print("{s}: ", .{field.name.value});
                         try w.write(.{ .expression = field.value });
-                        try w.append(",\n");
+                        try w.append(",");
+                        try w.newLine();
                     }
                     w.block -= 1;
                     try w.tab();
@@ -330,7 +374,8 @@ pub const Write = struct {
                 .match => |match| {
                     try w.append("match ");
                     try w.write(.{ .expression = match.value });
-                    try w.append(" {\n");
+                    try w.append(" {");
+                    try w.newLine();
 
                     w.block += 1;
                     for (match.arms) |arm| {
@@ -339,7 +384,7 @@ pub const Write = struct {
                         try w.write(.{ .expression = arm.condition });
                         try w.append(" => ");
                         try w.write(.{ .statement = .{ .block = arm.block } });
-                        try w.append("\n");
+                        try w.newLine();
                     }
 
                     if (match.else_block) |block| {
@@ -349,7 +394,7 @@ pub const Write = struct {
                         try w.write(.{ .statement = .{ .block = block } });
                     }
                     w.block -= 1;
-                    try w.append("\n");
+                    try w.newLine();
                     try w.tab();
                     // try w.buffer.writer().writeByteNTimes('\t', w.block);
                     try w.append("}");
@@ -367,23 +412,36 @@ pub const Write = struct {
                     try w.write(.{ .statement = .{ .block = forloop.consequence } });
                 },
                 .type => |ty| {
-                    try w.print("{s} {{\n", .{@tagName(ty.type)});
+                    if (ty.fields.len == 0 and ty.comments.len == 0) {
+                        try w.print("{s} {{}}", .{@tagName(ty.type)});
+                        return;
+                    }
+
+                    try w.print("{s} {{", .{@tagName(ty.type)});
+                    try w.newLine();
                     w.block += 1;
+
+                    for (ty.comments) |comment| {
+                        try w.tab();
+                        try w.write(.{ .statement = comment });
+                        try w.newLine();
+                    }
 
                     for (ty.fields) |field| {
                         try w.tab();
                         // try w.buffer.writer().writeByteNTimes('\t', w.block);
                         if (field.value.* == .null) {
-                            try w.print("{s}\n", .{field.name.value});
+                            try w.print("{s}", .{field.name.value});
+                            try w.newLine();
                             continue;
                         }
                         try w.print("{s} = ", .{field.name.value});
                         try w.write(.{ .expression = field.value });
-                        try w.append("\n");
+                        try w.newLine();
                     }
 
                     if (ty.desc.len != 0 and ty.fields.len != 0) {
-                        _ = try w.append("\n");
+                        try w.newLine();
                     }
 
                     if (ty.fields.len != 0 and ty.desc.len == 0) {
@@ -404,7 +462,8 @@ pub const Write = struct {
                         }
                         try w.append(") ");
                         try w.write(.{ .statement = .{ .block = func.body } });
-                        try w.append("\n\n");
+                        try w.newLine();
+                        try w.newLine();
                     }
 
                     if (ty.desc.len != 0) {
@@ -413,9 +472,10 @@ pub const Write = struct {
                     }
 
                     w.block -= 1;
-                    try w.append("\n");
+                    try w.newLine();
                     try w.tab();
-                    try w.append("}\n");
+                    try w.append("}");
+                    try w.newLine();
                 },
 
                 else => |a| {

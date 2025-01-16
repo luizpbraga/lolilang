@@ -105,6 +105,7 @@ pub const Expression = union(enum) {
     index: Index,
 
     type: Type,
+    group: Group,
 
     fn expressionNode(self: *const Expression) void {
         _ = self;
@@ -128,6 +129,15 @@ pub const Expression = union(enum) {
 pub const Comment = struct {
     at: usize,
     end: usize,
+};
+
+pub const Group = struct {
+    at: usize = 0,
+    exp: *Expression,
+
+    pub fn tokenLiteral(_: *const @This()) []const u8 {
+        return "(";
+    }
 };
 
 pub const If = struct {
@@ -483,6 +493,7 @@ pub const Type = struct {
     name: ?[]const u8 = null,
     fields: []Field = &.{},
     desc: []FunctionStatement = &.{},
+    comments: []Statement = &.{},
 
     pub const Field = struct {
         at: usize = 0,

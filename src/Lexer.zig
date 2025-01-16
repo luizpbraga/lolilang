@@ -109,21 +109,21 @@ pub fn nextToken(self: *Self) Token {
     self.skipWhiteSpace();
 
     // if (self.ch == '/' and self.peekChar() == '/') {
-    if (self.ch == '#') {
-        self.skipComments();
-        return self.nextToken();
-    }
+    // if (self.ch == '#') {
+    //     self.skipComments();
+    //     return self.nextToken();
+    // }
 
     const tok = switch (self.ch) {
-        // '#' => {
-        //     const start = self.position;
-        //     self.skipComments();
-        //     const end = self.position;
-        //     var tk = self.newToken(.comment);
-        //     tk.at = start;
-        //     tk.end = end;
-        //     return tk;
-        // },
+        '#' => {
+            const start = self.position;
+            self.skipComments();
+            const end = self.position;
+            var tk = self.newToken(.comment);
+            tk.at = start;
+            tk.end = end;
+            return tk;
+        },
         '^' => self.newToken(.@"^"),
         '%' => self.newToken(.@"%"),
         ';' => self.newToken(.@";"),

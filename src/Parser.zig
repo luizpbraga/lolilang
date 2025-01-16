@@ -143,6 +143,10 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
         .match => try p.parseMatch(),
         .@"!", .@"-" => try p.parsePrefix(),
         .@"(" => try p.parseGroup(),
+        // .comment => {
+        //     p.nextToken();
+        //     return p.prefixExp();
+        // },
         else => b: {
             try p.unexpected(p.cur_token.type);
             break :b .bad;
@@ -549,9 +553,7 @@ fn parseStatement(self: *Parser) !ast.Statement {
 
         .@"{" => .{ .block = try self.parseBlock() },
 
-        // .comment => b: {
-        //     break :b .{ .comment = .{ .at = tk.at, .end = tk.end } };
-        // },
+        .comment => self.parseComment(tk),
 
         else => try self.parseExpStatement(),
     };
@@ -561,6 +563,10 @@ fn parseStatement(self: *Parser) !ast.Statement {
     }
 
     return stmt;
+}
+
+fn parseComment(_: *Parser, tk: Token) ast.Statement {
+    return .{ .comment = .{ .at = tk.at, .end = tk.end } };
 }
 
 /// if, for, match, etc...
@@ -668,7 +674,7 @@ fn parseGroup(self: *Parser) !ast.Expression {
 
     if (!self.expectPeek(.@")")) try self.missing(.@")");
 
-    return exp.*;
+    return .{ .group = .{ .exp = exp } };
 }
 
 fn parsePrefix(self: *Parser) !ast.Expression {
@@ -781,6 +787,9 @@ fn parseType(self: *Parser) !ast.Expression {
     var descs: std.ArrayList(ast.FunctionStatement) = .init(self.arena.allocator());
     errdefer descs.deinit();
 
+    var comments: std.ArrayList(ast.Statement) = .init(self.arena.allocator());
+    errdefer comments.deinit();
+
     while (!self.peekTokenIs(.@"}") and !self.curTokenIs(.eof)) {
         self.nextToken();
 
@@ -822,6 +831,14 @@ fn parseType(self: *Parser) !ast.Expression {
             continue;
         }
 
+        // TODO: BIG FIX
+        if (self.curTokenIs(.comment)) {
+            try comments.append(self.parseComment(self.cur_token));
+            // self.nextToken();
+            continue;
+            // @panic("FIND");
+        }
+
         try self.errlog("Invalid Struct");
         return .bad;
     }
@@ -832,6 +849,7 @@ fn parseType(self: *Parser) !ast.Expression {
 
     struc.fields = try fields.toOwnedSlice();
     struc.desc = try descs.toOwnedSlice();
+    struc.comments = try comments.toOwnedSlice();
 
     return .{ .type = struc };
 }
@@ -1295,11 +1313,11 @@ pub fn parseForRange(self: *Parser, ident: ast.Identifier) !ast.Expression {
         .iterable = undefined,
     };
 
-    // if (self.expectPeek(.@",")) {
-    //     self.nextToken();
-    //     const index = self.parseIdentifier();
-    //     flr.index = index.identifier;
-    // }
+    if (self.expectPeek(.@",")) {
+        const index = self.parseIdentifier();
+        flr.index = index.identifier.value;
+        self.nextToken();
+    }
     //
     if (!self.expectPeek(.in)) {
         try self.missing(.in);
@@ -1344,7 +1362,7 @@ pub fn parseFor(self: *Parser) !ast.Expression {
     const condition_or_ident = try self.parseExpression(.lowest);
 
     if (condition_or_ident.* == .identifier) {
-        if (self.peekTokenIs(.in)) {
+        if (self.peekTokenIs(.in) or self.peekTokenIs(.@",")) {
             return self.parseForRange(condition_or_ident.identifier);
         }
     }
