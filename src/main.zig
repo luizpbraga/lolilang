@@ -1,6 +1,7 @@
 const std = @import("std");
 const loli = @import("loli.zig");
 const fmt = @import("fmt.zig");
+const Error = @import("Error.zig");
 
 pub fn main() !void {
     var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
@@ -35,9 +36,12 @@ pub fn main() !void {
     };
     defer allocator.free(input);
 
+    var err: Error = .{ .input = input, .msg = .init(allocator) };
+    defer err.deinit();
+
     if (loli_args) |arg| f: {
         if (std.mem.eql(u8, arg, "--fmt")) {
-            try fmt.format(allocator, file_name, input);
+            try fmt.format(allocator, file_name, input, &err);
             return;
         }
         if (std.mem.eql(u8, arg, "--emit-bytecode")) {
@@ -50,5 +54,5 @@ pub fn main() !void {
         }
     }
 
-    try loli.runVm(allocator, input);
+    try loli.runVm(allocator, input, &err);
 }

@@ -92,6 +92,7 @@ pub fn deinit(vm: *Vm) void {
     vm.freeObjects();
     vm.allocator.free(vm.stack);
     vm.allocator.free(vm.globals);
+    vm.allocator.free(vm.positions);
 }
 
 // return a pointer?

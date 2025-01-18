@@ -4,28 +4,29 @@ const Lexer = @import("Lexer.zig");
 const ast = @import("ast.zig");
 const Parser = @This();
 const File = @import("Line.zig");
+const Error = @import("Error.zig");
 
 lexer: *Lexer,
 cur_token: Token,
 last_token: Token,
 peek_token: Token,
 arena: std.heap.ArenaAllocator,
-errors: Error,
+errors: *Error,
 
 /// use a fixbuffer writer to STDOUT
-const Error = struct {
-    msg: std.ArrayList(u8),
-    counter: usize = 0,
-
-    const RED = "\x1b[31m";
-    const BOLD = "\x1b[1m";
-    const END = "\x1b[0m";
-
-    fn append(err: *Error, comptime fmt: []const u8, args: anytype) !void {
-        try err.msg.writer().print(fmt, args);
-        err.counter += 1;
-    }
-};
+// const Error = struct {
+//     msg: std.ArrayList(u8),
+//     counter: usize = 0,
+//
+//     const RED = "\x1b[31m";
+//     const BOLD = "\x1b[1m";
+//     const END = "\x1b[0m";
+//
+//     fn append(err: *Error, comptime fmt: []const u8, args: anytype) !void {
+//         try err.msg.writer().print(fmt, args);
+//         err.counter += 1;
+//     }
+// };
 
 fn missing(p: *Parser, tk: Token.Type) !void {
     const l = p.line();
@@ -211,9 +212,9 @@ fn infixExp(p: *Parser, lx: *ast.Expression) anyerror!?ast.Expression {
     return left_exp;
 }
 
-pub fn init(child_alloc: std.mem.Allocator, lexer: *Lexer) Parser {
-    var arena: std.heap.ArenaAllocator = .init(child_alloc);
-    const allocator = arena.allocator();
+pub fn init(child_alloc: std.mem.Allocator, lexer: *Lexer, errors: *Error) Parser {
+    const arena: std.heap.ArenaAllocator = .init(child_alloc);
+    // const allocator = arena.allocator();
 
     var parser: Parser = .{
         .arena = arena,
@@ -221,7 +222,7 @@ pub fn init(child_alloc: std.mem.Allocator, lexer: *Lexer) Parser {
         .cur_token = undefined,
         .peek_token = undefined,
         .last_token = .{ .type = .eof, .literal = "" },
-        .errors = .{ .msg = .init(allocator) },
+        .errors = errors,
     };
 
     parser.nextToken();
@@ -277,7 +278,7 @@ fn parseTag(self: *Parser) ast.Expression {
 }
 
 fn parseReturn(self: *Parser) !ast.Statement {
-    var return_stmt: ast.Return = .{ .value = &NULL };
+    var return_stmt: ast.Return = .{ .value = &NULL, .token = self.cur_token };
 
     if (self.peekTokenIs(.@"}")) {
         return .{ .@"return" = return_stmt };
@@ -381,6 +382,7 @@ fn parseCon(self: *Parser) !ast.Statement {
     var const_stmt: ast.Con = .{
         .name = undefined,
         .value = undefined,
+        .token = tk,
     };
 
     if (!self.expectPeek(.identifier)) {
@@ -406,6 +408,7 @@ fn parseCon(self: *Parser) !ast.Statement {
 }
 
 fn parseVarBlock(self: *Parser, _: Token) !ast.VarBlock {
+    const tk = self.cur_token;
     var stmt: ast.VarBlock = .{
         .vars_decl = undefined,
     };
@@ -433,6 +436,7 @@ fn parseVarBlock(self: *Parser, _: Token) !ast.VarBlock {
         const var_stmt = ast.Var{
             .name = ident.identifier,
             .value = exp,
+            .token = tk,
         };
 
         try vars.append(var_stmt);
@@ -448,6 +452,7 @@ fn parseVarBlock(self: *Parser, _: Token) !ast.VarBlock {
 }
 
 fn parseConBlock(self: *Parser, _: Token) !ast.ConBlock {
+    const tk = self.cur_token;
     var stmt: ast.ConBlock = .{
         .const_decl = undefined,
     };
@@ -475,6 +480,7 @@ fn parseConBlock(self: *Parser, _: Token) !ast.ConBlock {
         const var_stmt: ast.Con = .{
             .name = ident.identifier,
             .value = exp,
+            .token = tk,
         };
 
         try vars.append(var_stmt);
@@ -497,6 +503,7 @@ fn parseVar(self: *Parser) !ast.Statement {
     var var_stmt: ast.Var = .{
         .name = undefined,
         .value = undefined,
+        .token = tk,
     };
 
     if (!self.expectPeek(.identifier)) try self.missing(.identifier);
@@ -553,7 +560,7 @@ fn parseStatement(self: *Parser) !ast.Statement {
 
         .@"{" => .{ .block = try self.parseBlock() },
 
-        .comment => self.parseComment(tk),
+        // .comment => self.parseComment(tk),
 
         else => try self.parseExpStatement(),
     };
@@ -565,14 +572,15 @@ fn parseStatement(self: *Parser) !ast.Statement {
     return stmt;
 }
 
-fn parseComment(_: *Parser, tk: Token) ast.Statement {
-    return .{ .comment = .{ .at = tk.at, .end = tk.end } };
-}
+// fn parseComment(_: *Parser, tk: Token) ast.Statement {
+//     return .{ .comment = .{ .at = tk.at, .end = tk.end } };
+// }
 
 /// if, for, match, etc...
 fn parseExpStatement(self: *Parser) !ast.Statement {
     const exp_stmt: ast.ExpStatement = .{
         .expression = try self.parseExpression(.lowest),
+        .token = self.cur_token,
     };
 
     if (self.peekTokenIs(.@";")) {
@@ -739,6 +747,7 @@ fn parseBlock(self: *Parser) anyerror!ast.Block {
     errdefer stmts.deinit();
 
     var block: ast.Block = .{
+        .token = self.cur_token,
         .statements = undefined,
     };
 
@@ -763,6 +772,7 @@ fn parseFn(self: *Parser) !ast.Statement {
     var func_stmt: ast.FunctionStatement = .{
         .func = undefined,
         .name = undefined,
+        .token = self.cur_token,
     };
 
     if (!self.expectPeek(.identifier)) {
@@ -787,18 +797,27 @@ fn parseType(self: *Parser) !ast.Expression {
     var descs: std.ArrayList(ast.FunctionStatement) = .init(self.arena.allocator());
     errdefer descs.deinit();
 
-    var comments: std.ArrayList(ast.Statement) = .init(self.arena.allocator());
-    errdefer comments.deinit();
+    // var comments: std.ArrayList(ast.Statement) = .init(self.arena.allocator());
+    // errdefer comments.deinit();
+
+    // var comment: ?ast.Statement = null;
 
     while (!self.peekTokenIs(.@"}") and !self.curTokenIs(.eof)) {
         self.nextToken();
+
+        // if (self.curTokenIs(.comment)) {
+        //     comment = self.parseComment(self.cur_token);
+        // }
 
         // if (self.curTokenIs(.comment)) continue;
         if (self.curTokenIs(.identifier)) {
             var field: ast.Type.Field = .{
                 .name = self.parseIdentifier().identifier,
                 .value = &NULL,
+                // .comment = .init(ast.Statement),
             };
+
+            // if (comment) |co| try field.comment.push(co);
 
             if (self.expectPeek(.@"=")) {
                 self.nextToken();
@@ -816,6 +835,7 @@ fn parseType(self: *Parser) !ast.Expression {
         }
 
         if (self.curTokenIs(.@"fn")) {
+            const tk = self.cur_token;
             if (!self.expectPeek(.identifier)) {
                 try self.missing(.identifier);
             }
@@ -827,17 +847,16 @@ fn parseType(self: *Parser) !ast.Expression {
             try descs.append(.{
                 .name = name,
                 .func = func,
+                .token = tk,
             });
             continue;
         }
 
-        // TODO: BIG FIX
-        if (self.curTokenIs(.comment)) {
-            try comments.append(self.parseComment(self.cur_token));
-            // self.nextToken();
-            continue;
-            // @panic("FIND");
-        }
+        // // TODO: BIG FIX
+        // if (self.curTokenIs(.comment)) {
+        //     try comments.append(self.parseComment(self.cur_token));
+        //     continue;
+        // }
 
         try self.errlog("Invalid Struct");
         return .bad;
@@ -849,7 +868,7 @@ fn parseType(self: *Parser) !ast.Expression {
 
     struc.fields = try fields.toOwnedSlice();
     struc.desc = try descs.toOwnedSlice();
-    struc.comments = try comments.toOwnedSlice();
+    // struc.comments = try comments.toOwnedSlice();
 
     return .{ .type = struc };
 }

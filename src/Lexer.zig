@@ -3,11 +3,9 @@ input: []const u8,
 position: usize = 0,
 read_position: usize = 0,
 line_index: usize = 0,
+current_comment: ?[2]usize = null,
 ch: u8 = 0,
 
-// line_start: usize = 0,
-// line_end: usize = 0,
-// x: usize = 0,
 const std = @import("std");
 const Token = @import("Token.zig");
 const TokenType = Token.Type;
@@ -42,12 +40,9 @@ fn readChar(self: *Self) void {
     self.ch = if (self.read_position >= self.input.len) 0 else self.input[self.read_position];
     self.position = self.read_position;
     self.read_position += 1;
-    // self.x = self.position - self.line_start;
 
     if (self.ch == '\n') {
         self.line_index += 1;
-        // self.line_start = self.x + 1;
-        // self.line_end = self.x - 1;
     }
 }
 
@@ -67,6 +62,9 @@ fn skipComments(self: *Self) void {
     }
 
     self.skipWhiteSpace();
+
+    // a block of comments is a single comment
+    if (self.ch == '#') self.skipComments();
 }
 
 fn readIdentifier(self: *Self) ![]const u8 {
@@ -102,13 +100,13 @@ fn newToken(self: *Self, token_type: TokenType) Token {
 }
 
 fn newTokenLiteral(self: *Self, token_type: TokenType, literal: []const u8) Token {
-    return .{ .type = token_type, .literal = literal, .at = self.position };
+    defer self.current_comment = null;
+    return .{ .type = token_type, .literal = literal, .at = self.position, .comment_pos = self.current_comment };
 }
 
 pub fn nextToken(self: *Self) Token {
     self.skipWhiteSpace();
 
-    // if (self.ch == '/' and self.peekChar() == '/') {
     // if (self.ch == '#') {
     //     self.skipComments();
     //     return self.nextToken();
@@ -119,10 +117,8 @@ pub fn nextToken(self: *Self) Token {
             const start = self.position;
             self.skipComments();
             const end = self.position;
-            var tk = self.newToken(.comment);
-            tk.at = start;
-            tk.end = end;
-            return tk;
+            self.current_comment = .{ start, end };
+            return self.nextToken();
         },
         '^' => self.newToken(.@"^"),
         '%' => self.newToken(.@"%"),

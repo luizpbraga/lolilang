@@ -92,6 +92,7 @@ pub fn deinit(c: *Compiler) void {
         s.deinit();
         c.allocator.destroy(s);
     }
+    c.positions.deinit();
 }
 
 fn loadSymbol(c: *Compiler, s: *SymbolTable.Symbol) !void {
@@ -132,8 +133,19 @@ pub fn leaveScope(c: *Compiler) !code.Instructions {
 }
 
 fn emitFunction(c: *Compiler, func_stmt: *const ast.FunctionStatement) anyerror!void {
-    const symbol = try c.symbols.?.define(func_stmt.name.value);
+    const name = func_stmt.name.value;
+    if (c.symbols.?.store.contains(name)) {
+        return c.newError("Redeclaration of variable '{s}'", .{name});
+    }
+    const symbol = try c.symbols.?.define(name);
+
     const func = func_stmt.func;
+
+    for (func.parameters) |parameter| {
+        if (c.symbols.?.store.contains(parameter.value)) {
+            return c.newError("Redeclaration of function parameter '{s}'", .{parameter.value});
+        }
+    }
 
     try c.enterScope();
 
@@ -251,10 +263,14 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             .@"var" => |var_stmt| {
-                const symbol = try c.symbols.?.define(var_stmt.name.value);
+                const name = var_stmt.name.value;
+                if (c.symbols.?.store.contains(name)) {
+                    return c.newError("Redeclaration of variable '{s}'", .{name});
+                }
+                const symbol = try c.symbols.?.define(name);
 
                 if (var_stmt.value.* == .type) {
-                    var_stmt.value.type.name = var_stmt.name.value;
+                    var_stmt.value.type.name = name;
                 }
 
                 try c.compile(.{ .expression = var_stmt.value });
@@ -264,6 +280,10 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
             // TODO: allow immutable data
             .con => |con_stmt| {
+                const name = con_stmt.name.value;
+                if (c.symbols.?.store.contains(name)) {
+                    return c.newError("Redeclaration of variable '{s}'", .{name});
+                }
                 const symbol = try c.symbols.?.define(con_stmt.name.value);
 
                 if (con_stmt.value.* == .type) {
@@ -306,8 +326,6 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emitFunction(&func_stmt);
             },
 
-            .comment => {},
-
             else => {
                 return c.newError("Invalid Statement", .{});
             },
@@ -316,7 +334,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
         .expression => |exp| switch (exp.*) {
             .identifier => |ident| {
                 const symbol = try c.symbols.?.resolve(ident.value) orelse {
-                    return c.newError("Undefined Variable", .{});
+                    return c.newError("Undefined Variable '{s}'", .{ident.value});
                 };
                 try c.loadSymbol(symbol);
             },
@@ -328,10 +346,14 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             // TODO: not fully implemented
             .assignment => |assignment| {
                 if (assignment.operator == .@":=") {
-                    const symbol = try c.symbols.?.define(assignment.name.identifier.value);
+                    const name = assignment.name.identifier.value;
+                    if (c.symbols.?.store.contains(name)) {
+                        return c.newError("Redeclaration of variable '{s}'", .{name});
+                    }
+                    const symbol = try c.symbols.?.define(name);
 
                     if (assignment.value.* == .type) {
-                        assignment.value.type.name = assignment.name.identifier.value;
+                        assignment.value.type.name = name;
                     }
 
                     try c.compile(.{ .expression = assignment.value });
@@ -794,6 +816,8 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
             .for_range => |forloop| {
                 // cast the expression as a range and load it as a constant
+                const name = forloop.ident;
+                defer _ = c.symbols.?.store.swapRemove(name);
                 const pos = try c.addConstants(.null);
                 try c.emit(.constant, &.{pos});
                 try c.compile(.{ .expression = forloop.iterable });
@@ -812,7 +836,10 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 if (forloop.body.statements.len != 0) {
                     // item
                     {
-                        const symbol = try c.symbols.?.define(forloop.ident);
+                        if (c.symbols.?.store.contains(name)) {
+                            return c.newError("Redeclaration of variable '{s}'", .{name});
+                        }
+                        const symbol = try c.symbols.?.define(name);
                         const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
                         try c.emit(op, &.{symbol.index});
                     }
@@ -1004,7 +1031,7 @@ pub const Bytecode = struct {
 
     pub fn deinit(b: *Bytecode, c: *const Compiler) void {
         c.allocator.free(b.instructions);
-        c.allocator.free(b.positions);
+        // c.allocator.free(b.positions);
     }
 };
 

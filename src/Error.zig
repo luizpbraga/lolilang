@@ -4,6 +4,7 @@ const Error = @This();
 
 msg: std.ArrayList(u8),
 input: []const u8,
+
 pub const BOLD = "\x1b[1m";
 pub const RED = "\x1b[31m";
 pub const GREEN = "\x1b[32m";
@@ -27,7 +28,6 @@ pub fn deinit(err: *Error) void {
     err.msg.deinit();
 }
 
-fn append(err: *Error, comptime fmt: []const u8, args: anytype) !void {
+pub fn append(err: *Error, comptime fmt: []const u8, args: anytype) !void {
     try err.msg.writer().print(fmt, args);
-    err.counter += 1;
 }

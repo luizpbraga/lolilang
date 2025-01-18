@@ -3,6 +3,7 @@ const ast = @import("ast.zig");
 const Lexer = @import("Lexer.zig");
 const Parser = @import("Parser.zig");
 const stderr = std.io.getStdErr();
+const Error = @import("Error.zig");
 
 const Line = struct {
     input: []const u8,
@@ -48,15 +49,15 @@ test {
     std.debug.print("{s}", .{w.buffer.items});
 }
 
-pub fn format(allocator: std.mem.Allocator, file_name: []const u8, input: []const u8) !void {
+pub fn format(allocator: std.mem.Allocator, file_name: []const u8, input: []const u8, err: *Error) !void {
     var lexer: Lexer = .init(input);
 
-    var parser: Parser = .init(allocator, &lexer);
+    var parser: Parser = .init(allocator, &lexer, err);
     defer parser.deinit();
 
     const node = try parser.parse();
 
-    if (parser.errors.counter != 0) {
+    if (parser.errors.msg.items.len != 0) {
         try stderr.writeAll(
             parser.errors.msg.items,
         );
@@ -80,6 +81,8 @@ pub const Write = struct {
     block: usize = 0,
     line_number: usize = 1,
 
+    pub const R = struct { start: usize, end: usize };
+
     fn init(allocator: anytype, input: []const u8) Write {
         return .{ .buffer = .init(allocator), .input = input };
     }
@@ -93,6 +96,10 @@ pub const Write = struct {
         if (at > w.line_number) for (w.line_number..at) |_| {
             try w.newLine();
         };
+    }
+
+    fn writeAt(w: *Write, pos: usize, s: []const u8) !void {
+        try w.buffer.insert(pos, s);
     }
 
     fn newLine(w: *Write) !void {
@@ -113,14 +120,22 @@ pub const Write = struct {
     }
 
     pub fn write(w: *Write, node: ast.Node) !void {
+        if (node.commentPos()) |pos| {
+            const comment = std.mem.trim(u8, w.input[pos[0]..pos[1]], " ");
+            const n = std.mem.count(u8, comment, "\n");
+            for (0..n) |_| _ = w.buffer.popOrNull();
+            // w.line_number -= n;
+            try w.print("{s}", .{comment});
+            try w.tab();
+        }
+
         switch (node) {
             .statement => |stmt| switch (stmt) {
                 .program => |program| {
                     for (program.statements.items) |s| {
                         try w.findLine(s.position());
                         try w.write(.{ .statement = s });
-
-                        if (s != .comment) try w.newLine();
+                        try w.newLine();
                     }
                 },
 
@@ -134,13 +149,21 @@ pub const Write = struct {
                         return;
                     }
 
+                    if (block.statements.len == 1 and block.statements[0] != .@"return" and block.statements[0].commentPos() == null) {
+                        try w.append("{ ");
+                        try w.write(.{ .statement = block.statements[0] });
+                        try w.append(" }");
+                        // try w.newLine();
+                        return;
+                    }
+
                     try w.append("{");
                     try w.newLine();
                     w.block += 1;
-                    for (block.statements) |_stmt| {
-                        // try w.buffer.writer().writeByteNTimes('\t', w.block);
+                    for (block.statements) |s| {
+                        try w.findLine(s.position());
                         try w.tab();
-                        try w.write(.{ .statement = _stmt });
+                        try w.write(.{ .statement = s });
                         try w.newLine();
                     }
                     w.block -= 1;
@@ -150,7 +173,6 @@ pub const Write = struct {
                 },
 
                 .@"var" => |var_stmt| {
-                    // try w.findLine(var_stmt.at);
                     try w.print("var {s} = ", .{var_stmt.name.value});
                     try w.write(.{ .expression = var_stmt.value });
                 },
@@ -192,9 +214,9 @@ pub const Write = struct {
                     try w.newLine();
                 },
 
-                .comment => |co| {
-                    try w.print("{s}", .{std.mem.trim(u8, w.input[co.at..co.end], " \n")});
-                },
+                // .comment => |co| {
+                //     try w.print("{s}", .{std.mem.trim(u8, w.input[co.at..co.end], " \n")});
+                // },
 
                 else => |a| {
                     std.debug.print("{}", .{a});
@@ -412,7 +434,7 @@ pub const Write = struct {
                     try w.write(.{ .statement = .{ .block = forloop.consequence } });
                 },
                 .type => |ty| {
-                    if (ty.fields.len == 0 and ty.comments.len == 0) {
+                    if (ty.fields.len == 0) {
                         try w.print("{s} {{}}", .{@tagName(ty.type)});
                         return;
                     }
@@ -420,12 +442,6 @@ pub const Write = struct {
                     try w.print("{s} {{", .{@tagName(ty.type)});
                     try w.newLine();
                     w.block += 1;
-
-                    for (ty.comments) |comment| {
-                        try w.tab();
-                        try w.write(.{ .statement = comment });
-                        try w.newLine();
-                    }
 
                     for (ty.fields) |field| {
                         try w.tab();

@@ -4,7 +4,6 @@ const Token = @import("Token.zig");
 // interface
 pub const Node = union(enum) {
     expression: *Expression,
-    // pointer? more heap allocation...
     statement: Statement,
 
     fn tokenLiteral(self: *const Node) []const u8 {
@@ -16,6 +15,23 @@ pub const Node = union(enum) {
     pub fn position(self: *const Node) usize {
         switch (self.*) {
             inline else => |node| return node.position(),
+        }
+    }
+
+    pub fn commentPos(self: *const Node) ?[2]usize {
+        switch (self.*) {
+            inline else => |node| return node.commentPos(),
+        }
+    }
+
+    pub fn deinit(self: *Node, alloc: std.mem.Allocator) void {
+        switch (self.*) {
+            .statement => |stmt| switch (stmt) {
+                .block => |blk| alloc.free(blk.statements),
+                .program => |p| p.statements.deinit(),
+                else => {},
+            },
+            else => {},
         }
     }
 };
@@ -43,7 +59,7 @@ pub const Statement = union(enum) {
 
     program: Program,
 
-    comment: Comment,
+    // comment: Comment,
 
     fn statementNode(self: *const Statement) void {
         switch (self.*) {
@@ -62,6 +78,13 @@ pub const Statement = union(enum) {
         switch (self.*) {
             inline else => |s| return s.at,
         }
+    }
+
+    pub fn commentPos(self: *const Statement) ?[2]usize {
+        return switch (self.*) {
+            inline .@"var", .con, .@"fn", .@"return", .exp_statement => |v| v.token.comment_pos,
+            inline else => null,
+        };
     }
 };
 
@@ -123,6 +146,12 @@ pub const Expression = union(enum) {
             .null, .bad => return 0,
             inline else => |s| return s.at,
         }
+    }
+
+    pub fn commentPos(self: *const Expression) ?[2]usize {
+        return switch (self.*) {
+            inline else => null,
+        };
     }
 };
 
@@ -211,6 +240,7 @@ pub const Program = struct {
 
 // ------------------------------------------------------------------------
 pub const Con = struct {
+    token: Token,
     at: usize = 0,
     //= .@"var",
     name: Identifier,
@@ -238,8 +268,8 @@ pub const ConBlock = struct {
 };
 
 pub const Var = struct {
+    token: Token,
     at: usize = 0,
-    //= .@"var",
     name: Identifier,
     value: *Expression,
     // type: ?*Expression = null,
@@ -254,6 +284,7 @@ pub const Var = struct {
 };
 
 pub const Return = struct {
+    token: Token,
     at: usize = 0,
     value: *Expression,
 
@@ -310,6 +341,7 @@ pub const Assignment = struct {
 };
 
 pub const ExpStatement = struct {
+    token: Token,
     at: usize = 0,
     // fist token only
     expression: *Expression,
@@ -324,6 +356,7 @@ pub const ExpStatement = struct {
 };
 
 pub const Block = struct {
+    token: Token,
     at: usize = 0,
     statements: []Statement,
 
@@ -447,6 +480,7 @@ pub const Tag = struct {
 };
 
 pub const FunctionStatement = struct {
+    token: Token,
     at: usize = 0,
     name: Identifier,
     func: Function,
@@ -493,7 +527,7 @@ pub const Type = struct {
     name: ?[]const u8 = null,
     fields: []Field = &.{},
     desc: []FunctionStatement = &.{},
-    comments: []Statement = &.{},
+    // comments: []Statement = &.{},
 
     pub const Field = struct {
         at: usize = 0,

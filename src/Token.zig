@@ -3,7 +3,7 @@ const Self = @This();
 type: Type,
 literal: []const u8,
 at: usize = 0,
-end: usize = 0,
+comment_pos: ?[2]usize = null,
 
 const std = @import("std");
 

@@ -13,9 +13,27 @@ pub var builtin_functions = [_]Object.Builtin{
     .{ .name = "@typeOf", .function = Builtin.typeOf },
     .{ .name = "@asChar", .function = Builtin.asChar },
     .{ .name = "@panic", .function = Builtin.panic },
+    .{ .name = "@import", .function = Builtin.import },
 };
 
 const Builtin = struct {
+    pub fn import(vm: *Vm, arg: []const Value) !Value {
+        const filename = arg[0].obj.type.string;
+        var l: @import("Lexer.zig") = .init(filename);
+        var p: @import("Parser.zig") = .init(vm.allocator, &l, vm.errors);
+        defer p.deinit();
+        const node = try p.parse();
+        _ = node;
+        // errdefer std.debug.print("-->> {s}\n\n", .{vm.compiler.errors.msg.items});
+        // errdefer std.debug.print("-->> {s}\n\n", .{vm.errors.msg.items});
+        // try vm.compiler.compile(node);
+        // const code = try vm.compiler.bytecode();
+        // // defer code.deinit;
+        // vm.constants = try std.mem.concat(vm.allocator, Value, &.{ vm.constants, code.constants });
+        // vm.positions = try std.mem.concat(vm.allocator, usize, &.{ vm.positions, code.positions });
+        return .null;
+    }
+
     pub fn panic(vm: *Vm, arg: []const Value) !Value {
         if (arg.len != 1) return vm.newError("Argument Mismatch; expect 1, got {}", .{arg.len});
         if (arg[0] != .obj) return vm.newError("Invalid Argument type {s}", .{arg[0].name()});
@@ -155,10 +173,10 @@ const Builtin = struct {
     }
 };
 
-test {
-    const builtValue = builtin_functions[0];
-    _ = try builtValue.function(&.{ .null, .{ .integer = 10 } });
-}
+// test {
+//     const builtValue = builtin_functions[0];
+//     _ = try builtValue.function(&.{ .null, .{ .integer = 10 } });
+// }
 
 fn printV(value: Value) void {
     switch (value) {
