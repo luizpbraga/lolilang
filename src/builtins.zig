@@ -14,11 +14,58 @@ pub var builtin_functions = [_]Object.Builtin{
     .{ .name = "@asChar", .function = Builtin.asChar },
     .{ .name = "@panic", .function = Builtin.panic },
     .{ .name = "@import", .function = Builtin.import },
+    .{ .name = "@new", .function = Builtin.new },
 };
 
+const LoliType = enum {
+    int,
+    float,
+    bool,
+    char,
+};
+
+const tagtype = std.StaticStringMap(LoliType).initComptime(.{
+    .{ "int", .int },
+    .{ "float", .float },
+    .{ "bool", .bool },
+    .{ "char", .char },
+});
+
+fn defaultValue(ty: LoliType) Value {
+    return switch (ty) {
+        .int => .{ .integer = 0 },
+        .float => .{ .float = 0 },
+        .char => .{ .char = 0 },
+        .bool => .{ .boolean = true },
+    };
+}
+
 const Builtin = struct {
+    pub fn new(vm: *Vm, arg: []const Value) !Value {
+        const len = arg.len;
+        if (len == 0 or len > 3) return vm.newError("Argument Mismatch; expect at least 3", .{});
+
+        if (arg[0] != .tag) {
+            return vm.newError("Expect type/tag, found {s}", .{arg[0].name()});
+        }
+
+        const tag = arg[0].tag;
+        const ty = tagtype.get(tag) orelse return vm.newError("Invalid Type '{s}'", .{tag});
+        var default = defaultValue(ty);
+        const capacity: usize = if (len == 2 or len == 3) @intCast(arg[1].integer) else return default;
+
+        var array = try std.ArrayList(Value).initCapacity(vm.allocator, capacity);
+        errdefer array.deinit();
+
+        if (arg.len == 3) default = arg[2];
+        for (0..capacity) |_| try array.append(default);
+
+        const obj = try memory.allocateObject(vm, .{ .array = array });
+        return .{ .obj = obj };
+    }
+
     pub fn import(vm: *Vm, arg: []const Value) !Value {
-        const filename = arg[0].obj.type.string;
+        const filename = arg[0].obj.type.string.items;
         var l: @import("Lexer.zig") = .init(filename);
         var p: @import("Parser.zig") = .init(vm.allocator, &l, vm.errors);
         defer p.deinit();
@@ -37,7 +84,7 @@ const Builtin = struct {
     pub fn panic(vm: *Vm, arg: []const Value) !Value {
         if (arg.len != 1) return vm.newError("Argument Mismatch; expect 1, got {}", .{arg.len});
         if (arg[0] != .obj) return vm.newError("Invalid Argument type {s}", .{arg[0].name()});
-        return vm.newError("panic: {s}", .{arg[0].obj.type.string});
+        return vm.newError("panic: {s}", .{arg[0].obj.type.string.items});
     }
 
     pub fn typeOf(vm: *Vm, arg: []const Value) !Value {
@@ -69,8 +116,8 @@ const Builtin = struct {
             return .{ .char = if (value.boolean) 0 else 1 };
         } else if (value == .obj) {
             if (value.obj.type == .string) {
-                if (value.obj.type.string.len == 1) {
-                    return .{ .char = value.obj.type.string[0] };
+                if (value.obj.type.string.items.len == 1) {
+                    return .{ .char = value.obj.type.string.items[0] };
                 }
             }
         }
@@ -80,9 +127,15 @@ const Builtin = struct {
 
     pub fn read(vm: *Vm, arg: []const Value) anyerror!Value {
         if (arg.len == 0) {
-            const content = try std.io.getStdIn().reader().readUntilDelimiterAlloc(vm.allocator, '\n', 10000);
+            const bytes = try std.io.getStdIn().reader().readUntilDelimiterAlloc(vm.allocator, '\n', 10000);
+            defer vm.allocator.free(bytes);
+
+            var string = try std.ArrayList(u8).initCapacity(vm.allocator, bytes.len);
+            errdefer string.deinit();
+            try string.appendSlice(bytes);
+
             const obj = try vm.allocator.create(Object);
-            obj.type = .{ .string = content };
+            obj.type = .{ .string = string };
             try vm.instantiateAtVm(obj);
             return .{ .obj = obj };
         }
@@ -91,10 +144,16 @@ const Builtin = struct {
 
         switch (arg[0].obj.type) {
             .string => |str| {
-                const file = str;
-                const content = try std.fs.cwd().readFileAlloc(vm.allocator, file, std.math.maxInt(usize));
+                const file = str.items;
+                const bytes = try std.fs.cwd().readFileAlloc(vm.allocator, file, std.math.maxInt(usize));
+                defer vm.allocator.free(bytes);
+
+                var string = try std.ArrayList(u8).initCapacity(vm.allocator, bytes.len);
+                errdefer string.deinit();
+                try string.appendSlice(bytes);
+
                 const obj = try vm.allocator.create(Object);
-                obj.type = .{ .string = content };
+                obj.type = .{ .string = string };
                 try vm.instantiateAtVm(obj);
                 return .{ .obj = obj };
             },
@@ -109,8 +168,8 @@ const Builtin = struct {
         if (arg[0] != .obj) return .null;
         if (arg[1] != .obj) return .null;
 
-        const filename = arg[0].obj.type.string;
-        const content = arg[1].obj.type.string;
+        const filename = arg[0].obj.type.string.items;
+        const content = arg[1].obj.type.string.items;
 
         var file = try std.fs.cwd().createFile(filename, .{});
         defer file.close();
@@ -126,7 +185,7 @@ const Builtin = struct {
 
         return switch (arg[0].obj.type) {
             .array => |arr| .{ .integer = @intCast(arr.items.len) },
-            .string => |str| .{ .integer = @intCast(str.len) },
+            .string => |str| .{ .integer = @intCast(str.items.len) },
             .hash => |hash| .{ .integer = @intCast(hash.pairs.count()) },
             else => vm.newError("Type '{s}' don't have a length", .{arg[0].name()}),
         };
@@ -141,23 +200,39 @@ const Builtin = struct {
                     try arr.append(val);
                 }
             },
+
             .string => |*str| {
-                for (arg[1..]) |value| {
-                    const string = switch (value) {
-                        .obj => |ob| switch (ob.type) {
-                            .string => |s| try std.fmt.allocPrint(vm.allocator, "{s}{s}", .{ str.*, s }),
-                            else => return .null,
-                        },
-                        inline .integer, .float, .boolean => |val| try std.fmt.allocPrint(vm.allocator, "{s}{}", .{ str.*, val }),
-                        .tag => |val| try std.fmt.allocPrint(vm.allocator, "{s}{s}", .{ str.*, val }),
-                        .char => |val| try std.fmt.allocPrint(vm.allocator, "{s}{c}", .{ str.*, val }),
-                        else => return vm.newError("Invalid string operation: Cannot concat type '{s}'", .{value.name()}),
-                    };
-                    // const string = std.mem.allocPrint(vm.allocator, "{s}{}", .{ str.*, val }) catch .null;
-                    const obj = try memory.allocateObject(vm, .{ .string = string });
-                    return .{ .obj = obj };
+                for (arg[1..]) |val| {
+                    if (val == .obj and val.obj.type == .string) {
+                        try str.appendSlice(val.obj.type.string.items);
+                        continue;
+                    }
+
+                    switch (val) {
+                        inline .integer, .float => |x| try str.writer().print("{d}", .{x}),
+                        .char => |c| try str.append(c),
+                        .boolean => |b| try str.appendSlice(if (b) "true" else "false"),
+                        else => {},
+                    }
                 }
             },
+            // .string => |*str| {
+            //     for (arg[1..]) |value| {
+            //         const string = switch (value) {
+            //             .obj => |ob| switch (ob.type) {
+            //                 .string => |s| try std.fmt.allocPrint(vm.allocator, "{s}{s}", .{ str.*, s }),
+            //                 else => return .null,
+            //             },
+            //             inline .integer, .float, .boolean => |val| try std.fmt.allocPrint(vm.allocator, "{s}{}", .{ str.*, val }),
+            //             .tag => |val| try std.fmt.allocPrint(vm.allocator, "{s}{s}", .{ str.*, val }),
+            //             .char => |val| try std.fmt.allocPrint(vm.allocator, "{s}{c}", .{ str.*, val }),
+            //             else => return vm.newError("Invalid string operation: Cannot concat type '{s}'", .{value.name()}),
+            //         };
+            //         // const string = std.mem.allocPrint(vm.allocator, "{s}{}", .{ str.*, val }) catch .null;
+            //         const obj = try memory.allocateObject(vm, .{ .string = string });
+            //         return .{ .obj = obj };
+            //     }
+            // },
             else => {},
         }
         return .null;
@@ -181,7 +256,7 @@ const Builtin = struct {
 fn printV(value: Value) void {
     switch (value) {
         .obj => |o| switch (o.type) {
-            .string => |s| std.debug.print("{s}", .{s}),
+            .string => |s| std.debug.print("{s}", .{s.items}),
 
             .array => |arr| {
                 std.debug.print("[", .{});
@@ -269,6 +344,8 @@ fn printV(value: Value) void {
         },
 
         .range => |r| std.debug.print("[range:{s}:{}:{}]", .{ @tagName(r.value.*), r.start, r.end }),
+
+        .float => |o| std.debug.print("{d}", .{o}),
 
         inline else => |o| std.debug.print("{}", .{o}),
     }

@@ -56,8 +56,10 @@ pub fn sweep(vm: *Vm) void {
 
 pub fn freeObject(vm: *Vm, obj: *Object) void {
     switch (obj.type) {
-        .string => |str| {
-            vm.allocator.free(str);
+        .string => |string| {
+            // vm.allocator.free(str);
+            // vm.allocator.destroy(obj);
+            string.deinit();
             vm.allocator.destroy(obj);
         },
 

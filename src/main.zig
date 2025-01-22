@@ -17,7 +17,8 @@ pub fn main() !void {
 
     const file_name = if (args.next()) |file| file else {
         // FIX: return try loli.startRepl(allocator);
-        return error.MissingFile;
+        std.log.err("Missing File", .{});
+        return;
     };
 
     const loli_args = args.next();
@@ -29,7 +30,7 @@ pub fn main() !void {
 
     const input: []const u8 = std.fs.cwd().readFileAlloc(allocator, file_name, std.math.maxInt(usize)) catch |err| switch (err) {
         error.FileNotFound => {
-            std.log.err("file {s} not found", .{file_name});
+            std.log.err("File {s} not found", .{file_name});
             return;
         },
         else => return err,

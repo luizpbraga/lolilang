@@ -605,11 +605,16 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             .string => |str| {
-                const cvalue = try c.allocator.dupe(u8, str.value);
-                errdefer c.allocator.free(cvalue);
+                // const cvalue = try c.allocator.dupe(u8, str.value);
+                // errdefer c.allocator.free(cvalue);
+                var cvalue = try std.ArrayList(u8).initCapacity(c.allocator, str.value.len);
+                errdefer cvalue.deinit();
+                try cvalue.appendSlice(str.value);
+
                 const obj = try c.allocator.create(Object);
                 errdefer c.allocator.destroy(obj);
                 obj.type = .{ .string = cvalue };
+
                 const pos = try c.addConstants(.{ .obj = obj });
                 try c.emit(.constant, &.{pos});
             },
@@ -739,7 +744,6 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 defer jumps_pos_list.deinit();
 
                 // try c.enterScope();
-
                 for (match.arms) |arm| {
                     try c.compile(.{ .expression = match.value });
                     try c.compile(.{ .expression = arm.condition });

@@ -727,7 +727,9 @@ fn parseIf(self: *Parser) !ast.Expression {
 
     expression.condition = try self.parseExpression(.lowest);
 
-    if (!self.expectPeek(.@"{")) try self.missing(.@"{");
+    if (!self.expectPeek(.@"{") and !self.expectPeek(.@":")) {
+        try self.missing(.@"{");
+    }
 
     expression.consequence = try self.parseBlock();
 
@@ -740,26 +742,35 @@ fn parseIf(self: *Parser) !ast.Expression {
     return .{ .@"if" = expression };
 }
 
+// TODO: allow single expression blocks to optionally ignore braces
 fn parseBlock(self: *Parser) anyerror!ast.Block {
     const allocator = self.arena.allocator();
 
     var stmts: std.ArrayList(ast.Statement) = .init(allocator);
     errdefer stmts.deinit();
 
+    // : or {
+    const tk = self.cur_token;
     var block: ast.Block = .{
-        .token = self.cur_token,
+        .token = tk,
         .statements = undefined,
     };
 
     self.nextToken();
 
-    while (!self.curTokenIs(.@"}") and !self.curTokenIs(.eof)) {
+    if (tk.type == .@":") {
         const stmt = try self.parseStatement();
         try stmts.append(stmt);
-        self.nextToken();
-    }
+        // self.nextToken();
+    } else {
+        while (!self.curTokenIs(.@"}") and !self.curTokenIs(.eof)) {
+            const stmt = try self.parseStatement();
+            try stmts.append(stmt);
+            self.nextToken();
+        }
 
-    if (!self.curTokenIs(.@"}")) try self.missing(.@"}");
+        if (!self.curTokenIs(.@"}")) try self.missing(.@"}");
+    }
 
     const stmts_owner = try stmts.toOwnedSlice();
 
@@ -1350,7 +1361,9 @@ pub fn parseForRange(self: *Parser, ident: ast.Identifier) !ast.Expression {
     //     return self.parseMultiForLoopRange(flr);
     // }
 
-    if (!self.expectPeek(.@"{")) try self.missing(.@"{");
+    if (!self.expectPeek(.@"{") and !self.expectPeek(.@":")) {
+        try self.missing(.@"{");
+    }
 
     flr.body = try self.parseBlock();
 
@@ -1363,7 +1376,9 @@ pub fn parseForLoopCondition(self: *Parser, cond: *ast.Expression) !ast.Expressi
         .consequence = undefined,
     };
 
-    if (!self.expectPeek(.@"{")) try self.missing(.@"{");
+    if (!self.expectPeek(.@"{") and !self.expectPeek(.@":")) {
+        try self.missing(.@"{");
+    }
 
     fl.consequence = try self.parseBlock();
 

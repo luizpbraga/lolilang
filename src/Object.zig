@@ -11,7 +11,8 @@ marked: bool = false,
 /// heap allocated values
 /// this name sucks, i know
 pub const Type = union(enum) {
-    string: []u8,
+    // string: []u8,
+    string: std.ArrayList(u8),
     array: std.ArrayList(Value),
     hash: Hash,
     function: CompiledFn,
@@ -84,7 +85,7 @@ pub const Value = union(enum) {
                 },
 
                 .string => |str| {
-                    end = str.len;
+                    end = str.items.len;
                     value = val;
                 },
 
@@ -125,7 +126,7 @@ pub const Range = struct {
                 .string => |string| {
                     if (r.start < r.end) {
                         defer r.start += 1;
-                        return .{ .char = string[r.start] };
+                        return .{ .char = string.items[r.start] };
                     }
                 },
 
@@ -237,15 +238,15 @@ pub const Hash = struct {
                 .obj => |ob| switch (ob.type) {
                     .string => |string| str: {
                         var value: usize = 0;
-                        for (string) |ch| value += @intCast(ch);
+                        for (string.items) |ch| value += @intCast(ch);
                         break :str .{ .value = value };
                     },
                     else => error.ObjectCanNotBeAHashKey,
                 },
 
-                .tag => |string| str: {
+                .tag => |tag| str: {
                     var value: usize = 0;
-                    for (string) |ch| value += @intCast(ch);
+                    for (tag) |ch| value += @intCast(ch);
                     break :str .{ .value = value };
                 },
 
