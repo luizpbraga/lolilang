@@ -4,6 +4,7 @@ const memory = @import("memory.zig");
 const Object = @import("Object.zig");
 const Value = Object.Value;
 const Vm = @import("Vm.zig");
+const builtins = @import("builtins.zig");
 
 /// [], .
 pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
@@ -67,11 +68,8 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
                     start = string.items.len;
                 }
                 const str = string.items[start..end];
-                var xstring = try std.ArrayList(u8).initCapacity(vm.allocator, str.len);
-                errdefer xstring.deinit();
-                try xstring.appendSlice(str);
-                const obj = try memory.allocateObject(vm, .{ .string = xstring });
-                return try vm.push(.{ .obj = obj });
+                const value = try builtins.newString(vm, str);
+                return try vm.push(value);
             }
         },
 

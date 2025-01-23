@@ -15,6 +15,7 @@ pub var builtin_functions = [_]Object.Builtin{
     .{ .name = "@panic", .function = Builtin.panic },
     .{ .name = "@import", .function = Builtin.import },
     .{ .name = "@new", .function = Builtin.new },
+    .{ .name = "@parse", .function = Builtin.parse },
 };
 
 const LoliType = enum {
@@ -37,10 +38,45 @@ fn defaultValue(ty: LoliType) Value {
         .float => .{ .float = 0 },
         .char => .{ .char = 0 },
         .bool => .{ .boolean = true },
+        // .string => try newString(vm, null),
     };
 }
 
+pub fn newString(vm: *Vm, value: ?[]const u8) !Value {
+    const bytes = value orelse "";
+
+    var string = try std.ArrayList(u8).initCapacity(vm.allocator, bytes.len);
+    errdefer string.deinit();
+    try string.appendSlice(bytes);
+
+    const obj = try vm.allocator.create(Object);
+    obj.type = .{ .string = string };
+
+    try vm.instantiateAtVm(obj);
+    return .{ .obj = obj };
+}
+
 const Builtin = struct {
+    pub fn parse(vm: *Vm, arg: []const Value) !Value {
+        const len = arg.len;
+        if (len != 2) return vm.newError("Argument Mismatch; expect 2", .{});
+
+        if (arg[0] != .tag) {
+            return vm.newError("Expect type/tag, found {s}", .{arg[0].name()});
+        }
+
+        const tag = arg[0].tag;
+        const ty = tagtype.get(tag) orelse return vm.newError("Invalid Type '{s}'", .{tag});
+
+        const string = arg[1].obj.type.string.items;
+
+        return switch (ty) {
+            .int => .{ .integer = try std.fmt.parseInt(i32, string, 10) },
+            .float => .{ .float = try std.fmt.parseFloat(f32, string) },
+            else => vm.newError("Invalid type {}", .{ty}),
+        };
+    }
+
     pub fn new(vm: *Vm, arg: []const Value) !Value {
         const len = arg.len;
         if (len == 0 or len > 3) return vm.newError("Argument Mismatch; expect at least 3", .{});
@@ -129,15 +165,7 @@ const Builtin = struct {
         if (arg.len == 0) {
             const bytes = try std.io.getStdIn().reader().readUntilDelimiterAlloc(vm.allocator, '\n', 10000);
             defer vm.allocator.free(bytes);
-
-            var string = try std.ArrayList(u8).initCapacity(vm.allocator, bytes.len);
-            errdefer string.deinit();
-            try string.appendSlice(bytes);
-
-            const obj = try vm.allocator.create(Object);
-            obj.type = .{ .string = string };
-            try vm.instantiateAtVm(obj);
-            return .{ .obj = obj };
+            return try newString(vm, bytes);
         }
 
         if (arg[0] != .obj) return .null;
@@ -147,15 +175,7 @@ const Builtin = struct {
                 const file = str.items;
                 const bytes = try std.fs.cwd().readFileAlloc(vm.allocator, file, std.math.maxInt(usize));
                 defer vm.allocator.free(bytes);
-
-                var string = try std.ArrayList(u8).initCapacity(vm.allocator, bytes.len);
-                errdefer string.deinit();
-                try string.appendSlice(bytes);
-
-                const obj = try vm.allocator.create(Object);
-                obj.type = .{ .string = string };
-                try vm.instantiateAtVm(obj);
-                return .{ .obj = obj };
+                return try newString(vm, bytes);
             },
 
             else => return .null,
