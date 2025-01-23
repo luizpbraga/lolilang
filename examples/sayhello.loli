@@ -1,0 +1,5 @@
+str := "-123888"
+
+i := @parse(.int, str)
+
+@print(i)

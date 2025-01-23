@@ -1,0 +1,45 @@
+# check if c is in the set
+# returns the number of iteration
+fn numOfIter(c, max) {
+    z := 0.0
+    for n in max {
+        if @abs(z) > 2.0: return n
+        z = z * z + c
+    }
+    return max
+}
+
+fn mandelbrot(xmin, xmax, ymin, ymax, width, height, max_iter) {
+    y0 := ymin + (ymax - ymin)
+    x0 := xmin + (xmax - xmin)
+    h := height * 1.0 - 1.0
+    w := width * 1.0 - 1.0
+    mandelbrot_image := []
+    for i in height {
+        y := y0 * i / h
+        row := []
+        for j in width {
+            x := x0 * j / w
+            c := @complex(x, y)
+            @append(row, numOfIter(c, max_iter))
+        }
+        @append(mandelbrot_image, row)
+    }
+    return mandelbrot_image
+}
+
+# Parameters
+xmin := -2.0
+xmax := 1.0
+ymin := -1.5
+ymax := 1.5
+width := 100
+height := 100
+max_iter := 100
+
+# Generate the Mandelbrot set
+mandelbrot_image := mandelbrot(xmin, xmax, ymin, ymax, width, height, max_iter)
+
+for img in mandelbrot_image {
+    @print(img)
+}

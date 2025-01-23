@@ -43,11 +43,14 @@ pub const Value = union(enum) {
     boolean: bool,
     integer: i32,
     float: f32,
+    complex: Complex,
     char: u8,
     range: Range,
     tag: []const u8,
     builtin: Builtin,
     obj: *Object,
+
+    pub const Complex = struct { real: f32, imag: f32 };
 
     pub fn name(v: *const Value) []const u8 {
         if (v.* == .obj) {

@@ -16,6 +16,8 @@ pub var builtin_functions = [_]Object.Builtin{
     .{ .name = "@import", .function = Builtin.import },
     .{ .name = "@new", .function = Builtin.new },
     .{ .name = "@parse", .function = Builtin.parse },
+    .{ .name = "@abs", .function = Builtin.abs },
+    .{ .name = "@complex", .function = Builtin.complex },
 };
 
 const LoliType = enum {
@@ -57,6 +59,37 @@ pub fn newString(vm: *Vm, value: ?[]const u8) !Value {
 }
 
 const Builtin = struct {
+    pub fn complex(vm: *Vm, arg: []const Value) !Value {
+        const len = arg.len;
+        if (len == 0 or len > 2) return vm.newError("Argument Mismatch; expect 1 or 2 got {}", .{len});
+
+        const real: f32 = switch (arg[0]) {
+            .integer => |i| @floatFromInt(i),
+            .float => |f| f,
+            else => 0,
+        };
+
+        const imag: f32 = switch (arg[1]) {
+            .integer => |i| @floatFromInt(i),
+            .float => |f| f,
+            else => 0,
+        };
+
+        return .{ .complex = .{ .real = real, .imag = imag } };
+    }
+
+    pub fn abs(vm: *Vm, arg: []const Value) !Value {
+        const len = arg.len;
+        if (len != 1) return vm.newError("Argument Mismatch; expect 1 got {}", .{len});
+
+        return switch (arg[0]) {
+            .integer => |i| .{ .integer = @intCast(@abs(i)) },
+            .float => |i| .{ .float = @abs(i) },
+            .complex => |z| .{ .float = @sqrt(z.real * z.real + z.imag * z.imag) },
+            else => |t| vm.newError("Type Mismatch; expect integer or float, got {s}", .{t.name()}),
+        };
+    }
+
     pub fn parse(vm: *Vm, arg: []const Value) !Value {
         const len = arg.len;
         if (len != 2) return vm.newError("Argument Mismatch; expect 2", .{});
@@ -353,6 +386,10 @@ fn printV(value: Value) void {
 
         .null => {
             std.debug.print("null", .{});
+        },
+
+        .complex => |z| {
+            std.debug.print("({d}, {d})", .{ z.real, z.imag });
         },
 
         .boolean => |b| {

@@ -8,6 +8,24 @@ const builtins = @import("builtins.zig");
 
 /// [], .
 pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
+    if (left.* == .complex) {
+        const z = left.complex;
+
+        if (index.* != .tag) {
+            return vm.newError("Invalid Index Operation: complex number is not indexable", .{});
+        }
+
+        if (std.mem.eql(u8, index.tag, "real")) {
+            return vm.push(.{ .float = z.real });
+        }
+
+        if (std.mem.eql(u8, index.tag, "imag")) {
+            return vm.push(.{ .float = z.imag });
+        }
+
+        return vm.newError("Invalid Index Operation", .{});
+    }
+
     if (left.* != .obj) {
         return vm.newError("Invalid Index Operation on type '{s}' with index '{s}'", .{ left.name(), index.name() });
     }
@@ -261,6 +279,45 @@ pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
             else => unreachable,
         };
         return try vm.push(.{ .float = result });
+    }
+
+    if (left == .complex and right == .complex) {
+        const lval = left.complex;
+        const rval = right.complex;
+        const complex: Object.Value.Complex = switch (op) {
+            .add => .{ .real = lval.real + rval.real, .imag = lval.imag + rval.imag },
+            .sub => .{ .real = lval.real - rval.real, .imag = lval.imag - rval.imag },
+            .mul => .{
+                .real = lval.real * rval.real - lval.imag * rval.imag,
+                .imag = lval.real * rval.imag + lval.imag * rval.real,
+            },
+            else => unreachable,
+        };
+        return try vm.push(.{ .complex = complex });
+    }
+
+    if (left == .float and right == .complex) {
+        const scalar = left.float;
+        const rval = right.complex;
+        const complex: Object.Value.Complex = switch (op) {
+            .add => .{ .real = scalar + rval.real, .imag = rval.imag },
+            .sub => .{ .real = scalar - rval.real, .imag = -rval.imag },
+            .mul => .{ .real = scalar * rval.real, .imag = scalar * rval.imag },
+            else => unreachable,
+        };
+        return try vm.push(.{ .complex = complex });
+    }
+
+    if (right == .float and left == .complex) {
+        const lval = left.complex;
+        const scalar = right.float;
+        const complex: Object.Value.Complex = switch (op) {
+            .add => .{ .real = scalar + lval.real, .imag = lval.imag },
+            .sub => .{ .real = -scalar + lval.real, .imag = lval.imag },
+            .mul => .{ .real = scalar * lval.real, .imag = scalar * lval.imag },
+            else => unreachable,
+        };
+        return try vm.push(.{ .complex = complex });
     }
 
     // if (right == .obj and left == .obj) {
