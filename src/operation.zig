@@ -320,6 +320,30 @@ pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
         return try vm.push(.{ .complex = complex });
     }
 
+    if (left == .integer and right == .complex) {
+        const scalar: f32 = @floatFromInt(left.integer);
+        const rval = right.complex;
+        const complex: Object.Value.Complex = switch (op) {
+            .add => .{ .real = scalar + rval.real, .imag = rval.imag },
+            .sub => .{ .real = scalar - rval.real, .imag = -rval.imag },
+            .mul => .{ .real = scalar * rval.real, .imag = scalar * rval.imag },
+            else => unreachable,
+        };
+        return try vm.push(.{ .complex = complex });
+    }
+
+    if (right == .integer and left == .complex) {
+        const lval = left.complex;
+        const scalar: f32 = @floatFromInt(right.integer);
+        const complex: Object.Value.Complex = switch (op) {
+            .add => .{ .real = scalar + lval.real, .imag = lval.imag },
+            .sub => .{ .real = -scalar + lval.real, .imag = lval.imag },
+            .mul => .{ .real = scalar * lval.real, .imag = scalar * lval.imag },
+            else => unreachable,
+        };
+        return try vm.push(.{ .complex = complex });
+    }
+
     // if (right == .obj and left == .obj) {
     //     if (right.obj.type == .string and left.obj.type == .string) {
     //         const left_val = left.obj.type.string;

@@ -1,6 +1,6 @@
 ### Loli, the  bytecode compiler
 
-> > loli gos brrr
+> > loli go brrr
 
 ##### Zig Version
 

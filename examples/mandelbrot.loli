@@ -12,8 +12,8 @@ fn numOfIter(c, max) {
 fn mandelbrot(xmin, xmax, ymin, ymax, width, height, max_iter) {
     y0 := ymin + (ymax - ymin)
     x0 := xmin + (xmax - xmin)
-    h := height * 1.0 - 1.0
-    w := width * 1.0 - 1.0
+    h := height - 1.0
+    w := width - 1.0
     mandelbrot_image := []
     for i in height {
         y := y0 * i / h
