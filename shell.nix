@@ -2,7 +2,6 @@
 
 pkgs.mkShell {
     buildInputs = with pkgs; [
-      boehmgc
     ];
 }
 
