@@ -352,12 +352,16 @@ fn printV(value: Value) void {
 
             .array => |arr| {
                 std.debug.print("[", .{});
-                for (arr.items, 0..) |s, i| {
+                for (arr.items) |s| {
                     printV(s);
-                    if (i != arr.items.len - 1) {
-                        std.debug.print(", ", .{});
-                    }
+                    std.debug.print(", ", .{});
                 }
+
+                if (arr.items.len != 0) {
+                    std.debug.print("\x1b[2D]", .{});
+                    return;
+                }
+
                 std.debug.print("]", .{});
             },
 
@@ -373,6 +377,12 @@ fn printV(value: Value) void {
                     printV(val);
                     std.debug.print(", ", .{});
                 }
+
+                if (hash.pairs.count() != 0) {
+                    std.debug.print("\x1b[2D}}", .{});
+                    return;
+                }
+
                 std.debug.print("}}", .{});
             },
 
@@ -413,6 +423,12 @@ fn printV(value: Value) void {
                     printV(val.*);
                     std.debug.print(", ", .{});
                 }
+
+                if (ty.fields.count() != 0) {
+                    std.debug.print("\x1b[2D}}", .{});
+                    return;
+                }
+
                 std.debug.print("}}", .{});
             },
         },

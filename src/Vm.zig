@@ -295,7 +295,6 @@ pub fn run(vm: *Vm) anyerror!void {
                 fm.ip += 1;
                 const index = @as(usize, @intCast(fm.bp)) + local_index;
                 const value = vm.stack[index];
-                // std.debug.print("{} on {}\n", .{ value, index });
                 try vm.push(value);
             },
 

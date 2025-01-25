@@ -14,6 +14,8 @@ pub fn build(b: *std.Build) void {
     const exe = b.addExecutable(.{
         .name = "loli",
         .root_module = loli,
+        // .use_llvm = false,
+        // .use_lld = false,
     });
 
     b.installArtifact(exe);
