@@ -18,6 +18,8 @@ pub var builtin_functions = [_]Object.Builtin{
     .{ .name = "@parse", .function = Builtin.parse },
     .{ .name = "@abs", .function = Builtin.abs },
     .{ .name = "@complex", .function = Builtin.complex },
+    .{ .name = "@fetch", .function = Builtin.fetch },
+    .{ .name = "@assert", .function = Builtin.assert },
 };
 
 const LoliType = enum {
@@ -58,7 +60,43 @@ pub fn newString(vm: *Vm, value: ?[]const u8) !Value {
     return .{ .obj = obj };
 }
 
+/// TODO: THIS NEED A BIIIIG REWRITE
 const Builtin = struct {
+    pub fn assert(vm: *Vm, arg: []const Value) !Value {
+        const len = arg.len;
+        if (len == 0 or len > 2) return vm.newError("Argument Mismatch; expect 1 or 2 got {}", .{len});
+
+        const boolean = arg[0].boolean;
+        if (boolean) return .null;
+
+        const string = if (len == 2) arg[1].obj.type.string.items else "Failed Assert";
+        return vm.newError("{s}", .{string});
+    }
+
+    pub fn fetch(vm: *Vm, arg: []const Value) !Value {
+        var cli: std.http.Client = .{ .allocator = vm.allocator };
+        defer cli.deinit();
+
+        var string: std.ArrayList(u8) = .init(vm.allocator);
+        errdefer string.deinit();
+
+        const res = try cli.fetch(.{
+            .location = .{ .url = arg[0].obj.type.string.items },
+            .response_storage = .{ .dynamic = &string },
+        });
+
+        if (res.status != .ok) {
+            string.deinit();
+            return .null;
+        }
+
+        const obj = try vm.allocator.create(Object);
+        obj.type = .{ .string = string };
+
+        try vm.instantiateAtVm(obj);
+        return .{ .obj = obj };
+    }
+
     pub fn complex(vm: *Vm, arg: []const Value) !Value {
         const len = arg.len;
         if (len == 0 or len > 2) return vm.newError("Argument Mismatch; expect 1 or 2 got {}", .{len});
@@ -306,6 +344,7 @@ const Builtin = struct {
 //     _ = try builtValue.function(&.{ .null, .{ .integer = 10 } });
 // }
 
+/// TODO: use a writer
 fn printV(value: Value) void {
     switch (value) {
         .obj => |o| switch (o.type) {

@@ -147,9 +147,10 @@ pub fn setIndex(vm: *Vm, left: *Value, index: Value, value: Value) !void {
                     if (!ins.fields.contains(index.tag)) {
                         return vm.newError("No field named '{s}' in type {s}", .{ index.tag, ins.type.name orelse "anon" });
                     }
-                    return try ins.fields.put(index.tag, value);
+                    try ins.fields.put(index.tag, value);
+                    return vm.push(.null);
                 }
-                return vm.newError("Invalid Index Operation", .{});
+                return vm.newError("Invalid Index Operation <3", .{});
             },
 
             .string => |string| {
@@ -188,11 +189,11 @@ pub fn setIndex(vm: *Vm, left: *Value, index: Value, value: Value) !void {
                 // WARN: potential bug? need to generate a new key?
                 pair.value = value;
             },
-            else => return vm.newError("Invalid Index Operation", .{}),
+            else => return vm.newError("Invalid Index Operation: type {s} dont support filed assess", .{left.name()}),
         },
 
         else => {
-            return vm.newError("Invalid Index Operation", .{});
+            return vm.newError("Invalid Index Operation: type {s} dont support filed assess", .{left.name()});
         },
     }
 

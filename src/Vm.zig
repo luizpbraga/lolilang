@@ -350,7 +350,7 @@ pub fn run(vm: *Vm) anyerror!void {
                 // the 'if' don't need to pop, just the 'for' loop, so we compare
                 // the last ip value with the current jump position;.
                 // If ip is bigger (for loop) we pop the null value. This prevent accumulating nulls in the stack
-                if (last_ip > pos) {
+                if (last_ip >= pos) {
                     vm.pop2();
                 }
             },
@@ -587,7 +587,3 @@ const Frame = @import("Frame.zig");
 const builtins = @import("builtins.zig");
 const Line = @import("Line.zig");
 const Error = @import("Error.zig");
-
-// test {
-//     _ = @import("vm_test.zig");
-// }
