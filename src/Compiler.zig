@@ -884,7 +884,9 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
                 const e: Object.BuiltinType.BT = if (ty.type == .@"struct") .@"struct" else .@"enum";
 
-                const pos_name = try c.addConstants(.{ .tag = ty.name orelse "annon" });
+                const pos_name = try c.addConstants(.{
+                    .tag = ty.name orelse "struct",
+                });
                 try c.emit(.constant, &.{pos_name});
 
                 if (ty.type == .@"struct") {

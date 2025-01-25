@@ -431,6 +431,7 @@ pub fn run(vm: *Vm) anyerror!void {
 
                 const obj = try memory.allocateObject(vm, .{ .type = struct_type });
                 errdefer vm.allocator.destroy(obj);
+                vm.sp -= 1;
                 try vm.push(.{ .obj = obj });
             },
 
@@ -468,6 +469,7 @@ pub fn run(vm: *Vm) anyerror!void {
 
                 const obj = try memory.allocateObject(vm, .{ .instance = instance });
                 errdefer vm.allocator.destroy(obj);
+                vm.sp -= 1;
                 try vm.push(.{ .obj = obj });
             },
 

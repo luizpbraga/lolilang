@@ -407,7 +407,7 @@ fn printV(value: Value) void {
             },
 
             .type => |ty| {
-                std.debug.print("{s}_{s}", .{ @tagName(ty.type), ty.name orelse "annon" });
+                std.debug.print("{s}", .{ty.name.?});
             },
 
             .instance => |ty| {
