@@ -1,0 +1,39 @@
+# O(log n)
+fn search(arr, target) {
+    low := 0
+    hight := arr.len - 1
+
+    mid := 0
+    val := 0
+
+    for low <= hight {
+        mid = (low + hight) / 2
+        val = arr[mid]
+        
+        match {
+          val == target => { return mid }
+          val < target  => { low = mid + 1 }
+          val > target  => { hight = mid - 1 }
+        }
+    }
+
+    return null
+}
+
+fn main() {
+    arr := [0, 1, 2, 3, 4, 5, 6, 7]
+    index := null
+
+    for target in 8 {
+      index = search(arr, target)
+      if index == null { 
+          @print("Index not found! target:", target)
+          return
+      }
+
+      @assert(target == arr[index])
+      @print("Found element", target, "at", index)
+    }
+}
+
+main()
