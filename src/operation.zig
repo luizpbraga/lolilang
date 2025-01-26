@@ -155,15 +155,15 @@ pub fn setIndex(vm: *Vm, left: *Value, index: Value, value: Value) !void {
 
             .string => |string| {
                 if (index != .integer) return vm.newError("Invalid Index Type", .{});
+                if (value != .char) return vm.newError("Invalid String Assigmente, expect char, got {s}", .{value.name()});
 
                 const i = index.integer;
                 const len = string.items.len;
 
-                if (i >= 0 and i < len) {
-                    const char = string.items[@intCast(i)];
-                    return try vm.push(.{ .char = char });
-                }
-                return vm.newError("Index Out of Bound", .{});
+                if (i < 0 or i >= len) return vm.newError("Index Out of Bound", .{});
+
+                string.items[@intCast(i)] = value.char;
+                return try vm.push(.null);
             },
 
             .array => |array| {
