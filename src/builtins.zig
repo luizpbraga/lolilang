@@ -244,7 +244,11 @@ const Builtin = struct {
         switch (arg[0].obj.type) {
             .string => |str| {
                 const file = str.items;
-                const bytes = try std.fs.cwd().readFileAlloc(vm.allocator, file, std.math.maxInt(usize));
+                const bytes = std.fs.cwd().readFileAlloc(vm.allocator, file, std.math.maxInt(usize)) catch |err| switch (err) {
+                    error.FileNotFound => return .null,
+                    else => return err,
+                };
+
                 defer vm.allocator.free(bytes);
                 return try newString(vm, bytes);
             },
