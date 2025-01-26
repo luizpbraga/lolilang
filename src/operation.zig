@@ -345,17 +345,38 @@ pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
         return try vm.push(.{ .complex = complex });
     }
 
-    // if (right == .obj and left == .obj) {
-    //     if (right.obj.type == .string and left.obj.type == .string) {
-    //         const left_val = left.obj.type.string;
-    //         const right_val = right.obj.type.string;
-    //         if (op != .add) {
-    //             return vm.newError("Invalid String Operation", .{});
-    //         }
-    //         left_val.appendSlice(right_val.items);
-    //         return try vm.push(left);
-    //     }
-    // }
+    if (right == .obj and left == .obj) {
+        if (right.obj.type == .array and left.obj.type == .array) {
+            if (op != .add) {
+                return vm.newError("Invalid String Operation", .{});
+            }
+            const left_val = left.obj.type.array;
+            const right_val = right.obj.type.array;
+            var array = try std.ArrayList(Value).initCapacity(vm.allocator, left_val.items.len + right_val.items.len);
+            errdefer array.deinit();
+
+            try array.appendSlice(left_val.items);
+            try array.appendSlice(right_val.items);
+
+            const obj = try memory.allocateObject(vm, .{ .array = array });
+            return try vm.push(.{ .obj = obj });
+        }
+        if (right.obj.type == .string and left.obj.type == .string) {
+            const left_val = left.obj.type.string;
+            const right_val = right.obj.type.string;
+            if (op != .add) {
+                return vm.newError("Invalid String Operation", .{});
+            }
+            var string = try std.ArrayList(u8).initCapacity(vm.allocator, left_val.items.len + right_val.items.len);
+            errdefer string.deinit();
+
+            try string.appendSlice(left_val.items);
+            try string.appendSlice(right_val.items);
+
+            const obj = try memory.allocateObject(vm, .{ .string = string });
+            return try vm.push(.{ .obj = obj });
+        }
+    }
 
     return vm.newError("Invalid operation '{s}' between {s} and {s}", .{ @tagName(op), left.name(), right.name() });
 }

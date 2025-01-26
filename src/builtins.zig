@@ -12,6 +12,7 @@ pub var builtin_functions = [_]Object.Builtin{
     .{ .name = "@write", .function = Builtin.write },
     .{ .name = "@typeOf", .function = Builtin.typeOf },
     .{ .name = "@asChar", .function = Builtin.asChar },
+    .{ .name = "@as", .function = Builtin.as },
     .{ .name = "@panic", .function = Builtin.panic },
     .{ .name = "@import", .function = Builtin.import },
     .{ .name = "@new", .function = Builtin.new },
@@ -204,6 +205,39 @@ const Builtin = struct {
             },
             else => .{ .tag = @tagName(arg[0]) },
         };
+    }
+
+    pub fn as(vm: *Vm, arg: []const Value) !Value {
+        if (arg.len != 2) return vm.newError("Argument Mismatch; expect 2, got {}", .{arg.len});
+
+        const ty = tagtype.get(arg[0].tag) orelse return vm.newError("Invalid Type", .{});
+        const value = arg[1];
+
+        switch (ty) {
+            .char => {
+                if (value == .integer) l: {
+                    const int = value.integer;
+                    if (int < 0 or int >= 256) {
+                        break :l;
+                    }
+                    return .{ .char = @intCast(value.integer) };
+                } else if (value == .char) {
+                    return value;
+                } else if (value == .boolean) {
+                    return .{ .char = if (value.boolean) 0 else 1 };
+                } else if (value == .obj) {
+                    if (value.obj.type == .string) {
+                        if (value.obj.type.string.items.len == 1) {
+                            return .{ .char = value.obj.type.string.items[0] };
+                        }
+                    }
+                }
+            },
+
+            else => {},
+        }
+
+        return vm.newError("Invalid {s} to Char coercion", .{value.name()});
     }
 
     pub fn asChar(vm: *Vm, arg: []const Value) !Value {
