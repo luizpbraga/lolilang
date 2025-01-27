@@ -1,18 +1,17 @@
 fn quickSort(arr) {
     len := arr.len
-
     if len <= 1: return arr 
-
+    
     pivot := arr[len/2]
-
     left := []
-    for x in arr: if x < pivot: @append(left, x)
-
-    middle := []
-    for x in arr: if x == pivot: @append(middle, x)
-
     right := []
-    for x in arr: if x > pivot: @append(right, x)
+    middle := []
+
+    for x in arr: match {
+      x < pivot => { @append(left, x) }
+      x > pivot => { @append(right, x) }
+      x == pivot => { @append(middle, x) }
+    }
 
     return quickSort(left) + middle + quickSort(right)
 }
