@@ -97,11 +97,11 @@ Lexer := struct {
     }
 
     fn isDigit(ch) {
-        return ('0' <= ch) and (ch <= '9')
+        return '0' <= ch <= '9'
     }
 
     fn isLetter(ch) {
-        return ('a' <= ch) and (ch <= 'z') or ('A' <= ch) and (ch <= 'Z') or (ch == '_') or (ch == '@')
+        return ('a' <= ch <= 'z') or ('@' <= ch <= 'Z') or (ch == '_')
     }
 
     fn readNumber(l) {

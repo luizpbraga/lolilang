@@ -31,5 +31,17 @@ fn testString() {
     @assert(sorted_arr == exp) 
 }
 
+fn test() {
+    len := 1000
+    list := @new(.int, len) 
+    for i in len: list[i] = @rand()
+    s := quickSort(list) 
+    @assert(s.len == len)
+    for i in 1..len - 1 { 
+        @assert( s[i - 1] <= s[i] <= s[i + 1] ) 
+    }
+}
+
+test()
 testIntArray()
 testString()
