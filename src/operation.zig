@@ -230,6 +230,20 @@ pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
         return try vm.push(.{ .integer = result });
     }
 
+    if (right == .long_int and left == .long_int) {
+        const right_val = right.long_int;
+        const left_val = left.long_int;
+        const result = switch (op) {
+            .add => left_val + right_val,
+            .sub => left_val - right_val,
+            .mul => left_val * right_val,
+            .div => @divTrunc(left_val, right_val),
+            .mod => @mod(left_val, right_val),
+            else => unreachable,
+        };
+        return try vm.push(.{ .long_int = result });
+    }
+
     if (right == .float and left == .integer) {
         const right_val = right.float;
         const left_val: f32 = @floatFromInt(left.integer);

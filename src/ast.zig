@@ -44,7 +44,7 @@ pub const Statement = union(enum) {
     var_block: VarBlock,
 
     con: Con,
-    con_block: ConBlock,
+    // con_block: ConBlock,
 
     @"return": Return,
     @"break": Break,
@@ -243,7 +243,7 @@ pub const Con = struct {
     token: Token,
     at: usize = 0,
     //= .@"var",
-    name: Identifier,
+    name: []Identifier,
     value: *Expression,
 
     pub fn statementNode(self: *const @This()) void {

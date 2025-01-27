@@ -12,6 +12,11 @@ pub fn allocateObject(vm: *Vm, tag: Object.Type) !*Object {
     // if (vm.bytes_allocated > ) {
     if (vm.bytes_allocated > Vm.GC_MAX) {
         try collectGarbage(vm);
+        vm.t = std.time.timestamp() - vm.t;
+        if (vm.t < 60) {
+            Vm.GC_MAX = 5 * Vm.GC_MAX;
+            vm.t = std.time.timestamp();
+        }
     }
 
     obj.type = tag;
@@ -55,6 +60,7 @@ pub fn sweep(vm: *Vm) void {
 }
 
 pub fn freeObject(vm: *Vm, obj: *Object) void {
+    defer vm.bytes_allocated -= @sizeOf(*Object);
     switch (obj.type) {
         .string => |string| {
             // vm.allocator.free(str);

@@ -1,10 +1,10 @@
 const Vm = @This();
 
-pub const GC_MAX = 2 * 1024;
+pub var GC_MAX: usize = 64 * 1024 * @sizeOf(*Object);
 
-const FRAME_SIZE = 1024;
+const FRAME_SIZE = 4 * 1024;
 
-const STACK_SIZE = 2 * 1024;
+const STACK_SIZE = 32 * 1024;
 /// max(u16)
 const GLOBALS_SIZE = 65536;
 
@@ -28,6 +28,7 @@ cursor: usize = 0,
 /// GC: allocated objects linked list
 objects: ?*Object = null,
 errors: *Error,
+t: i68 = 0,
 
 pub fn newError(vm: *Vm, comptime fmt: []const u8, args: anytype) anyerror {
     const pos = vm.positions[if (vm.cursor < vm.positions.len) vm.cursor else vm.positions.len - 1];
@@ -45,13 +46,14 @@ pub fn init(allocator: std.mem.Allocator, b: *Compiler.Bytecode, errors: *Error)
         .constants = b.constants,
         .positions = b.positions,
         .allocator = allocator,
-        .gray_stack = try .initCapacity(allocator, 100),
+        .gray_stack = try .initCapacity(allocator, FRAME_SIZE / 4),
         .stack = try allocator.alloc(Value, STACK_SIZE),
         .globals = try allocator.alloc(?Value, GLOBALS_SIZE),
         .sp = 0,
         .bytes_allocated = 0,
         .frames = undefined,
         .errors = errors,
+        .t = std.time.timestamp(),
     };
 
     // main frame
@@ -379,10 +381,7 @@ pub fn run(vm: *Vm) anyerror!void {
             // this is used for recursive closure
             .current_closure => {
                 const closure = fm.cl;
-                var obj = try vm.allocator.create(Object);
-                obj.type.closure = closure;
-                // SHIT
-                try vm.instantiateAtVm(obj);
+                const obj = try memory.allocateObject(vm, .{ .closure = closure });
                 try vm.push(.{ .obj = obj });
             },
 

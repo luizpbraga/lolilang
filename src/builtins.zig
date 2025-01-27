@@ -21,6 +21,8 @@ pub var builtin_functions = [_]Object.Builtin{
     .{ .name = "@complex", .function = Builtin.complex },
     .{ .name = "@fetch", .function = Builtin.fetch },
     .{ .name = "@assert", .function = Builtin.assert },
+    .{ .name = "@time", .function = Builtin.time },
+    .{ .name = "@rand", .function = Builtin.rand },
 };
 
 const LoliType = enum {
@@ -54,15 +56,33 @@ pub fn newString(vm: *Vm, value: ?[]const u8) !Value {
     errdefer string.deinit();
     try string.appendSlice(bytes);
 
-    const obj = try vm.allocator.create(Object);
-    obj.type = .{ .string = string };
-
-    try vm.instantiateAtVm(obj);
+    const obj = try memory.allocateObject(vm, .{ .string = string });
     return .{ .obj = obj };
 }
 
 /// TODO: THIS NEED A BIIIIG REWRITE
 const Builtin = struct {
+    pub fn time(_: *Vm, _: []const Value) !Value {
+        return .{ .long_int = std.time.nanoTimestamp() };
+    }
+
+    pub fn rand(_: *Vm, args: []const Value) !Value {
+        var prng = std.Random.DefaultPrng.init(blk: {
+            var seed: u64 = undefined;
+            try std.posix.getrandom(std.mem.asBytes(&seed));
+            break :blk seed;
+        });
+        const r = prng.random();
+
+        if (args.len == 2) {
+            const i = args[0].integer;
+            const f = args[1].integer;
+            return .{ .integer = r.intRangeAtMost(i32, i, f) };
+        }
+
+        return .{ .integer = r.int(i32) };
+    }
+
     pub fn assert(vm: *Vm, arg: []const Value) !Value {
         const len = arg.len;
         if (len == 0 or len > 2) return vm.newError("Argument Mismatch; expect 1 or 2 got {}", .{len});
@@ -91,10 +111,7 @@ const Builtin = struct {
             return .null;
         }
 
-        const obj = try vm.allocator.create(Object);
-        obj.type = .{ .string = string };
-
-        try vm.instantiateAtVm(obj);
+        const obj = try memory.allocateObject(vm, .{ .string = string });
         return .{ .obj = obj };
     }
 
@@ -403,6 +420,7 @@ fn printV(value: Value) void {
                 std.debug.print("]", .{});
             },
 
+            // else => {},
             .hash => |hash| {
                 var pairs = hash.pairs.iterator();
                 std.debug.print("{{", .{});

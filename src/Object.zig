@@ -42,6 +42,7 @@ pub const Value = union(enum) {
     null,
     boolean: bool,
     integer: i32,
+    long_int: i128,
     float: f32,
     complex: Complex,
     char: u8,

@@ -280,19 +280,41 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
             // TODO: allow immutable data
             .con => |con_stmt| {
-                const name = con_stmt.name.value;
-                if (c.symbols.?.store.contains(name)) {
-                    return c.newError("Redeclaration of variable '{s}'", .{name});
-                }
-                const symbol = try c.symbols.?.define(con_stmt.name.value);
-
-                if (con_stmt.value.* == .type) {
-                    con_stmt.value.type.name = con_stmt.name.value;
+                if (con_stmt.name.len > 1 and con_stmt.value.* != .array) {
+                    return c.newError("Invalid Constant Assignment", .{});
                 }
 
-                try c.compile(.{ .expression = con_stmt.value });
-                const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
-                try c.emit(op, &.{symbol.index});
+                // const name = con_stmt.name.value;
+                var symbols = try c.allocator.alloc(SymbolTable.Symbol, con_stmt.name.len);
+                defer c.allocator.free(symbols);
+
+                for (con_stmt.name, 0..) |name, i| {
+                    if (c.symbols.?.store.contains(name.value)) {
+                        return c.newError("Redeclaration of variable '{s}'", .{name.value});
+                    }
+                    symbols[i] = try c.symbols.?.define(name.value);
+                    if (con_stmt.value.* == .type) {
+                        con_stmt.value.type.name = name.value;
+                    }
+                }
+
+                if (symbols.len == 1) {
+                    const symbol = symbols[0];
+                    try c.compile(.{ .expression = con_stmt.value });
+                    const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+                    try c.emit(op, &.{symbol.index});
+                    return;
+                }
+
+                if (symbols.len != con_stmt.value.array.elements.len) {
+                    return c.newError("Assignment mismatch", .{});
+                }
+
+                for (symbols, con_stmt.value.array.elements) |symbol, value| {
+                    try c.compile(.{ .expression = value });
+                    const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+                    try c.emit(op, &.{symbol.index});
+                }
             },
 
             .@"return" => |ret| {

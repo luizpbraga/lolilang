@@ -178,7 +178,7 @@ pub const Write = struct {
                 },
 
                 .con => |var_stmt| {
-                    try w.print("con {s} = ", .{var_stmt.name.value});
+                    try w.print("con {s} = ", .{var_stmt.name[0].value});
                     try w.write(.{ .expression = var_stmt.value });
                 },
 

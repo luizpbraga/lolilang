@@ -139,6 +139,20 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
         },
     };
 
+    // // TODO: better logic <<EXPERIMENTAL>>
+    // if (p.peekTokenIs(.@",") and t) {
+    //     const left_exp2 = try allocator.create(ast.Expression);
+    //     errdefer allocator.destroy(left_exp2);
+    //     left_exp2.* = try p.parseTuple(left_exp);
+    //
+    //     switch (left_exp2.*) {
+    //         .bad, .null => {},
+    //         inline else => |*exp| exp.at = tk.at,
+    //     }
+    //
+    //     return left_exp2;
+    // }
+
     switch (left_exp.*) {
         .bad, .null => {},
         inline else => |*exp| exp.at = tk.at,
@@ -387,23 +401,43 @@ pub fn parseDefer(self: *Parser) !ast.Statement {
 
     return .{ .@"defer" = defer_stmt };
 }
-
+// con x, y, x = [1, 2, 3]
 fn parseCon(self: *Parser) !ast.Statement {
     const tk = self.cur_token;
 
-    if (self.expectPeek(.@"(")) return .{ .con_block = try self.parseConBlock(tk) };
+    // if (self.expectPeek(.@"(")) return .{ .con_block = try self.parseConBlock(tk) };
 
-    var const_stmt: ast.Con = .{
-        .name = undefined,
-        .value = undefined,
-        .token = tk,
-    };
+    var names: std.ArrayList(ast.Identifier) = .init(self.arena.allocator());
+    errdefer names.deinit();
 
     if (!self.expectPeek(.identifier)) {
         try self.missing(.identifier);
     }
 
-    const_stmt.name = self.parseIdentifier().identifier;
+    try names.append(self.parseIdentifier().identifier);
+
+    // single identifier
+    if (self.expectPeek(.@"=")) {
+        self.nextToken();
+
+        const value = try self.parseExpression(.lowest);
+
+        if (self.peekTokenIs(.@";")) self.nextToken();
+
+        return .{ .con = .{
+            .name = try names.toOwnedSlice(),
+            .value = value,
+            .token = tk,
+        } };
+    }
+
+    //if (!self.expectPeek(.@",")) try self.missing(.@",");
+
+    // multi identifiers
+    while (self.expectPeek(.@",")) {
+        if (!self.expectPeek(.identifier)) try self.missing(.identifier);
+        try names.append(self.parseIdentifier().identifier);
+    }
 
     if (!self.expectPeek(.@"=")) {
         try self.missing(.@"=");
@@ -412,13 +446,23 @@ fn parseCon(self: *Parser) !ast.Statement {
     self.nextToken();
 
     // TODO: pointer?
-    const_stmt.value = try self.parseExpression(.lowest);
+    const value = try self.parseExpression(.lowest);
 
-    if (self.peekTokenIs(.@";")) {
-        self.nextToken();
-    }
+    if (self.peekTokenIs(.@";")) self.nextToken();
 
-    return .{ .con = const_stmt };
+    return .{ .con = .{
+        .name = try names.toOwnedSlice(),
+        .value = value,
+        .token = tk,
+    } };
+
+    // try self.errlog("Fuck");
+    //
+    // return .{ .con = .{
+    //     .name = try names.toOwnedSlice(),
+    //     .value = &NULL,
+    //     .token = tk,
+    // } };
 }
 
 fn parseVarBlock(self: *Parser, _: Token) !ast.VarBlock {
@@ -465,49 +509,49 @@ fn parseVarBlock(self: *Parser, _: Token) !ast.VarBlock {
     return stmt;
 }
 
-fn parseConBlock(self: *Parser, _: Token) !ast.ConBlock {
-    const tk = self.cur_token;
-    var stmt: ast.ConBlock = .{
-        .const_decl = undefined,
-    };
-
-    const allocator = self.arena.allocator();
-
-    var vars: std.ArrayList(ast.Con) = .init(allocator);
-    errdefer vars.deinit();
-
-    self.nextToken();
-
-    while (self.cur_token.type != .@")") {
-        const ident = self.parseIdentifier();
-
-        if (ident != .identifier) try self.missing(.identifier);
-
-        self.nextToken();
-
-        if (self.expectPeek(.@"=")) try self.missing(.@"=");
-
-        self.nextToken();
-
-        const exp = try self.parseExpression(.lowest);
-
-        const var_stmt: ast.Con = .{
-            .name = ident.identifier,
-            .value = exp,
-            .token = tk,
-        };
-
-        try vars.append(var_stmt);
-
-        self.nextToken();
-    }
-
-    const vars_owned = try vars.toOwnedSlice();
-
-    stmt.const_decl = vars_owned;
-
-    return stmt;
-}
+// fn parseConBlock(self: *Parser, _: Token) !ast.ConBlock {
+//     const tk = self.cur_token;
+//     var stmt: ast.ConBlock = .{
+//         .const_decl = undefined,
+//     };
+//
+//     const allocator = self.arena.allocator();
+//
+//     var vars: std.ArrayList(ast.Con) = .init(allocator);
+//     errdefer vars.deinit();
+//
+//     self.nextToken();
+//
+//     while (self.cur_token.type != .@")") {
+//         const ident = self.parseIdentifier();
+//
+//         if (ident != .identifier) try self.missing(.identifier);
+//
+//         self.nextToken();
+//
+//         if (self.expectPeek(.@"=")) try self.missing(.@"=");
+//
+//         self.nextToken();
+//
+//         const exp = try self.parseExpression(.lowest);
+//
+//         const var_stmt: ast.Con = .{
+//             .name = ident.identifier,
+//             .value = exp,
+//             .token = tk,
+//         };
+//
+//         try vars.append(var_stmt);
+//
+//         self.nextToken();
+//     }
+//
+//     const vars_owned = try vars.toOwnedSlice();
+//
+//     stmt.const_decl = vars_owned;
+//
+//     return stmt;
+// }
 
 fn parseVar(self: *Parser) !ast.Statement {
     const tk = self.cur_token;
@@ -1079,6 +1123,30 @@ pub fn parseString(self: *Parser) ast.Expression {
         .string = .{
             .value = self.cur_token.literal,
         },
+    };
+}
+
+fn debugCurToken(p: *Parser) void {
+    std.debug.print("{s}\n", .{p.cur_token.literal});
+}
+
+var t = true;
+pub fn parseTuple(self: *Parser, exp: *ast.Expression) !ast.Expression {
+    t = false;
+    const allocator = self.arena.allocator();
+    var elements: std.ArrayList(*ast.Expression) = .init(allocator);
+    errdefer elements.deinit();
+
+    try elements.append(exp);
+    while (self.expectPeek(.@",")) {
+        self.nextToken(); // next_element
+        const element_n = try self.parseExpression(.lowest);
+        try elements.append(element_n);
+    }
+
+    t = true;
+    return .{
+        .array = .{ .elements = try elements.toOwnedSlice() },
     };
 }
 
