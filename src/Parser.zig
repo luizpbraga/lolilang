@@ -13,21 +13,6 @@ peek_token: Token,
 arena: std.heap.ArenaAllocator,
 errors: *Error,
 
-/// use a fixbuffer writer to STDOUT
-// const Error = struct {
-//     msg: std.ArrayList(u8),
-//     counter: usize = 0,
-//
-//     const RED = "\x1b[31m";
-//     const BOLD = "\x1b[1m";
-//     const END = "\x1b[0m";
-//
-//     fn append(err: *Error, comptime fmt: []const u8, args: anytype) !void {
-//         try err.msg.writer().print(fmt, args);
-//         err.counter += 1;
-//     }
-// };
-
 fn missing(p: *Parser, tk: Token.Type) !void {
     const l = p.line();
     const lin = l.line;
@@ -190,10 +175,39 @@ fn infixExp(p: *Parser, lx: *ast.Expression) anyerror!?ast.Expression {
             tk = p.cur_token;
             break :b try p.parseCall(lx);
         },
-        .@"%", .@"+", .@"-", .@"==", .@"!=", .@"*", .@"or", .@"and", .@"/", .@">", .@">=", .@"<", .@"<=" => {
+
+        .@"%", .@"+", .@"-", .@"==", .@"!=", .@"*", .@"or", .@"and", .@"/", .@">", .@">=" => {
             p.nextToken();
             tk = p.cur_token;
             break :b try p.parseInfix(lx);
+        },
+
+        .@"<", .@"<=" => {
+            // a < b < c
+            // a < b and b < c
+            p.nextToken();
+            tk = p.cur_token;
+            const infix_left = try p.parseInfix(lx);
+
+            // CLASSIC a < b OR a <= b
+            if (!p.expectPeek(.@"<") and !p.expectPeek(.@"<=")) {
+                break :b infix_left;
+            }
+
+            // FANCY a < b < c
+            tk = p.cur_token;
+            const infix_rigth = try p.parseInfix(infix_left.infix.right);
+
+            const l = try p.arena.allocator().create(ast.Expression);
+            const r = try p.arena.allocator().create(ast.Expression);
+            l.* = infix_left;
+            r.* = infix_rigth;
+            break :b .{ .infix = .{
+                .operator = .@"and",
+                .left = l,
+                .right = r,
+                .at = tk.at,
+            } };
         },
         .@"=", .@":=", .@"+=", .@"-=", .@"*=", .@"/=" => {
             p.nextToken();
