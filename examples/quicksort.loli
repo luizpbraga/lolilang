@@ -1,3 +1,40 @@
+fn swap(arr, i, j) {
+    temp := arr[i]
+    arr[i] = arr[j]
+    arr[j] = temp
+}
+
+fn partition(arr, low, high) {
+    # last element
+    pivot := arr[high]
+    # smaller element index
+    i := low
+
+    for j in low..high: if arr[j] <= pivot {
+        swap(arr, i, j)
+        i += 1 
+    }
+    # swap the pivot in the right position
+    swap(arr, i, high)
+
+    return i
+}
+
+fn quickSortInPlaceW(arr, low, high) {
+    if low >= high: return;
+    # sort around the pivot
+    pivot := partition(arr, low, high)
+    # LHS sort
+    quickSortInPlaceW(arr, low, pivot-1)
+    # RHS sort
+    quickSortInPlaceW(arr, pivot+1, high)
+}
+
+# in place
+fn quickSortInPlace(arr) {
+    quickSortInPlaceW(arr, 0, arr.len-1)
+}
+
 fn quickSort(arr) {
     len := arr.len
     if len <= 1: return arr 
@@ -31,8 +68,7 @@ fn testString() {
     @assert(sorted_arr == exp) 
 }
 
-fn test() {
-    len := 1000
+fn test1(len) {
     list := @new(.int, len) 
     for i in len: list[i] = @rand()
     s := quickSort(list) 
@@ -42,6 +78,24 @@ fn test() {
     }
 }
 
-test()
-testIntArray()
-testString()
+fn test2(len) {
+    s := @new(.int, len) 
+    for i in len: s[i] = @rand(0, 100)
+    
+    @print(.sorting)
+    t := @time()
+    quickSortInPlace(s) 
+    t = @time() - t
+
+    @print(.checking)
+    @assert(s.len == len)
+    for i in 1..len - 1 { 
+        @assert( s[i - 1] <= s[i] <= s[i + 1] ) 
+    }
+    @print(.sort_time, t)
+}
+
+#test1(1000)
+test2(10000)
+#testIntArray()
+#testString()

@@ -72,7 +72,7 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
                     const char = string.items[@intCast(i)];
                     return try vm.push(.{ .char = char });
                 }
-                return vm.newError("Index Out of Bound", .{});
+                return vm.newError("Index Out of Bound: array len is {}, index is {}", .{ len, i });
             }
 
             // TODO: optimize
@@ -104,7 +104,12 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
                 if (i >= 0 and i < len) {
                     return try vm.push(array.items[@intCast(i)]);
                 }
-                return vm.newError("Index Out of Bound", .{});
+
+                if (i < 0 and -i < len) {
+                    const l: i32 = @intCast(len);
+                    return try vm.push(array.items[@intCast(l + i)]);
+                }
+                return vm.newError("Index Out of Bound: array len is {}, index is {}", .{ len, i });
             }
 
             // optimize!
