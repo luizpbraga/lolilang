@@ -1,19 +1,19 @@
 # O(log n)
 fn search(arr, target) {
     low := 0
-    hight := arr.len - 1
+    high := arr.len - 1
 
     mid := 0
     val := 0
 
-    for low <= hight {
-        mid = (low + hight) / 2
+    for low <= high {
+        mid = (low + high) / 2
         val = arr[mid]
         
         match {
           val == target => { return mid }
           val < target  => { low = mid + 1 }
-          val > target  => { hight = mid - 1 }
+          val > target  => { high = mid - 1 }
         }
     }
 
