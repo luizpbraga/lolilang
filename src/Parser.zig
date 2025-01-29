@@ -855,27 +855,23 @@ fn parseType(self: *Parser) !ast.Expression {
     var descs: std.ArrayList(ast.FunctionStatement) = .init(self.arena.allocator());
     errdefer descs.deinit();
 
-    // var comments: std.ArrayList(ast.Statement) = .init(self.arena.allocator());
-    // errdefer comments.deinit();
-
-    // var comment: ?ast.Statement = null;
+    var names: std.StringHashMap(void) = .init(self.arena.allocator());
+    defer names.deinit();
 
     while (!self.peekTokenIs(.@"}") and !self.curTokenIs(.eof)) {
         self.nextToken();
 
-        // if (self.curTokenIs(.comment)) {
-        //     comment = self.parseComment(self.cur_token);
-        // }
-
-        // if (self.curTokenIs(.comment)) continue;
         if (self.curTokenIs(.identifier)) {
             var field: ast.Type.Field = .{
                 .name = self.parseIdentifier().identifier,
                 .value = &NULL,
-                // .comment = .init(ast.Statement),
             };
 
-            // if (comment) |co| try field.comment.push(co);
+            if (names.contains(field.name.value)) {
+                try self.errors.append("Duplicated field name {s}\n", .{field.name.value});
+            }
+
+            try names.put(field.name.value, {});
 
             if (self.expectPeek(.@"=")) {
                 self.nextToken();
@@ -899,6 +895,12 @@ fn parseType(self: *Parser) !ast.Expression {
             }
 
             const name = self.parseIdentifier().identifier;
+
+            if (names.contains(name.value)) {
+                try self.errors.append("Duplicated field name {s}\n", .{name.value});
+            }
+
+            try names.put(name.value, {});
 
             const func = (try self.parseFunction()).function;
 

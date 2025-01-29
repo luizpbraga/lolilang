@@ -430,7 +430,7 @@ pub fn run(vm: *Vm) anyerror!void {
 
                 const obj = try memory.allocateObject(vm, .{ .type = struct_type });
                 errdefer vm.allocator.destroy(obj);
-                vm.sp -= 1;
+                // vm.sp -= 1;
                 try vm.push(.{ .obj = obj });
             },
 
@@ -447,23 +447,17 @@ pub fn run(vm: *Vm) anyerror!void {
                 errdefer instance.fields.deinit();
 
                 // default values
-                {
-                    var iter = value_type.fields.iterator();
-                    while (iter.next()) |entry| {
-                        // const value = entry.value_ptr;
-                        // if (value.* == .obj and value.obj.type == .function) {
-                        //     if (value.obj.type.function.num_parameters > 0) {
-                        //         value.obj.type.function.method = obj;
-                        //     }
-                        // }
-                        try instance.fields.put(entry.key_ptr.*, entry.value_ptr.*);
-                    }
+                var iter = value_type.fields.iterator();
+                while (iter.next()) |entry| {
+                    try instance.fields.put(entry.key_ptr.*, entry.value_ptr.*);
                 }
 
                 // user define values
                 const start_index = vm.sp - fields_number * 2;
                 const end_index = vm.sp;
                 var i = start_index;
+                // number of fields
+                var f: usize = 1;
                 while (i < end_index) : (i += 2) {
                     const name = vm.stack[i].tag;
                     const value = vm.stack[i + 1];
@@ -471,11 +465,15 @@ pub fn run(vm: *Vm) anyerror!void {
                         return vm.newError("struct {s} have no field called {s}", .{ value_type.name orelse "annon", name });
                     }
                     try instance.fields.put(name, value);
+                    f += 2;
                 }
 
                 const obj = try memory.allocateObject(vm, .{ .instance = instance });
                 errdefer vm.allocator.destroy(obj);
-                vm.sp -= 1;
+                // is not clear why, but works!
+                // TODO: why reassign a field in a struct needs this?
+                vm.sp -= f;
+
                 try vm.push(.{ .obj = obj });
             },
 
