@@ -344,7 +344,6 @@ pub const Write = struct {
                     try w.append(")");
                 },
                 .instance => |instance| {
-                    try w.append("new ");
                     try w.write(.{ .expression = instance.type });
 
                     if (instance.fields.len == 0) {
