@@ -1,0 +1,27 @@
+Node := struct {
+    val
+    next
+}
+
+List := struct {
+    head = Node{}
+
+    fn print(this) {
+        no := this.head
+        for no != null {
+            @print(no.val)
+            no = no.next
+        }
+    }
+}
+
+list := List{}
+dumm := list.head
+for i in 10 {
+    dumm.next = Node{
+        val: i,
+    }
+    dumm = dumm.next
+}
+list.head = list.head.next
+list.print()
