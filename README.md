@@ -9,14 +9,12 @@
 ### code example
 
 #### Variable Declaration
-
 ```go
 var t = 3
 sex := true
 ```
 
 #### Function and Closures
-
 ```rust
 fn fibonacci(n, fib) {
     if n <= 1 { 
@@ -55,7 +53,6 @@ var yoyo = [1, 2, 3, 4];
 ```
 
 #### Arrays
-
 ```js
 var v = [1, true, "2", false, 4];
 v[0] += 1;
@@ -63,7 +60,6 @@ len := v.len;
 ```
 
 #### Hashmap
-
 ```js
 const map = {
     1: "a",
@@ -77,7 +73,6 @@ const map = {
 ```
 
 #### Loops
-
 ```js
 var i = 0
 for i < 100 {
@@ -113,23 +108,31 @@ x := match 10 {
 
 #### Structs and Enums
 ```zig
-Color := enum { 
+var Color = enum { 
     red,
     blue,
     black,
 }
 
-X := struct { 
+#//colons and semicolons are optional
+var X = struct { 
+    the_name_is,
     some_null_value,
+    you_mama = {},
     default_color = Color.red,
-    you_mama = {}
-}
 
-// new keyword sucks!
-x := new X{ .some_null_value = 1 }
+    fn init() {
+        return X{the_name_is:"Loli!"}
+    }
+
+    fn append(this, str_val) {
+        @append(this.the_name_is, str_val)
+    }
+};
+
 ```
 
 #### to fix:
-    + hashmap sometimes returns null
-    + segfault in some assignments
-    + enum and struct implementation
+    + enum and struct implementation sucks 
+    + garbage collection
+    + memory leaks
