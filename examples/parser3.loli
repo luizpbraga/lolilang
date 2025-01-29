@@ -1,6 +1,3 @@
-# bugs: tags and variables 
-
-# available tokens
 Type := enum {
     ILLEGAL EOF_TOK
 
@@ -38,7 +35,7 @@ Lexer := struct {
 }
 
 fn initToken(type, literal) {
-  return  Token{ type: type, literal: literal}
+  return Token{ type: type, literal: literal}
 }
 
 fn readChar(l) {
@@ -131,7 +128,7 @@ fn nextTk(l) {
 
 fn initLexer(file_name) {
     input := @read(file_name)
-    l :=  Lexer { input: input }
+    l := Lexer{ input: input }
     readChar(l)
     return l
 }

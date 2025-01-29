@@ -48,7 +48,7 @@ Token := struct {
     literal
 
     fn init(type, literal) {
-        return new Token{
+        return Token{
             type: type,
             literal: literal,
         }
@@ -63,7 +63,7 @@ Lexer := struct {
 
     fn init(file_name) {
         input := @read(file_name)
-        l := new Lexer{
+        l := Lexer{
             input: input,
         }
         l.readChar()
@@ -71,7 +71,7 @@ Lexer := struct {
     }
 
     fn initFromString(str) {
-        l := new Lexer{
+        l := Lexer{
             input: str,
         }
         l.readChar()

@@ -104,6 +104,7 @@ const Builtin = struct {
         const res = try cli.fetch(.{
             .location = .{ .url = arg[0].obj.type.string.items },
             .response_storage = .{ .dynamic = &string },
+            .max_append_size = std.math.maxInt(usize),
         });
 
         if (res.status != .ok) {

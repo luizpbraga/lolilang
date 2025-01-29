@@ -12,6 +12,9 @@ last_token: Token,
 peek_token: Token,
 arena: std.heap.ArenaAllocator,
 errors: *Error,
+context_parser: bool = false,
+/// TODO: what about pear type resolution?
+types: std.StringHashMap(void),
 
 fn missing(p: *Parser, tk: Token.Type) !void {
     const l = p.line();
@@ -119,7 +122,7 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
         .null, .@";" => p.parseNull(),
         .@"[" => try p.parseArray(),
         .@"{" => try p.parseHash(),
-        .new => try p.parseInstance2(),
+        //.new => try p.parseInstance2(),
         .@"fn" => try p.parseFunction(),
         .@"struct", .@"enum" => try p.parseType(),
         .string => p.parseString(),
@@ -138,6 +141,22 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
             break :b .bad;
         },
     };
+
+    if (p.curTokenIs(.identifier) or p.curTokenIs(.@"struct")) l: {
+        if (!p.peekTokenIs(.@"{")) break :l;
+
+        if (left_exp.* != .identifier) break :l;
+        if (p.context_parser) break :l;
+        if (!p.types.contains(left_exp.identifier.value)) {
+            try p.errlog("literal is not a type");
+            break :l;
+        }
+
+        const left_exp2 = try allocator.create(ast.Expression);
+        errdefer allocator.destroy(left_exp2);
+        left_exp2.* = try p.parseInstance(left_exp);
+        return left_exp2;
+    }
 
     // // TODO: better logic <<EXPERIMENTAL>>
     // if (p.peekTokenIs(.@",") and t) {
@@ -251,6 +270,7 @@ pub fn init(child_alloc: std.mem.Allocator, lexer: *Lexer, errors: *Error) Parse
         .peek_token = undefined,
         .last_token = .{ .type = .eof, .literal = "" },
         .errors = errors,
+        .types = .init(child_alloc),
     };
 
     parser.nextToken();
@@ -260,6 +280,7 @@ pub fn init(child_alloc: std.mem.Allocator, lexer: *Lexer, errors: *Error) Parse
 }
 
 pub fn deinit(self: *Parser) void {
+    self.types.deinit();
     self.arena.deinit();
 }
 
@@ -383,7 +404,16 @@ fn parseAssignment(self: *Parser, name: *ast.Expression) !ast.Expression {
         },
     };
 
+    // for now, this will work
+    if (self.curTokenIs(.@"struct")) {
+        try self.types.put(name.identifier.value, {});
+    }
+
     stmt.value = try self.parseExpression(.lowest);
+
+    if ((op.type == .@":=") or (op.type == .@"=") and stmt.value.* == .type) {
+        try self.types.put(stmt.name.identifier.value, {});
+    }
 
     return .{ .assignment = stmt };
 }
@@ -455,14 +485,6 @@ fn parseCon(self: *Parser) !ast.Statement {
         .value = value,
         .token = tk,
     } };
-
-    // try self.errlog("Fuck");
-    //
-    // return .{ .con = .{
-    //     .name = try names.toOwnedSlice(),
-    //     .value = &NULL,
-    //     .token = tk,
-    // } };
 }
 
 fn parseVarBlock(self: *Parser, _: Token) !ast.VarBlock {
@@ -509,50 +531,6 @@ fn parseVarBlock(self: *Parser, _: Token) !ast.VarBlock {
     return stmt;
 }
 
-// fn parseConBlock(self: *Parser, _: Token) !ast.ConBlock {
-//     const tk = self.cur_token;
-//     var stmt: ast.ConBlock = .{
-//         .const_decl = undefined,
-//     };
-//
-//     const allocator = self.arena.allocator();
-//
-//     var vars: std.ArrayList(ast.Con) = .init(allocator);
-//     errdefer vars.deinit();
-//
-//     self.nextToken();
-//
-//     while (self.cur_token.type != .@")") {
-//         const ident = self.parseIdentifier();
-//
-//         if (ident != .identifier) try self.missing(.identifier);
-//
-//         self.nextToken();
-//
-//         if (self.expectPeek(.@"=")) try self.missing(.@"=");
-//
-//         self.nextToken();
-//
-//         const exp = try self.parseExpression(.lowest);
-//
-//         const var_stmt: ast.Con = .{
-//             .name = ident.identifier,
-//             .value = exp,
-//             .token = tk,
-//         };
-//
-//         try vars.append(var_stmt);
-//
-//         self.nextToken();
-//     }
-//
-//     const vars_owned = try vars.toOwnedSlice();
-//
-//     stmt.const_decl = vars_owned;
-//
-//     return stmt;
-// }
-
 fn parseVar(self: *Parser) !ast.Statement {
     const tk = self.cur_token;
 
@@ -589,8 +567,16 @@ fn parseVar(self: *Parser) !ast.Statement {
 
     self.nextToken();
 
-    // TODO: pointer?
+    // for now, this will work
+    if (self.curTokenIs(.@"struct")) {
+        try self.types.put(var_stmt.name.value, {});
+    }
+
     var_stmt.value = try self.parseExpression(.lowest);
+
+    if (var_stmt.value.* == .type) {
+        try self.types.put(var_stmt.name.value, {});
+    }
 
     if (self.peekTokenIs(.@";")) {
         self.nextToken();
@@ -736,6 +722,7 @@ fn parseNull(_: *Parser) ast.Expression {
 fn parseGroup(self: *Parser) !ast.Expression {
     self.nextToken();
 
+    self.context_parser = false;
     const exp = try self.parseExpression(.lowest);
 
     if (!self.expectPeek(.@")")) try self.missing(.@")");
@@ -783,7 +770,9 @@ fn parseIf(self: *Parser) !ast.Expression {
 
     self.nextToken();
 
+    self.context_parser = true;
     expression.condition = try self.parseExpression(.lowest);
+    self.context_parser = false;
 
     if (!self.expectPeek(.@"{") and !self.expectPeek(.@":")) {
         try self.missing(.@"{");
@@ -1285,7 +1274,9 @@ pub fn parseMatch(self: *Parser) !ast.Expression {
     if (self.curTokenIs(.@"{")) {
         match.value = &TRUE;
     } else {
+        self.context_parser = true;
         match.value = try self.parseExpression(.lowest);
+        self.context_parser = false;
         if (!self.expectPeek(.@"{")) try self.missing(.@"{");
     }
 
@@ -1437,7 +1428,9 @@ pub fn parseForRange(self: *Parser, ident: ast.Identifier) !ast.Expression {
 
     self.nextToken();
 
+    self.context_parser = true;
     flr.iterable = try self.parseExpression(.lowest);
+    self.context_parser = false;
 
     // if (self.expectPeek(.@";") and !self.peekTokenIs(.@"{")) {
     //     return self.parseMultiForLoopRange(flr);
@@ -1475,7 +1468,9 @@ pub fn parseFor(self: *Parser) !ast.Expression {
 
     self.nextToken();
 
+    self.context_parser = true;
     const condition_or_ident = try self.parseExpression(.lowest);
+    self.context_parser = false;
 
     if (condition_or_ident.* == .identifier) {
         if (self.peekTokenIs(.in) or self.peekTokenIs(.@",")) {

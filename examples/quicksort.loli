@@ -92,7 +92,7 @@ fn test2(len) {
     for i in 1..len - 1 { 
         @assert( s[i - 1] <= s[i] <= s[i + 1] ) 
     }
-    @print(.sort_time, t)
+    @print(.sort_time, t, .ns)
 }
 
 #test1(1000)

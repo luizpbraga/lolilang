@@ -366,7 +366,7 @@ pub fn run(vm: *Vm) anyerror!void {
                     continue;
                 }
 
-                return vm.newError("Invalid Condition\n", .{});
+                return vm.newError("Invalid Condition; expect boolean, got {s}\n", .{condition.name()});
             },
 
             .pop => vm.pop2(),

@@ -217,6 +217,18 @@ pub fn executePrefix(vm: *Vm, op: code.Opcode) !void {
     return vm.newError("Invalid Prefix Operation", .{});
 }
 
+fn isString(value: *const Value) bool {
+    switch (value.*) {
+        .obj => |ob| switch (ob.type) {
+            .string => return true,
+            else => {},
+        },
+        else => {},
+    }
+
+    return false;
+}
+
 pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
     const right = vm.pop();
     const left = vm.pop();
