@@ -446,23 +446,30 @@ pub fn run(vm: *Vm) anyerror!void {
                 };
                 errdefer instance.fields.deinit();
 
-                var iter = value_type.fields.iterator();
-                while (iter.next()) |entry| {
-                    // const value = entry.value_ptr;
-                    // if (value.* == .obj and value.obj.type == .function) {
-                    //     if (value.obj.type.function.num_parameters > 0) {
-                    //         value.obj.type.function.method = obj;
-                    //     }
-                    // }
-                    try instance.fields.put(entry.key_ptr.*, entry.value_ptr.*);
+                // default values
+                {
+                    var iter = value_type.fields.iterator();
+                    while (iter.next()) |entry| {
+                        // const value = entry.value_ptr;
+                        // if (value.* == .obj and value.obj.type == .function) {
+                        //     if (value.obj.type.function.num_parameters > 0) {
+                        //         value.obj.type.function.method = obj;
+                        //     }
+                        // }
+                        try instance.fields.put(entry.key_ptr.*, entry.value_ptr.*);
+                    }
                 }
 
+                // user define values
                 const start_index = vm.sp - fields_number * 2;
                 const end_index = vm.sp;
                 var i = start_index;
                 while (i < end_index) : (i += 2) {
                     const name = vm.stack[i].tag;
                     const value = vm.stack[i + 1];
+                    if (!value_type.fields.contains(name)) {
+                        return vm.newError("struct {s} have no field called {s}", .{ value_type.name orelse "annon", name });
+                    }
                     try instance.fields.put(name, value);
                 }
 
