@@ -469,6 +469,7 @@ fn printV(value: Value) void {
 
             .instance => |ty| {
                 std.debug.print("{s}{{", .{ty.type.name orelse "annon"});
+                var n: usize = 0;
                 var iter = ty.fields.iterator();
                 while (iter.next()) |entry| {
                     const key = entry.key_ptr;
@@ -479,9 +480,10 @@ fn printV(value: Value) void {
                     std.debug.print("{s}: ", .{key.*});
                     printV(val.*);
                     std.debug.print(", ", .{});
+                    n += 1;
                 }
 
-                if (ty.fields.count() != 0) {
+                if (n != 0) {
                     std.debug.print("\x1b[2D}}", .{});
                     return;
                 }
