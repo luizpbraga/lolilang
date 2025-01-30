@@ -110,10 +110,22 @@ Lexer := struct {
             l.readChar()
         }
 
-        num := l.input[pos..l.position]
-        if num.len == 0: return null;
+        # INTEGER
+        if (l.ch != '.') {
+            num := l.input[pos..l.position]
+            if num.len == 0: return null;
+            return Token.init(Type.INTEGER, num);
+        }
 
-        return num;
+        l.readChar()
+
+        for Lexer.isDigit(l.ch) {
+            l.readChar()
+        }
+
+        num = l.input[pos..l.position]
+        if num.len == 0: return null;
+        return Token.init(Type.FLOAT, num);
     }
 
     fn skipWhiteSpace(l) {
@@ -222,12 +234,12 @@ Lexer := struct {
                     return Token.init(ty, ident)
                 }
 
-                number := l.readNumber()
-                if number != null {
-                    return Token.init(Type.INTEGER, number)
+                tknumber := l.readNumber()
+                if tknumber != null {
+                    return tknumber
                 }
                 
-                @panic("Found an illigal token")
+                @panic("Found an illegal token")
             }
         }
         l.readChar()
@@ -235,7 +247,7 @@ Lexer := struct {
     }
 }
 
-l := Lexer.init("./test_file")
+l := Lexer.initFromString("123.33 + 33")
 tk := l.nextTk()
 for tk.type != Type.EOF_TOK { 
     @print(tk) 
