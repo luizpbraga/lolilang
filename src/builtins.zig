@@ -467,6 +467,10 @@ fn printV(value: Value) void {
                 std.debug.print("{s}", .{ty.name.?});
             },
 
+            .namespace => |n| {
+                std.debug.print("{s}", .{n.name});
+            },
+
             .instance => |ty| {
                 std.debug.print("{s}{{", .{ty.type.name orelse "annon"});
                 var n: usize = 0;

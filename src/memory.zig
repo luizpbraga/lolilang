@@ -61,45 +61,44 @@ pub fn sweep(vm: *Vm) void {
 
 pub fn freeObject(vm: *Vm, obj: *Object) void {
     defer vm.bytes_allocated -= @sizeOf(*Object);
+    defer vm.allocator.destroy(obj);
     switch (obj.type) {
         .string => |string| {
             // vm.allocator.free(str);
             // vm.allocator.destroy(obj);
             string.deinit();
-            vm.allocator.destroy(obj);
         },
 
         .array => |array| {
             // vm.allocator.free(array);
             array.deinit();
-            vm.allocator.destroy(obj);
         },
 
         .hash => |*hash| {
             hash.pairs.deinit();
             // vm.allocator.free(hash);
-            vm.allocator.destroy(obj);
         },
 
         .function, .desc => |func| {
             vm.allocator.free(func.instructions);
-            vm.allocator.destroy(obj);
         },
 
         .closure => |cl| {
             vm.allocator.free(cl.func.instructions);
             vm.allocator.free(cl.free);
-            vm.allocator.destroy(obj);
         },
 
         .type => |*ty| {
             ty.fields.deinit();
-            vm.allocator.destroy(obj);
         },
 
         .instance => |*ty| {
             ty.fields.deinit();
-            vm.allocator.destroy(obj);
+        },
+
+        .namespace => |*ns| {
+            ns.map.deinit();
+            vm.allocator.destroy(ns.map);
         },
     }
 }

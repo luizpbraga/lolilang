@@ -33,6 +33,16 @@ pub fn init(alloc: std.mem.Allocator) SymbolTable {
     };
 }
 
+pub fn create(allocator: std.mem.Allocator) !*SymbolTable {
+    const st = try allocator.create(SymbolTable);
+    errdefer allocator.destroy(st);
+    st.* = .init(allocator);
+    for (0.., @import("builtins.zig").builtin_functions) |i, b| {
+        _ = try st.defineBuiltin(i, b.name);
+    }
+    return st;
+}
+
 pub fn initEnclosed(outer: *SymbolTable) !*SymbolTable {
     var st = try outer.allocator.create(SymbolTable);
     errdefer outer.allocator.destroy(st);

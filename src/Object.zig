@@ -20,6 +20,7 @@ pub const Type = union(enum) {
     desc: CompiledFn,
     type: BuiltinType,
     instance: Instance,
+    namespace: Namespace,
 };
 
 pub const BuiltinType = struct {
@@ -204,6 +205,11 @@ pub const CompiledFn = struct {
     num_locals: usize = 0,
     num_parameters: usize = 0,
     method: ?*Object = null,
+};
+
+pub const Namespace = struct {
+    name: []const u8,
+    map: *@import("SymbolTable.zig"),
 };
 
 pub const Closure = struct {

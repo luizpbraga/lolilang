@@ -356,7 +356,10 @@ fn parseImport(self: *Parser) anyerror!ast.Statement {
     }
 
     const file_path = path_exp.string.value;
-    const imput = try std.fs.cwd().readFileAlloc(self.arena.allocator(), file_path, 4 * 1024);
+    const imput = std.fs.cwd().readFileAlloc(self.arena.allocator(), file_path, 4 * 1024) catch |err| b: {
+        try self.errlog(@errorName(err));
+        break :b "";
+    };
     var new_lexer = Lexer.init(imput);
 
     // old state

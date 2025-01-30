@@ -263,16 +263,46 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             .import => |imp| {
-                // const path = imp.path;
-                // if (path.* != .string) return c.newError("Expected string, find {} at import path", .{imp.path});
-                // const ext = ".loli";
-                // const val = path.string.value;
-                // const name = val[0 .. val.len - ext.len];
-                // const symbol = try c.symbols.?.define(name);
-                // try c.emit(.null, &.{});
+                if (imp.path.* != .string) {
+                    return c.newError("Invalid Module Path", .{});
+                }
+
+                const path = imp.path.string.value;
+
+                if (!std.mem.endsWith(u8, path, ".loli")) {
+                    return c.newError("Invalid Module Path: expected .loli extention, got your mama", .{});
+                }
+
+                const i = std.mem.lastIndexOf(u8, path, "/");
+                const name = path[i orelse 0 .. path.len - 5];
+                const symbol = try c.symbols.?.define(name);
+
+                // old state
+                const cst = c.symbols;
+
+                // new state
+                const st = try SymbolTable.create(c.allocator);
+                c.symbols = st;
+                st.def_number = cst.?.def_number + 1;
                 try c.compile(imp.node.*);
-                // const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
-                // try c.emit(op, &.{symbol.index});
+
+                // row back
+                cst.?.def_number = st.def_number + 1;
+                c.symbols = cst;
+
+                const obj = try c.allocator.create(Object);
+                errdefer c.allocator.destroy(obj);
+                obj.type = .{
+                    .namespace = .{
+                        .name = name,
+                        .map = st,
+                    },
+                };
+                const pos = try c.addConstants(.{ .obj = obj });
+                try c.emit(.constant, &.{pos});
+
+                const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+                try c.emit(op, &.{symbol.index});
             },
 
             .@"var" => |var_stmt| {
@@ -583,15 +613,12 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             // TODO: rework
             .method => |method| {
                 try c.compile(.{ .expression = method.caller });
-                // const symbol = try c.symbols.?.resolve(method.method.value) orelse {
                 const pos = try c.addConstants(.{
                     .tag = method.method.value,
                 });
                 try c.emit(.constant, &.{pos});
                 try c.emit(.index_get, &.{});
                 return;
-                // };
-                // try c.emit(.method_get, &.{symbol.index});
             },
 
             .boolean => |boolean| {
@@ -1072,7 +1099,6 @@ pub const Bytecode = struct {
 
     pub fn deinit(b: *Bytecode, c: *const Compiler) void {
         c.allocator.free(b.instructions);
-        // c.allocator.free(b.positions);
     }
 };
 
