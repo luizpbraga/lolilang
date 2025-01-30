@@ -386,7 +386,13 @@ fn parseImport(self: *Parser) anyerror!ast.Statement {
     self.peek_token = last_peek_token;
     self.last_token = last_last_token;
 
-    return .{ .import = .{ .path = path_exp, .token = tk, .node = node } };
+    return .{
+        .import = .{
+            .path = path_exp,
+            .token = tk,
+            .node = node,
+        },
+    };
 }
 
 fn parseBreak(self: *Parser) !ast.Statement {
