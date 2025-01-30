@@ -30,9 +30,8 @@ pub const keywords = std.StaticStringMap(Type).initComptime(.{
     .{ "break", .@"break" },
     .{ "return", .@"return" },
     .{ "enum", .@"enum" },
-    .{ "with", .with },
     .{ "struct", .@"struct" },
-    .{ "new", .new },
+    .{ "import", .import },
 });
 
 pub const Type = enum {
@@ -96,7 +95,7 @@ pub const Type = enum {
     @"fn",
     @"enum",
     @"struct",
-    new,
+    import,
     @"for",
     match,
     @"return",
@@ -105,7 +104,6 @@ pub const Type = enum {
     false,
     true,
     in,
-    with,
     @"if",
     @"else",
     @"or",

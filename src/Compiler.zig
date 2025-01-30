@@ -262,6 +262,19 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 c.block_index -= 1;
             },
 
+            .import => |imp| {
+                // const path = imp.path;
+                // if (path.* != .string) return c.newError("Expected string, find {} at import path", .{imp.path});
+                // const ext = ".loli";
+                // const val = path.string.value;
+                // const name = val[0 .. val.len - ext.len];
+                // const symbol = try c.symbols.?.define(name);
+                // try c.emit(.null, &.{});
+                try c.compile(imp.node.*);
+                // const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+                // try c.emit(op, &.{symbol.index});
+            },
+
             .@"var" => |var_stmt| {
                 const name = var_stmt.name.value;
                 if (c.symbols.?.store.contains(name)) {

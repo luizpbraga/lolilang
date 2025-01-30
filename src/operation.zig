@@ -229,6 +229,11 @@ fn isString(value: *const Value) bool {
     return false;
 }
 
+fn isNumber(v: *Value) bool {
+    return if (v.* == .integer or v.* == .float) true else false;
+}
+
+/// optimizar essa merda!!!!!!
 pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
     const right = vm.pop();
     const left = vm.pop();

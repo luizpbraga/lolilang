@@ -344,6 +344,48 @@ fn parseReturn(self: *Parser) !ast.Statement {
     return .{ .@"return" = return_stmt };
 }
 
+// import "fmt"
+fn parseImport(self: *Parser) anyerror!ast.Statement {
+    const tk = self.cur_token;
+    self.nextToken();
+
+    const path_exp = try self.parseExpression(.lowest);
+
+    if (path_exp.* != .string) {
+        @panic("import: invalid expression; expected string type");
+    }
+
+    const file_path = path_exp.string.value;
+    const imput = try std.fs.cwd().readFileAlloc(self.arena.allocator(), file_path, 4 * 1024);
+    var new_lexer = Lexer.init(imput);
+
+    // old state
+    const last_lexer = self.lexer;
+    const last_cur_token = self.cur_token;
+    const last_peek_token = self.peek_token;
+    const last_last_token = self.last_token;
+
+    // new state
+    self.lexer = &new_lexer;
+    self.cur_token = undefined;
+    self.peek_token = undefined;
+    self.last_token = .{ .type = .eof, .literal = "" };
+
+    self.nextToken();
+    self.nextToken();
+
+    const node = try self.arena.allocator().create(ast.Node);
+    node.* = try self.parse();
+
+    // back to old state
+    self.lexer = last_lexer;
+    self.cur_token = last_cur_token;
+    self.peek_token = last_peek_token;
+    self.last_token = last_last_token;
+
+    return .{ .import = .{ .path = path_exp, .token = tk, .node = node } };
+}
+
 fn parseBreak(self: *Parser) !ast.Statement {
     var break_stmt: ast.Break = .{ .value = &NULL };
 
@@ -593,6 +635,8 @@ fn parseStatement(self: *Parser) !ast.Statement {
         .con => try self.parseCon(),
 
         .@"return" => try self.parseReturn(),
+
+        .import => try self.parseImport(),
 
         .@"break" => try self.parseBreak(),
 

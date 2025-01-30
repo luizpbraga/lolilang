@@ -4,13 +4,14 @@ const fmt = @import("fmt.zig");
 const Error = @import("Error.zig");
 
 pub fn main() !void {
-    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
-    defer {
-        _ = gpa.detectLeaks();
-        _ = gpa.deinit();
-    }
-    const allocator = gpa.allocator();
-    // const allocator = std.heap.c_allocator;
+
+    // var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
+    // defer {
+    //     _ = gpa.detectLeaks();
+    //     _ = gpa.deinit();
+    // }
+    // const allocator = gpa.allocator();
+    const allocator = std.heap.c_allocator;
 
     var args = std.process.args();
     _ = args.next();

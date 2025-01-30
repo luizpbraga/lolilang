@@ -59,6 +59,7 @@ pub const Statement = union(enum) {
 
     program: Program,
 
+    import: Import,
     // comment: Comment,
 
     fn statementNode(self: *const Statement) void {
@@ -280,6 +281,21 @@ pub const Var = struct {
 
     pub fn tokenLiteral(_: *const @This()) []const u8 {
         return "var";
+    }
+};
+
+pub const Import = struct {
+    at: usize = 0,
+    token: Token,
+    path: *Expression,
+    node: *Node,
+
+    pub fn statementNode(self: *const @This()) void {
+        _ = self;
+    }
+
+    pub fn tokenLiteral(_: *const @This()) []const u8 {
+        return "import";
     }
 };
 
