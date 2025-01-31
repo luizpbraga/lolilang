@@ -143,6 +143,16 @@ pub const Write = struct {
                     try w.write(.{ .expression = exp_stmt.expression });
                 },
 
+                .@"pub" => |p| {
+                    try w.append("pub ");
+                    try w.write(.{ .statement = p.stmt.* });
+                },
+
+                .import => |p| {
+                    try w.append("import ");
+                    try w.write(.{ .expression = p.path });
+                },
+
                 .block => |block| {
                     if (block.statements.len == 0) {
                         try w.append("{}");

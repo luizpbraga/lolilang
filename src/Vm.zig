@@ -288,7 +288,6 @@ pub fn run(vm: *Vm) anyerror!void {
                 fm.ip += 1;
                 const value = vm.pop();
                 const index = @as(usize, @intCast(fm.bp)) + local_index;
-                // std.debug.print("{} on {}\n", .{ value, index });
                 vm.stack[index] = value;
             },
 

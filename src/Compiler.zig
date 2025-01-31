@@ -24,6 +24,8 @@ scope_index: usize,
 block_index: usize = 0,
 /// TODO: labels
 loop: Loop = .{},
+/// public declaration names
+imports: std.StringHashMap(void),
 
 struct_fields: std.ArrayList(struct { index: usize, fields: [][]const u8 = &.{} }),
 type_index: usize = 0,
@@ -59,13 +61,8 @@ pub fn init(alloc: std.mem.Allocator, errors: *Error) !Compiler {
     var scopes: std.ArrayList(Scope) = .init(alloc);
     try scopes.append(main_scope);
 
-    const s = try alloc.create(SymbolTable);
+    const s = try SymbolTable.create(alloc);
     errdefer alloc.destroy(s);
-    s.* = .init(alloc);
-
-    for (0.., builtins.builtin_functions) |i, b| {
-        _ = try s.defineBuiltin(i, b.name);
-    }
 
     return .{
         .errors = errors,
@@ -76,6 +73,7 @@ pub fn init(alloc: std.mem.Allocator, errors: *Error) !Compiler {
         .symbols = s,
         .scopes = scopes,
         .scope_index = 0,
+        .imports = .init(alloc),
     };
 }
 
@@ -93,6 +91,7 @@ pub fn deinit(c: *Compiler) void {
         c.allocator.destroy(s);
     }
     c.positions.deinit();
+    c.imports.deinit();
 }
 
 fn loadSymbol(c: *Compiler, s: *SymbolTable.Symbol) !void {
@@ -249,17 +248,79 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 }
             },
 
-            .exp_statement => |exp_stmt| {
-                try c.compile(.{ .expression = exp_stmt.expression });
+            .exp_statement => |exp| {
+                try c.compile(.{ .expression = exp.expression });
                 try c.emit(.pop, &.{});
             },
 
             .block => |block| {
                 c.block_index += 1;
-                for (block.statements) |_stmt| {
-                    try c.compile(.{ .statement = _stmt });
+                for (block.statements) |blk_stmt| {
+                    try c.compile(.{ .statement = blk_stmt });
                 }
                 c.block_index -= 1;
+            },
+
+            .@"pub" => |p| {
+                try c.compile(.{ .statement = p.stmt.* });
+
+                switch (p.stmt.*) {
+                    inline .@"var", .@"fn", .import => |v| {
+                        try c.imports.put(v.name.value, {});
+                    },
+                    else => return c.newError("Invalid public declaration", .{}),
+                }
+            },
+
+            // this is a bad implementation
+            // lazy import are better; this means we can resolve the missing symbols at compile time,
+            // However there is no need to compile every statement!
+            .import => |imp| {
+                if (imp.path.* != .string) {
+                    return c.newError("Invalid Module Path", .{});
+                }
+
+                const path = imp.path.string.value;
+                const name = try c.findImportName(path);
+                const symbol = try c.symbols.?.define(name);
+
+                // old state
+                const cst = c.symbols;
+
+                // new state
+                const st = try SymbolTable.create(c.allocator);
+                c.symbols = st;
+                st.def_number = cst.?.def_number + 1;
+
+                // TODO: don't compile all, just the global imports and free var
+                try c.compile(imp.node.*);
+
+                // Ay papy, such a poooor logic
+                var iter = st.store.iterator();
+                while (iter.next()) |item| {
+                    const nombre = item.key_ptr.*;
+                    if (!c.imports.contains(nombre)) continue;
+                    item.value_ptr.public = true;
+                }
+                c.imports.clearAndFree();
+
+                // row back
+                cst.?.def_number = st.def_number + 1;
+                c.symbols = cst;
+
+                const obj = try c.allocator.create(Object);
+                errdefer c.allocator.destroy(obj);
+                obj.type = .{
+                    .namespace = .{
+                        .name = name,
+                        .map = st,
+                    },
+                };
+                const pos = try c.addConstants(.{ .obj = obj });
+                try c.emit(.constant, &.{pos});
+
+                const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+                try c.emit(op, &.{symbol.index});
             },
 
             .@"var" => |var_stmt| {
@@ -570,15 +631,12 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             // TODO: rework
             .method => |method| {
                 try c.compile(.{ .expression = method.caller });
-                // const symbol = try c.symbols.?.resolve(method.method.value) orelse {
                 const pos = try c.addConstants(.{
                     .tag = method.method.value,
                 });
                 try c.emit(.constant, &.{pos});
                 try c.emit(.index_get, &.{});
                 return;
-                // };
-                // try c.emit(.method_get, &.{symbol.index});
             },
 
             .boolean => |boolean| {
@@ -1051,6 +1109,16 @@ pub fn bytecode(c: *Compiler) !Bytecode {
     return .{ .positions = try c.positions.toOwnedSlice(), .constants = c.constants.items, .instructions = ins };
 }
 
+fn findImportName(c: *Compiler, path: []const u8) ![]const u8 {
+    if (!std.mem.endsWith(u8, path, ".loli")) {
+        return c.newError("Invalid Module Path: expected .loli extention, got your mama", .{});
+    }
+    var start = std.mem.lastIndexOf(u8, path, "/") orelse 0;
+    if (start != 0) start += 1;
+    const end = std.mem.lastIndexOf(u8, path, ".") orelse unreachable;
+    return path[start..end];
+}
+
 /// compiler generated bytecode
 pub const Bytecode = struct {
     constants: []Value,
@@ -1059,7 +1127,6 @@ pub const Bytecode = struct {
 
     pub fn deinit(b: *Bytecode, c: *const Compiler) void {
         c.allocator.free(b.instructions);
-        // c.allocator.free(b.positions);
     }
 };
 

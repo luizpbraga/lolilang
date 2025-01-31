@@ -344,6 +344,86 @@ fn parseReturn(self: *Parser) !ast.Statement {
     return .{ .@"return" = return_stmt };
 }
 
+fn parsePub(self: *Parser) anyerror!ast.Statement {
+    const tk = self.cur_token;
+    self.nextToken();
+
+    const func_or_var = try self.parseStatement();
+
+    switch (func_or_var) {
+        .@"fn", .@"var", .import => {},
+        else => try self.errlog("Invalid public declaration"),
+    }
+
+    const stmt = try self.arena.allocator().create(ast.Statement);
+    stmt.* = func_or_var;
+
+    return .{ .@"pub" = .{ .token = tk, .stmt = stmt } };
+}
+
+fn findImportName(p: *Parser, path: []const u8) ![]const u8 {
+    if (!std.mem.endsWith(u8, path, ".loli")) {
+        try p.errlog("Invalid Module Path: expected .loli extention, got your mama");
+    }
+    var start = std.mem.lastIndexOf(u8, path, "/") orelse 0;
+    if (start != 0) start += 1;
+    const end = std.mem.lastIndexOf(u8, path, ".") orelse return error.InvalidPath;
+    return path[start..end];
+}
+
+// import "fmt"
+fn parseImport(self: *Parser) anyerror!ast.Statement {
+    const tk = self.cur_token;
+    self.nextToken();
+
+    const path_exp = try self.parseExpression(.lowest);
+
+    if (path_exp.* != .string) {
+        @panic("import: invalid expression; expected string type");
+    }
+
+    const file_path = path_exp.string.value;
+    const name = try self.findImportName(file_path);
+    const imput = std.fs.cwd().readFileAlloc(self.arena.allocator(), file_path, 4 * 1024) catch |err| b: {
+        try self.errlog(@errorName(err));
+        break :b "";
+    };
+    var new_lexer = Lexer.init(imput);
+
+    // old state
+    const last_lexer = self.lexer;
+    const last_cur_token = self.cur_token;
+    const last_peek_token = self.peek_token;
+    const last_last_token = self.last_token;
+
+    // new state
+    self.lexer = &new_lexer;
+    self.cur_token = undefined;
+    self.peek_token = undefined;
+    self.last_token = .{ .type = .eof, .literal = "" };
+
+    self.nextToken();
+    self.nextToken();
+
+    const node = try self.arena.allocator().create(ast.Node);
+    node.* = try self.parse();
+
+    // back to old state
+    self.lexer = last_lexer;
+    self.cur_token = last_cur_token;
+    self.peek_token = last_peek_token;
+    self.last_token = last_last_token;
+
+    return .{
+        .import = .{
+            .name = .{ .value = name, .at = tk.at },
+            .path = path_exp,
+            .token = tk,
+            .node = node,
+        },
+    };
+}
+
 fn parseBreak(self: *Parser) !ast.Statement {
     var break_stmt: ast.Break = .{ .value = &NULL };
 
@@ -593,6 +673,10 @@ fn parseStatement(self: *Parser) !ast.Statement {
         .con => try self.parseCon(),
 
         .@"return" => try self.parseReturn(),
+
+        .import => try self.parseImport(),
+
+        .@"pub" => try self.parsePub(),
 
         .@"break" => try self.parseBreak(),
 

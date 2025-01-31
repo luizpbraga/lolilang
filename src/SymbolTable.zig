@@ -11,8 +11,9 @@ def_number: usize = 0,
 outer: ?*SymbolTable = null,
 
 pub const Symbol = struct {
-    name: []const u8,
+    public: bool = false,
     scope: ScopeType,
+    name: []const u8,
     index: usize = 0,
 };
 
@@ -31,6 +32,16 @@ pub fn init(alloc: std.mem.Allocator) SymbolTable {
         .frees = .init(alloc),
         .def_number = 0,
     };
+}
+
+pub fn create(allocator: std.mem.Allocator) !*SymbolTable {
+    const st = try allocator.create(SymbolTable);
+    errdefer allocator.destroy(st);
+    st.* = .init(allocator);
+    for (0.., @import("builtins.zig").builtin_functions) |i, b| {
+        _ = try st.defineBuiltin(i, b.name);
+    }
+    return st;
 }
 
 pub fn initEnclosed(outer: *SymbolTable) !*SymbolTable {

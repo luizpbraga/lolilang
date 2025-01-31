@@ -31,6 +31,23 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
     }
 
     switch (left.obj.type) {
+        .namespace => |ns| {
+            if (index.* != .tag) {
+                return vm.newError("Invalid Index Operation: namespace is not indexable", .{});
+            }
+
+            const variable = index.tag;
+            if (!ns.map.store.contains(variable)) {
+                return vm.newError("variable '{s}' was not declared at namespace {s}", .{ index.tag, ns.name });
+            }
+
+            const symbol = ns.map.store.getPtr(variable).?;
+            const idx = if (symbol.public) symbol.index else {
+                return vm.newError("Symbol '{s}' from namespace '{s}' was not marked as public", .{ symbol.name, ns.name });
+            };
+
+            return vm.push(vm.globals[idx].?);
+        },
         .instance => |ins| {
             if (index.* != .tag) {
                 return vm.newError("Invalid Index Operation: instance is not indexable", .{});
@@ -49,7 +66,6 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
 
             return try vm.push(value);
         },
-
         .type => |y| {
             // if (y.type != .@"enum") {
             //     return vm.newError("Struct Not Indexable", .{});
@@ -57,7 +73,6 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
             const value = y.fields.get(index.tag) orelse return vm.newError("Undefined Struct/Enum Declaration", .{});
             return try vm.push(value);
         },
-
         .string => |string| {
             if (index.* == .tag) {
                 if (std.mem.eql(u8, index.tag, "len")) {
@@ -229,6 +244,11 @@ fn isString(value: *const Value) bool {
     return false;
 }
 
+fn isNumber(v: *Value) bool {
+    return if (v.* == .integer or v.* == .float) true else false;
+}
+
+/// optimizar essa merda!!!!!!
 pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
     const right = vm.pop();
     const left = vm.pop();

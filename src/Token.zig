@@ -13,6 +13,7 @@ pub fn lookupIdentfier(ident: []const u8) Type {
 
 pub const keywords = std.StaticStringMap(Type).initComptime(.{
     .{ "var", .@"var" },
+    .{ "pub", .@"pub" },
     .{ "con", .con },
     .{ "in", .in },
     .{ "fn", .@"fn" },
@@ -30,9 +31,8 @@ pub const keywords = std.StaticStringMap(Type).initComptime(.{
     .{ "break", .@"break" },
     .{ "return", .@"return" },
     .{ "enum", .@"enum" },
-    .{ "with", .with },
     .{ "struct", .@"struct" },
-    .{ "new", .new },
+    .{ "import", .import },
 });
 
 pub const Type = enum {
@@ -96,16 +96,16 @@ pub const Type = enum {
     @"fn",
     @"enum",
     @"struct",
-    new,
+    import,
     @"for",
     match,
     @"return",
     @"var",
+    @"pub",
     con,
     false,
     true,
     in,
-    with,
     @"if",
     @"else",
     @"or",
