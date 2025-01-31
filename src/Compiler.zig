@@ -272,6 +272,9 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 }
             },
 
+            // this is a bad implementation
+            // lazy import are better; this means we can resolve the missing symbols at compile time,
+            // However there is no need to compile every statement!
             .import => |imp| {
                 if (imp.path.* != .string) {
                     return c.newError("Invalid Module Path", .{});
@@ -289,7 +292,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 c.symbols = st;
                 st.def_number = cst.?.def_number + 1;
 
-                // TODO: dont compile all, just the global imports and free var
+                // TODO: don't compile all, just the global imports and free var
                 try c.compile(imp.node.*);
 
                 // Ay papy, such a poooor logic
