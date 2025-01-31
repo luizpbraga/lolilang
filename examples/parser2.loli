@@ -247,7 +247,7 @@ Lexer := struct {
     }
 }
 
-l := Lexer.initFromString("123.33 + 33")
+l := Lexer.init("./index.json")
 tk := l.nextTk()
 for tk.type != Type.EOF_TOK { 
     @print(tk) 
