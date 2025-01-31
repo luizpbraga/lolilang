@@ -344,6 +344,23 @@ fn parseReturn(self: *Parser) !ast.Statement {
     return .{ .@"return" = return_stmt };
 }
 
+fn parsePub(self: *Parser) anyerror!ast.Statement {
+    const tk = self.cur_token;
+    self.nextToken();
+
+    const func_or_var = try self.parseStatement();
+
+    switch (func_or_var) {
+        .@"fn", .@"var" => {},
+        else => try self.errlog("Invalid public declaration"),
+    }
+
+    const stmt = try self.arena.allocator().create(ast.Statement);
+    stmt.* = func_or_var;
+
+    return .{ .@"pub" = .{ .token = tk, .stmt = stmt } };
+}
+
 // import "fmt"
 fn parseImport(self: *Parser) anyerror!ast.Statement {
     const tk = self.cur_token;
@@ -646,6 +663,8 @@ fn parseStatement(self: *Parser) !ast.Statement {
         .@"return" => try self.parseReturn(),
 
         .import => try self.parseImport(),
+
+        .@"pub" => try self.parsePub(),
 
         .@"break" => try self.parseBreak(),
 

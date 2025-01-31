@@ -13,6 +13,7 @@ pub fn lookupIdentfier(ident: []const u8) Type {
 
 pub const keywords = std.StaticStringMap(Type).initComptime(.{
     .{ "var", .@"var" },
+    .{ "pub", .@"pub" },
     .{ "con", .con },
     .{ "in", .in },
     .{ "fn", .@"fn" },
@@ -100,6 +101,7 @@ pub const Type = enum {
     match,
     @"return",
     @"var",
+    @"pub",
     con,
     false,
     true,

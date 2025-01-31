@@ -60,6 +60,7 @@ pub const Statement = union(enum) {
     program: Program,
 
     import: Import,
+    @"pub": Pub,
     // comment: Comment,
 
     fn statementNode(self: *const Statement) void {
@@ -296,6 +297,20 @@ pub const Import = struct {
 
     pub fn tokenLiteral(_: *const @This()) []const u8 {
         return "import";
+    }
+};
+
+pub const Pub = struct {
+    at: usize = 0,
+    token: Token,
+    stmt: *Statement,
+
+    pub fn statementNode(self: *const @This()) void {
+        _ = self;
+    }
+
+    pub fn tokenLiteral(_: *const @This()) []const u8 {
+        return "pub";
     }
 };
 

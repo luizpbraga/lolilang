@@ -24,6 +24,8 @@ scope_index: usize,
 block_index: usize = 0,
 /// TODO: labels
 loop: Loop = .{},
+/// public declaration names
+imports: std.StringHashMap(void),
 
 struct_fields: std.ArrayList(struct { index: usize, fields: [][]const u8 = &.{} }),
 type_index: usize = 0,
@@ -59,14 +61,6 @@ pub fn init(alloc: std.mem.Allocator, errors: *Error) !Compiler {
     var scopes: std.ArrayList(Scope) = .init(alloc);
     try scopes.append(main_scope);
 
-    // const s = try alloc.create(SymbolTable);
-    // errdefer alloc.destroy(s);
-    // s.* = .init(alloc);
-    //
-    // for (0.., builtins.builtin_functions) |i, b| {
-    //     _ = try s.defineBuiltin(i, b.name);
-    // }
-
     const s = try SymbolTable.create(alloc);
     errdefer alloc.destroy(s);
 
@@ -79,6 +73,7 @@ pub fn init(alloc: std.mem.Allocator, errors: *Error) !Compiler {
         .symbols = s,
         .scopes = scopes,
         .scope_index = 0,
+        .imports = .init(alloc),
     };
 }
 
@@ -96,6 +91,7 @@ pub fn deinit(c: *Compiler) void {
         c.allocator.destroy(s);
     }
     c.positions.deinit();
+    c.imports.deinit();
 }
 
 fn loadSymbol(c: *Compiler, s: *SymbolTable.Symbol) !void {
@@ -252,17 +248,28 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 }
             },
 
-            .exp_statement => |exp_stmt| {
-                try c.compile(.{ .expression = exp_stmt.expression });
+            .exp_statement => |exp| {
+                try c.compile(.{ .expression = exp.expression });
                 try c.emit(.pop, &.{});
             },
 
             .block => |block| {
                 c.block_index += 1;
-                for (block.statements) |_stmt| {
-                    try c.compile(.{ .statement = _stmt });
+                for (block.statements) |blk_stmt| {
+                    try c.compile(.{ .statement = blk_stmt });
                 }
                 c.block_index -= 1;
+            },
+
+            .@"pub" => |p| {
+                try c.compile(.{ .statement = p.stmt.* });
+
+                switch (p.stmt.*) {
+                    inline .@"var", .@"fn" => |v| {
+                        try c.imports.put(v.name.value, {});
+                    },
+                    else => return c.newError("Invalid public declaration", .{}),
+                }
             },
 
             .import => |imp| {
@@ -281,7 +288,18 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 const st = try SymbolTable.create(c.allocator);
                 c.symbols = st;
                 st.def_number = cst.?.def_number + 1;
+
+                // TODO: dont compile all, just the global imports and free var
                 try c.compile(imp.node.*);
+
+                // Ay papy, such a poooor logic
+                var iter = st.store.iterator();
+                while (iter.next()) |item| {
+                    const nombre = item.key_ptr.*;
+                    if (!c.imports.contains(nombre)) continue;
+                    item.value_ptr.public = true;
+                }
+                c.imports.clearAndFree();
 
                 // row back
                 cst.?.def_number = st.def_number + 1;

@@ -11,8 +11,9 @@ def_number: usize = 0,
 outer: ?*SymbolTable = null,
 
 pub const Symbol = struct {
-    name: []const u8,
+    public: bool = false,
     scope: ScopeType,
+    name: []const u8,
     index: usize = 0,
 };
 
