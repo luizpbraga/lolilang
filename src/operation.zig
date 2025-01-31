@@ -43,7 +43,7 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
 
             const symbol = ns.map.store.getPtr(variable).?;
             const idx = if (symbol.public) symbol.index else {
-                return vm.newError("Symbol '{s}' from namespace '{s}' was not marked public", .{ symbol.name, ns.name });
+                return vm.newError("Symbol '{s}' from namespace '{s}' was not marked as public", .{ symbol.name, ns.name });
             };
 
             return vm.push(vm.globals[idx].?);

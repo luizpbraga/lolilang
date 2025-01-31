@@ -288,6 +288,7 @@ pub const Var = struct {
 pub const Import = struct {
     at: usize = 0,
     token: Token,
+    name: Identifier,
     path: *Expression,
     node: *Node,
 

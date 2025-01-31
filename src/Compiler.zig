@@ -265,7 +265,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.compile(.{ .statement = p.stmt.* });
 
                 switch (p.stmt.*) {
-                    inline .@"var", .@"fn" => |v| {
+                    inline .@"var", .@"fn", .import => |v| {
                         try c.imports.put(v.name.value, {});
                     },
                     else => return c.newError("Invalid public declaration", .{}),

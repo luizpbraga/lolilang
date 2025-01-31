@@ -351,7 +351,7 @@ fn parsePub(self: *Parser) anyerror!ast.Statement {
     const func_or_var = try self.parseStatement();
 
     switch (func_or_var) {
-        .@"fn", .@"var" => {},
+        .@"fn", .@"var", .import => {},
         else => try self.errlog("Invalid public declaration"),
     }
 
@@ -359,6 +359,16 @@ fn parsePub(self: *Parser) anyerror!ast.Statement {
     stmt.* = func_or_var;
 
     return .{ .@"pub" = .{ .token = tk, .stmt = stmt } };
+}
+
+fn findImportName(p: *Parser, path: []const u8) ![]const u8 {
+    if (!std.mem.endsWith(u8, path, ".loli")) {
+        try p.errlog("Invalid Module Path: expected .loli extention, got your mama");
+    }
+    var start = std.mem.lastIndexOf(u8, path, "/") orelse 0;
+    if (start != 0) start += 1;
+    const end = std.mem.lastIndexOf(u8, path, ".") orelse return error.InvalidPath;
+    return path[start..end];
 }
 
 // import "fmt"
@@ -373,6 +383,7 @@ fn parseImport(self: *Parser) anyerror!ast.Statement {
     }
 
     const file_path = path_exp.string.value;
+    const name = try self.findImportName(file_path);
     const imput = std.fs.cwd().readFileAlloc(self.arena.allocator(), file_path, 4 * 1024) catch |err| b: {
         try self.errlog(@errorName(err));
         break :b "";
@@ -405,6 +416,7 @@ fn parseImport(self: *Parser) anyerror!ast.Statement {
 
     return .{
         .import = .{
+            .name = .{ .value = name, .at = tk.at },
             .path = path_exp,
             .token = tk,
             .node = node,
