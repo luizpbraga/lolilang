@@ -1,0 +1,21 @@
+# fn init(type, literal) {
+    #     return Token{
+    #         type: type
+    #         literal: literal
+    #     }
+    # }
+Token := struct {
+    type
+    literal
+
+    fn init(){
+        return Token{type:1}
+    }
+}
+fn init() {
+    return Token{
+        type: 1,
+        literal: "",
+    }
+}
+

@@ -1,0 +1,11 @@
+x := enum {
+    a
+    b
+    c = true
+}
+
+t := x.a
+
+for x.c {
+    @print(1)
+}

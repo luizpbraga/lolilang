@@ -48,7 +48,6 @@ fn errlog(p: *Parser, msg: []const u8) !void {
         .{ p.lexer.line_index, at, msg },
     );
 }
-
 const Line = struct {
     line: []const u8,
     start: usize,
@@ -88,6 +87,7 @@ pub const Precedence = enum {
     product,
     prefix,
     call,
+    instance,
     index,
 
     pub fn peek(token_type: Token.Type) Precedence {
@@ -100,6 +100,7 @@ pub const Precedence = enum {
             .@"+", .@"-" => .sum,
             .@"/", .@"*", .@"%" => .product,
             .@"(" => .call,
+            .@"{" => .instance,
             .@"!" => .prefix,
             .@"[", .@".", .@"..", .@"..=" => .index,
             .@"=", .@":=", .@"+=", .@"-=", .@"*=", .@"/=" => .assigne,
@@ -114,23 +115,24 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
 
     const tk = p.cur_token;
     left_exp.* = switch (tk.type) {
-        .identifier => p.parseIdentifier(),
+        // dont allow Initialization {}
         .@"." => p.parseTag(),
         .integer => try p.parseInteger(),
         .float => try p.parseFloat(),
         .true, .false => p.parseBoolean(),
         .null, .@";" => p.parseNull(),
-        .@"[" => try p.parseArray(),
-        .@"{" => try p.parseHash(),
-        //.new => try p.parseInstance2(),
-        .@"fn" => try p.parseFunction(),
-        .@"struct", .@"enum" => try p.parseType(),
         .string => p.parseString(),
         .char => p.parseChar(),
+        .@"[" => try p.parseArray(),
+        .@"{" => try p.parseHash(),
+        .@"!", .@"-" => try p.parsePrefix(),
+        // allow initialization {}
+        .@"fn" => try p.parseFunction(),
+        .identifier => p.parseIdentifier(),
+        .@"struct", .@"enum" => try p.parseType(),
         .@"if", .@"else" => try p.parseIf(),
         .@"for" => try p.parseFor(),
         .match => try p.parseMatch(),
-        .@"!", .@"-" => try p.parsePrefix(),
         .@"(" => try p.parseGroup(),
         // .comment => {
         //     p.nextToken();
@@ -142,21 +144,21 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
         },
     };
 
-    if (p.curTokenIs(.identifier) or p.curTokenIs(.@"struct")) l: {
-        if (!p.peekTokenIs(.@"{")) break :l;
-
-        if (left_exp.* != .identifier) break :l;
-        if (p.context_parser) break :l;
-        if (!p.types.contains(left_exp.identifier.value)) {
-            try p.errlog("literal is not a type");
-            break :l;
-        }
-
-        const left_exp2 = try allocator.create(ast.Expression);
-        errdefer allocator.destroy(left_exp2);
-        left_exp2.* = try p.parseInstance(left_exp);
-        return left_exp2;
-    }
+    // if (p.curTokenIs(.identifier) or p.curTokenIs(.@"struct")) l: {
+    //     if (!p.peekTokenIs(.@"{")) break :l;
+    //
+    //     if (left_exp.* != .identifier) break :l;
+    //     if (p.context_parser) break :l;
+    //     if (!p.types.contains(left_exp.identifier.value)) {
+    //         try p.errlog("literal is not a type");
+    //         break :l;
+    //     }
+    //
+    //     const left_exp2 = try allocator.create(ast.Expression);
+    //     errdefer allocator.destroy(left_exp2);
+    //     left_exp2.* = try p.parseInstance(left_exp);
+    //     return left_exp2;
+    // }
 
     // // TODO: better logic <<EXPERIMENTAL>>
     // if (p.peekTokenIs(.@",") and t) {
@@ -183,38 +185,38 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
 fn infixExp(p: *Parser, lx: *ast.Expression) anyerror!?ast.Expression {
     var tk: Token = p.peek_token;
     var left_exp: ?ast.Expression = b: switch (tk.type) {
+        // allw initilization
         .@"[" => {
             p.nextToken();
             tk = p.cur_token;
             break :b try p.parseIndex(lx);
-        },
-        .@"..", .@"..=" => {
-            p.nextToken();
-            tk = p.cur_token;
-            break :b try p.parseRange(lx);
         },
         .@"." => {
             p.nextToken();
             tk = p.cur_token;
             break :b try p.parseMethod(lx);
         },
-        // .@"{" => {
-        //     // p.nextToken();
-        //     tk = p.cur_token;
-        //     break :b try p.parseInstance(lx);
-        // },
+        .@"{" => {
+            // p.nextToken();
+            tk = p.cur_token;
+            break :b try p.parseInstance(lx);
+        },
+        // dont allow
         .@"(" => {
             p.nextToken();
             tk = p.cur_token;
             break :b try p.parseCall(lx);
         },
-
+        .@"..", .@"..=" => {
+            p.nextToken();
+            tk = p.cur_token;
+            break :b try p.parseRange(lx);
+        },
         .@"%", .@"+", .@"-", .@"==", .@"!=", .@"*", .@"or", .@"and", .@"/", .@">", .@">=" => {
             p.nextToken();
             tk = p.cur_token;
             break :b try p.parseInfix(lx);
         },
-
         .@"<", .@"<=" => {
             // a < b < c
             // a < b and b < c
@@ -485,13 +487,13 @@ fn parseAssignment(self: *Parser, name: *ast.Expression) !ast.Expression {
     };
 
     // for now, this will work
-    if (self.curTokenIs(.@"struct")) {
+    if (self.curTokenIs(.@"struct") and !self.peekTokenIs(.@"{")) {
         try self.types.put(name.identifier.value, {});
     }
 
     stmt.value = try self.parseExpression(.lowest);
 
-    if ((op.type == .@":=") or (op.type == .@"=") and stmt.value.* == .type) {
+    if ((op.type == .@":=" or op.type == .@"=") and stmt.value.* == .type) {
         try self.types.put(stmt.name.identifier.value, {});
     }
 
@@ -648,7 +650,7 @@ fn parseVar(self: *Parser) !ast.Statement {
     self.nextToken();
 
     // for now, this will work
-    if (self.curTokenIs(.@"struct")) {
+    if (self.curTokenIs(.@"struct") and !self.peekTokenIs(.@"{")) {
         try self.types.put(var_stmt.name.value, {});
     }
 
@@ -718,12 +720,44 @@ fn parseExpStatement(self: *Parser) !ast.Statement {
     return .{ .exp_statement = exp_stmt };
 }
 
+fn instantiatable(self: *Parser, exp: *ast.Expression) bool {
+    return switch (exp.*) {
+        .identifier => |ident| l: {
+            const x = self.types.contains(ident.value);
+            break :l x;
+        },
+        .method => |method| l: {
+            const ident = method.method;
+            const x = self.types.contains(ident.value);
+            break :l x;
+        },
+
+        // .for_range => |fr| self.instantiatable(fr.iterable),
+        .call => |call| self.instantiatable(call.function),
+
+        .function => |func| l: {
+            const ident = func.name orelse return false;
+            const x = self.types.contains(ident.value);
+            break :l x;
+        },
+
+        .group => |gang| l: {
+            break :l self.instantiatable(gang.exp);
+        },
+
+        .type, .@"if", .match, .@"for", .for_range, .index => true,
+
+        else => false,
+    };
+}
+
 fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
     const left_exp = try self.prefixExp();
-
     const allocator = self.arena.allocator();
 
     while (@intFromEnum(precedence) < @intFromEnum(self.peekPrecedence())) {
+        if (self.peekTokenIs(.@"{") and !self.instantiatable(left_exp)) break;
+
         const old_left_exp = try allocator.create(ast.Expression);
         errdefer allocator.destroy(old_left_exp);
 
@@ -733,7 +767,6 @@ fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
             return left_exp;
         };
     }
-
     return left_exp;
 }
 
@@ -847,7 +880,7 @@ fn parseInfix(self: *Parser, left: *ast.Expression) !ast.Expression {
 }
 
 fn parseIf(self: *Parser) !ast.Expression {
-    var expression: ast.If = .{
+    var if_exp: ast.If = .{
         .condition = undefined,
         .consequence = undefined,
     };
@@ -855,22 +888,22 @@ fn parseIf(self: *Parser) !ast.Expression {
     self.nextToken();
 
     self.context_parser = true;
-    expression.condition = try self.parseExpression(.lowest);
+    if_exp.condition = try self.parseExpression(.lowest);
     self.context_parser = false;
 
     if (!self.expectPeek(.@"{") and !self.expectPeek(.@":")) {
         try self.missing(.@"{");
     }
 
-    expression.consequence = try self.parseBlock();
+    if_exp.consequence = try self.parseBlock();
 
     if (self.peekTokenIs(.@"else")) {
         self.nextToken();
         if (!self.expectPeek(.@"{")) try self.missing(.@"{");
-        expression.alternative = try self.parseBlock();
+        if_exp.alternative = try self.parseBlock();
     }
 
-    return .{ .@"if" = expression };
+    return .{ .@"if" = if_exp };
 }
 
 // TODO: allow single expression blocks to optionally ignore braces
@@ -922,6 +955,12 @@ fn parseFn(self: *Parser) !ast.Statement {
     }
 
     func_stmt.name = self.parseIdentifier().identifier;
+
+    // TODO: emmit a parser/compilation erros if a function
+    // with no uppercase name returns a type
+    if (std.ascii.isUpper(func_stmt.name.value[0])) {
+        try self.types.put(func_stmt.name.value, {});
+    }
 
     func_stmt.func = (try self.parseFunction()).function;
 
@@ -1201,8 +1240,12 @@ pub fn parseString(self: *Parser) ast.Expression {
     };
 }
 
+fn debugCurTokenIs(p: *Parser, tk: Token.Type) void {
+    std.debug.print("{} {}\n", .{ p.curTokenIs(tk), p.context_parser });
+}
+
 fn debugCurToken(p: *Parser) void {
-    std.debug.print("{s}\n", .{p.cur_token.literal});
+    std.debug.print("{} {} {}\n", .{ p.cur_token.type, p.peek_token.type, p.context_parser });
 }
 
 var t = true;

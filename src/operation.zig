@@ -70,6 +70,7 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
             // if (y.type != .@"enum") {
             //     return vm.newError("Struct Not Indexable", .{});
             // }
+            // TODO: use desc for structs
             const value = y.fields.get(index.tag) orelse return vm.newError("Undefined Struct/Enum Declaration", .{});
             return try vm.push(value);
         },

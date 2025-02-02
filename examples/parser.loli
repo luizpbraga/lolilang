@@ -137,7 +137,6 @@ fn initLexer(file_name) {
 }
 
 l := initLexer("./test_file")
-
 tk := nextTk(l)
 for tk.type != Type.EOF_TOK {
     @print(tk)

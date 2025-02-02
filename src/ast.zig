@@ -6,29 +6,33 @@ pub const Node = union(enum) {
     expression: *Expression,
     statement: Statement,
 
-    fn tokenLiteral(self: *const Node) []const u8 {
-        return switch (self.*) {
-            inline else => |node| node.tokenLiteral(),
+    pub fn name(node: *const Node) []const u8 {
+        return node.name();
+    }
+
+    pub fn tokenLiteral(node: *const Node) []const u8 {
+        return switch (node.*) {
+            inline else => |n| n.tokenLiteral(),
         };
     }
 
-    pub fn position(self: *const Node) usize {
-        switch (self.*) {
-            inline else => |node| return node.position(),
+    pub fn position(node: *const Node) usize {
+        switch (node.*) {
+            inline else => |n| return n.position(),
         }
     }
 
-    pub fn commentPos(self: *const Node) ?[2]usize {
-        switch (self.*) {
-            inline else => |node| return node.commentPos(),
+    pub fn commentPos(node: *const Node) ?[2]usize {
+        switch (node.*) {
+            inline else => |n| return n.commentPos(),
         }
     }
 
-    pub fn deinit(self: *Node, alloc: std.mem.Allocator) void {
-        switch (self.*) {
+    pub fn deinit(node: *Node, alloc: std.mem.Allocator) void {
+        switch (node.*) {
             .statement => |stmt| switch (stmt) {
                 .block => |blk| alloc.free(blk.statements),
-                .program => |p| p.statements.deinit(),
+                .program => |prog| prog.statements.deinit(),
                 else => {},
             },
             else => {},
@@ -63,30 +67,34 @@ pub const Statement = union(enum) {
     @"pub": Pub,
     // comment: Comment,
 
-    fn statementNode(self: *const Statement) void {
-        switch (self.*) {
+    pub fn statementNode(stmt: *const Statement) void {
+        switch (stmt.*) {
             inline else => |x| x.statementNode(),
         }
     }
 
     // interface methods
-    fn tokenLiteral(self: *const Statement) []const u8 {
-        return switch (self.*) {
+    pub fn tokenLiteral(stmt: *const Statement) []const u8 {
+        return switch (stmt.*) {
             inline else => |x| x.tokenLiteral(),
         };
     }
 
-    pub fn position(self: *const Statement) usize {
-        switch (self.*) {
+    pub fn position(stmt: *const Statement) usize {
+        switch (stmt.*) {
             inline else => |s| return s.at,
         }
     }
 
-    pub fn commentPos(self: *const Statement) ?[2]usize {
-        return switch (self.*) {
+    pub fn commentPos(stmt: *const Statement) ?[2]usize {
+        return switch (stmt.*) {
             inline .@"var", .con, .@"fn", .@"return", .exp_statement => |v| v.token.comment_pos,
             inline else => null,
         };
+    }
+
+    pub fn name(s: *const Statement) []const u8 {
+        return @tagName(s.*);
     }
 };
 
@@ -132,26 +140,31 @@ pub const Expression = union(enum) {
     type: Type,
     group: Group,
 
-    fn expressionNode(self: *const Expression) void {
-        _ = self;
+    fn expressionNode(exp: *const Expression) void {
+        _ = exp;
     }
 
     // interface methods
-    fn tokenLiteral(self: *const Expression) []const u8 {
-        return switch (self.*) {
-            inline else => |exp| exp.tokenLiteral(),
+    pub fn tokenLiteral(exp: *const Expression) []const u8 {
+        return switch (exp.*) {
+            inline else => |e| e.tokenLiteral(),
         };
     }
 
-    pub fn position(self: *const Expression) usize {
-        switch (self.*) {
+    pub fn name(exp: *const Expression) []const u8 {
+        return @tagName(exp.*);
+    }
+
+    pub fn position(exp: *const Expression) usize {
+        switch (exp.*) {
+            // TODO: this is wrong
             .null, .bad => return 0,
-            inline else => |s| return s.at,
+            inline else => |e| return e.at,
         }
     }
 
-    pub fn commentPos(self: *const Expression) ?[2]usize {
-        return switch (self.*) {
+    pub fn commentPos(exp: *const Expression) ?[2]usize {
+        return switch (exp.*) {
             inline else => null,
         };
     }
