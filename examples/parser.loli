@@ -23,23 +23,23 @@ Type := enum {
 
 fn loopUp(ident) {
     return match (ident) {
-        "true" => { Type.TRUE }
-        "false" => { Type.FALSE }
-        "for" => { Type.FOR }
-        "if" => { Type.IF }
-        "else" => { Type.ELSE }
-        "var" => { Type.VAR }
-        "break" => { Type.BREAK }
-        "continue" => { Type.CONTINUE }
-        "defer" => { Type.DEFER }
-        "in" => { Type.IN }
-        "and" => { Type.AND }
-        "or" => { Type.OR }
-        "fn" => { Type.FN }
-        "con" => { Type.CON }
-        "struct" => { Type.STRUCT }
-        "enum" => { Type.ENUM }
-        else => { Type.IDENTIFIER }
+        "true" =>  Type.TRUE 
+        "false" =>  Type.FALSE 
+        "for" =>  Type.FOR 
+        "if" =>  Type.IF 
+        "else" =>  Type.ELSE 
+        "var" =>  Type.VAR 
+        "break" =>  Type.BREAK 
+        "continue" =>  Type.CONTINUE 
+        "defer" =>  Type.DEFER 
+        "in" =>  Type.IN 
+        "and" =>  Type.AND 
+        "or" =>  Type.OR 
+        "fn" =>  Type.FN 
+        "con" =>  Type.CON 
+        "struct" =>  Type.STRUCT 
+        "enum" =>  Type.ENUM 
+        else =>  Type.IDENTIFIER 
     }
 }
 
@@ -48,10 +48,7 @@ Token := struct {
     literal
 
     fn init(type, literal) {
-        return Token{
-            type: type,
-            literal: literal,
-        }
+        return Token{type: type, literal: literal}
     }
 }
 
@@ -63,37 +60,25 @@ Lexer := struct {
 
     fn init(file_name) {
         input := @read(file_name)
-        l := Lexer{
-            input: input,
-        }
+        l := Lexer{input: input}
         l.readChar()
         return l
     }
 
     fn initFromString(str) {
-        l := Lexer{
-            input: str,
-        }
+        l := Lexer{input: str}
         l.readChar()
         return l
     }
 
     fn readChar(l) {
-        l.ch = if (l.read_position >= l.input.len) {
-            0
-        } else {
-            l.input[l.read_position]
-        }
+        l.ch = if (l.read_position >= l.input.len) 0 else l.input[l.read_position]
         l.position = l.read_position
         l.read_position = l.read_position + 1
     }
 
     fn peekChar(l) {
-        return if (l.read_position >= l.input.len) {
-            0
-        } else {
-            l.input[l.read_position]
-        }
+        return if (l.read_position >= l.input.len) 0 else l.input[l.read_position]
     }
 
     fn isDigit(ch) {
@@ -106,46 +91,33 @@ Lexer := struct {
 
     fn readNumber(l) {
         pos := l.position
-        for (Lexer.isDigit(l.ch)) {
-            l.readChar()
-        }
-
+        for (Lexer.isDigit(l.ch)) l.readChar()
         # INTEGER
         if (l.ch != '.') {
             num := l.input[pos..l.position]
-            if (num.len == 0): return null;
+            if (num.len == 0) return;
             return Token.init(Type.INTEGER, num);
         }
 
         l.readChar()
 
-        for (Lexer.isDigit(l.ch)) {
-            l.readChar()
-        }
+        for (Lexer.isDigit(l.ch)) l.readChar()
 
         num = l.input[pos..l.position]
-        if (num.len == 0): return null;
+        if (num.len == 0) return;
         return Token.init(Type.FLOAT, num);
     }
 
     fn skipWhiteSpace(l) {
-        for (l.ch == ' ' or l.ch == '\n' or l.ch == '\t') {
-            l.readChar()
-        }
+        for (l.ch == ' ' or l.ch == '\n' or l.ch == '\t') l.readChar()
     }
 
     fn readIdentifer(l) {
         pos := l.position
-
-        if (Lexer.isDigit(l.ch)): return null
-        
-        for (Lexer.isLetter(l.ch) or Lexer.isDigit(l.ch)) {
-            l.readChar()
-        }
-
+        if (Lexer.isDigit(l.ch)) return;
+        for (Lexer.isLetter(l.ch) or Lexer.isDigit(l.ch)) l.readChar()
         ident := l.input[pos..l.position]
-        if (ident.len == 0): return null 
-
+        if (ident.len == 0) return null 
         return ident
     }
 
@@ -153,7 +125,7 @@ Lexer := struct {
         pos := l.position + 1
         for {
             l.readChar()
-            if (l.ch == '"' or l.ch == 0): break
+            if (l.ch == '"' or l.ch == 0) break
         }
         return l.input[pos..l.position]
     }
@@ -235,9 +207,7 @@ Lexer := struct {
                 }
 
                 tknumber := l.readNumber()
-                if (tknumber != null) {
-                    return tknumber
-                }
+                if (tknumber != null) return tknumber
                 
                 @panic("Found an illegal token")
             }

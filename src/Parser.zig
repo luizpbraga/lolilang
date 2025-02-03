@@ -13,8 +13,6 @@ peek_token: Token,
 arena: std.heap.ArenaAllocator,
 errors: *Error,
 /// TODO: what about pear type resolution?
-types: std.StringHashMap(void),
-
 fn missing(p: *Parser, tk: Token.Type) !void {
     const l = p.line();
     const lin = l.line;
@@ -121,7 +119,6 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
         .null, .@";" => p.parseNull(),
         .@"[" => try p.parseArray(),
         .@"{" => try p.parseHash(),
-        //.new => try p.parseInstance2(),
         .@"fn" => try p.parseFunction(),
         .@"struct", .@"enum" => try p.parseType(),
         .string => p.parseString(),
@@ -140,22 +137,6 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
             break :b .bad;
         },
     };
-
-    // if (p.curTokenIs(.identifier) or p.curTokenIs(.@"struct")) l: {
-    //     if (!p.peekTokenIs(.@"{")) break :l;
-    //
-    //     if (left_exp.* != .identifier) break :l;
-    //     if (p.context_parser) break :l;
-    //     if (!p.types.contains(left_exp.identifier.value)) {
-    //         try p.errlog("literal is not a type");
-    //         break :l;
-    //     }
-    //
-    //     const left_exp2 = try allocator.create(ast.Expression);
-    //     errdefer allocator.destroy(left_exp2);
-    //     left_exp2.* = try p.parseInstance(left_exp);
-    //     return left_exp2;
-    // }
 
     // // TODO: better logic <<EXPERIMENTAL>>
     // if (p.peekTokenIs(.@",") and t) {
@@ -269,7 +250,6 @@ pub fn init(child_alloc: std.mem.Allocator, lexer: *Lexer, errors: *Error) Parse
         .peek_token = undefined,
         .last_token = .{ .type = .eof, .literal = "" },
         .errors = errors,
-        .types = .init(child_alloc),
     };
 
     parser.nextToken();
@@ -279,7 +259,6 @@ pub fn init(child_alloc: std.mem.Allocator, lexer: *Lexer, errors: *Error) Parse
 }
 
 pub fn deinit(self: *Parser) void {
-    self.types.deinit();
     self.arena.deinit();
 }
 
@@ -483,16 +462,7 @@ fn parseAssignment(self: *Parser, name: *ast.Expression) !ast.Expression {
         },
     };
 
-    // for now, this will work
-    if (self.curTokenIs(.@"struct")) {
-        try self.types.put(name.identifier.value, {});
-    }
-
     stmt.value = try self.parseExpression(.lowest);
-
-    if ((op.type == .@":=") or (op.type == .@"=") and stmt.value.* == .type) {
-        try self.types.put(stmt.name.identifier.value, {});
-    }
 
     return .{ .assignment = stmt };
 }
@@ -646,16 +616,7 @@ fn parseVar(self: *Parser) !ast.Statement {
 
     self.nextToken();
 
-    // for now, this will work
-    if (self.curTokenIs(.@"struct")) {
-        try self.types.put(var_stmt.name.value, {});
-    }
-
     var_stmt.value = try self.parseExpression(.lowest);
-
-    if (var_stmt.value.* == .type) {
-        try self.types.put(var_stmt.name.value, {});
-    }
 
     if (self.peekTokenIs(.@";")) {
         self.nextToken();
@@ -845,7 +806,7 @@ fn parseInfix(self: *Parser, left: *ast.Expression) !ast.Expression {
 }
 
 fn parseIf(self: *Parser) !ast.Expression {
-    var expression: ast.If = .{
+    var if_exp: ast.If = .{
         .condition = undefined,
         .consequence = undefined,
     };
@@ -853,22 +814,23 @@ fn parseIf(self: *Parser) !ast.Expression {
     if (!self.expectPeek(.@"(")) try self.missing(.@"(");
     self.nextToken();
 
-    expression.condition = try self.parseExpression(.lowest);
+    if_exp.condition = try self.parseExpression(.lowest);
 
     if (!self.expectPeek(.@")")) try self.missing(.@")");
-    if (!self.expectPeek(.@"{") and !self.expectPeek(.@":")) {
-        try self.missing(.@"{");
+
+    if_exp.consequence = if (self.expectPeek(.@"{"))
+        try self.parseBlock()
+    else
+        try self.parseSingleStmtBlock();
+
+    if (self.expectPeek(.@"else")) {
+        if_exp.alternative = if (self.expectPeek(.@"{"))
+            try self.parseBlock()
+        else
+            try self.parseSingleStmtBlock();
     }
 
-    expression.consequence = try self.parseBlock();
-
-    if (self.peekTokenIs(.@"else")) {
-        self.nextToken();
-        if (!self.expectPeek(.@"{")) try self.missing(.@"{");
-        expression.alternative = try self.parseBlock();
-    }
-
-    return .{ .@"if" = expression };
+    return .{ .@"if" = if_exp };
 }
 
 // TODO: allow single expression blocks to optionally ignore braces
@@ -905,6 +867,24 @@ fn parseBlock(self: *Parser) anyerror!ast.Block {
 
     block.statements = stmts_owner;
 
+    return block;
+}
+
+fn parseSingleStmtBlock(self: *Parser) anyerror!ast.Block {
+    const allocator = self.arena.allocator();
+    var stmts: std.ArrayList(ast.Statement) = .init(allocator);
+    errdefer stmts.deinit();
+    const tk = self.cur_token;
+    var block: ast.Block = .{
+        .token = tk,
+        .statements = undefined,
+    };
+    self.nextToken();
+
+    const stmt = try self.parseStatement();
+    try stmts.append(stmt);
+    const stmts_owner = try stmts.toOwnedSlice();
+    block.statements = stmts_owner;
     return block;
 }
 
@@ -1337,7 +1317,6 @@ pub fn parseMatch(self: *Parser) !ast.Expression {
     self.nextToken();
 
     const allocator = self.arena.allocator();
-
     var arms = std.ArrayList(ast.Match.Arm).init(allocator);
     errdefer arms.deinit();
 
@@ -1345,22 +1324,16 @@ pub fn parseMatch(self: *Parser) !ast.Expression {
 
         // the else arm
         if (self.curTokenIs(.@"else")) {
-            if (match.else_block != null) {
-                try self.errlog("Duplicated Tag");
-            }
+            if (match.else_block != null) try self.errlog("Duplicated Tag");
 
-            if (!self.expectPeek(.@"=>")) {
-                try self.missing(.@"=>");
-            }
+            if (!self.expectPeek(.@"=>")) try self.missing(.@"=>");
 
-            if (!self.expectPeek(.@"{")) {
-                try self.missing(.@"{");
-            }
-
-            match.else_block = try self.parseBlock();
+            match.else_block = if (self.expectPeek(.@"{"))
+                try self.parseBlock()
+            else
+                try self.parseSingleStmtBlock();
 
             self.nextToken();
-
             continue;
         }
 
@@ -1369,26 +1342,18 @@ pub fn parseMatch(self: *Parser) !ast.Expression {
             .block = undefined,
         };
 
-        if (!self.expectPeek(.@"=>")) {
-            try self.missing(.@"=>");
-        }
+        if (!self.expectPeek(.@"=>")) try self.missing(.@"=>");
 
-        if (!self.expectPeek(.@"{")) {
-            try self.missing(.@"{");
-        }
+        arm.block = if (self.expectPeek(.@"{"))
+            try self.parseBlock()
+        else
+            try self.parseSingleStmtBlock();
 
-        arm.block = try self.parseBlock();
-
-        self.nextToken(); // jump the }
-
+        self.nextToken();
         try arms.append(arm);
     }
 
     match.arms = try arms.toOwnedSlice();
-
-    // std.debug.print("{}\n", .{match.value});
-    // std.debug.print("{any}\n", .{match.arms});
-    // std.debug.print("{?}\n", .{match.else_block});
 
     return .{ .match = match };
 }
@@ -1429,15 +1394,11 @@ pub fn parseForRange(self: *Parser, ident: ast.Identifier) !ast.Expression {
     flr.iterable = try self.parseExpression(.lowest);
     if (!self.expectPeek(.@")")) try self.missing(.@")");
 
-    // if (self.expectPeek(.@";") and !self.peekTokenIs(.@"{")) {
-    //     return self.parseMultiForLoopRange(flr);
-    // }
-
-    if (!self.expectPeek(.@"{") and !self.expectPeek(.@":")) {
-        try self.missing(.@"{");
+    if (self.expectPeek(.@"{")) {
+        flr.body = try self.parseBlock();
+    } else {
+        flr.body = try self.parseSingleStmtBlock();
     }
-
-    flr.body = try self.parseBlock();
 
     return .{ .for_range = flr };
 }
@@ -1448,11 +1409,11 @@ pub fn parseForLoopCondition(self: *Parser, cond: *ast.Expression) !ast.Expressi
         .consequence = undefined,
     };
 
-    if (!self.expectPeek(.@"{") and !self.expectPeek(.@":")) {
-        try self.missing(.@"{");
+    if (self.expectPeek(.@"{")) {
+        fl.consequence = try self.parseBlock();
+    } else {
+        fl.consequence = try self.parseSingleStmtBlock();
     }
-
-    fl.consequence = try self.parseBlock();
 
     return .{ .@"for" = fl };
 }

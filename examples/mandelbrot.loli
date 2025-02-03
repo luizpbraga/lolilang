@@ -3,7 +3,7 @@
 fn numOfIter(c, max) {
     z := 0.0
     for (n in max) {
-        if (@abs(z) > 2.0): return n
+        if (@abs(z) > 2.0) return n
         z = z * z + c
     }
     return max
@@ -40,6 +40,4 @@ max_iter := 100
 # Generate the Mandelbrot set
 mandelbrot_image := mandelbrot(xmin, xmax, ymin, ymax, width, height, max_iter)
 
-for (img in mandelbrot_image) {
-    @print(img)
-}
+for (img in mandelbrot_image) @print(img)

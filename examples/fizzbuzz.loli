@@ -3,13 +3,10 @@ for (i in 100) {
     div5 := i % 5 == 0;
     
     fb := match {
-        div3 and div5 => { "FizzBuzz" }
-        
-        div3 => { "Fizz" }
-        
-        div5 => { "Buzz" } 
-
-        else => { i }
+        div3 and div5 => "FizzBuzz"
+        div3 => "Fizz"
+        div5 => "Buzz"
+        else => i
     }
 
     @print(fb)

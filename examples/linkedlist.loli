@@ -24,4 +24,4 @@ for (i in 10) {
     dumm = dumm.next
 }
 list.head = list.head.next
-list.print()
+# list.print()
