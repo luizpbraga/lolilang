@@ -159,13 +159,13 @@ pub const Write = struct {
                         return;
                     }
 
-                    if (block.statements.len == 1 and block.statements[0] != .@"return" and block.statements[0].commentPos() == null) {
-                        try w.append("{ ");
-                        try w.write(.{ .statement = block.statements[0] });
-                        try w.append(" }");
-                        // try w.newLine();
-                        return;
-                    }
+                    // if (block.statements.len == 1 and block.statements[0] != .@"return" and block.statements[0].commentPos() == null) {
+                    //     try w.append("{ ");
+                    //     try w.write(.{ .statement = block.statements[0] });
+                    //     try w.append(" }");
+                    //     // try w.newLine();
+                    //     return;
+                    // }
 
                     try w.append("{");
                     try w.newLine();
@@ -357,6 +357,9 @@ pub const Write = struct {
                     try w.write(.{ .expression = instance.type });
 
                     if (instance.fields.len == 0) {
+                        if (w.buffer.items[w.buffer.items.len - 2] == '}') {
+                            _ = w.buffer.popOrNull();
+                        }
                         try w.append("{}");
                         return;
                         // w.block += 1;
@@ -393,9 +396,9 @@ pub const Write = struct {
                     try w.write(.{ .statement = .{ .block = func.body } });
                 },
                 .@"if" => |ifexp| {
-                    try w.append("if ");
+                    try w.append("if (");
                     try w.write(.{ .expression = ifexp.condition });
-                    try w.append(" ");
+                    try w.append(") ");
                     try w.write(.{ .statement = .{ .block = ifexp.consequence } });
                     if (ifexp.alternative) |alt| {
                         try w.append(" else ");
@@ -403,9 +406,9 @@ pub const Write = struct {
                     }
                 },
                 .match => |match| {
-                    try w.append("match ");
+                    try w.append("match (");
                     try w.write(.{ .expression = match.value });
-                    try w.append(" {");
+                    try w.append(") {");
                     try w.newLine();
 
                     w.block += 1;
@@ -431,15 +434,15 @@ pub const Write = struct {
                     try w.append("}");
                 },
                 .for_range => |forloop| {
-                    try w.print("for {s} in ", .{forloop.ident});
+                    try w.print("for ({s} in ", .{forloop.ident});
                     try w.write(.{ .expression = forloop.iterable });
-                    try w.append(" ");
+                    try w.append(") ");
                     try w.write(.{ .statement = .{ .block = forloop.body } });
                 },
                 .@"for" => |forloop| {
-                    try w.append("for ");
+                    try w.append("for (");
                     try w.write(.{ .expression = forloop.condition });
-                    try w.append(" ");
+                    try w.append(") ");
                     try w.write(.{ .statement = .{ .block = forloop.consequence } });
                 },
                 .type => |ty| {

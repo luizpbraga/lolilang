@@ -70,7 +70,7 @@ fn skipComments(self: *Self) void {
 fn readIdentifier(self: *Self) ![]const u8 {
     const position = self.position;
 
-    if (isDigit(self.ch)) return error.InvelidDigitCharacterOnItendifierName;
+    if (isDigit(self.ch) and self.ch != '_') return error.InvelidDigitCharacterOnItendifierName;
 
     while (isLetter(self.ch) or isDigit(self.ch)) self.readChar();
     return self.input[position..self.position];

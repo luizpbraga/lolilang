@@ -8,7 +8,7 @@ List := struct {
 
     fn print(this) {
         no := this.head
-        for no != null {
+        for (no != null) {
             @print(no.val)
             no = no.next
         }
@@ -17,7 +17,7 @@ List := struct {
 
 list := List{}
 dumm := list.head
-for i in 10 {
+for (i in 10) {
     dumm.next = Node{
         val: i,
     }

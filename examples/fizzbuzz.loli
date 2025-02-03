@@ -1,4 +1,4 @@
-for i in 100 {
+for (i in 100) {
     div3 := i % 3 == 0;
     div5 := i % 5 == 0;
     

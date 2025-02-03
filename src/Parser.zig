@@ -12,7 +12,6 @@ last_token: Token,
 peek_token: Token,
 arena: std.heap.ArenaAllocator,
 errors: *Error,
-context_parser: bool = false,
 /// TODO: what about pear type resolution?
 types: std.StringHashMap(void),
 
@@ -99,7 +98,7 @@ pub const Precedence = enum {
             .@">", .@">=", .@"<", .@"<=" => .lessgreater,
             .@"+", .@"-" => .sum,
             .@"/", .@"*", .@"%" => .product,
-            .@"(" => .call,
+            .@"(", .@"{" => .call,
             .@"!" => .prefix,
             .@"[", .@".", .@"..", .@"..=" => .index,
             .@"=", .@":=", .@"+=", .@"-=", .@"*=", .@"/=" => .assigne,
@@ -142,21 +141,21 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
         },
     };
 
-    if (p.curTokenIs(.identifier) or p.curTokenIs(.@"struct")) l: {
-        if (!p.peekTokenIs(.@"{")) break :l;
-
-        if (left_exp.* != .identifier) break :l;
-        if (p.context_parser) break :l;
-        if (!p.types.contains(left_exp.identifier.value)) {
-            try p.errlog("literal is not a type");
-            break :l;
-        }
-
-        const left_exp2 = try allocator.create(ast.Expression);
-        errdefer allocator.destroy(left_exp2);
-        left_exp2.* = try p.parseInstance(left_exp);
-        return left_exp2;
-    }
+    // if (p.curTokenIs(.identifier) or p.curTokenIs(.@"struct")) l: {
+    //     if (!p.peekTokenIs(.@"{")) break :l;
+    //
+    //     if (left_exp.* != .identifier) break :l;
+    //     if (p.context_parser) break :l;
+    //     if (!p.types.contains(left_exp.identifier.value)) {
+    //         try p.errlog("literal is not a type");
+    //         break :l;
+    //     }
+    //
+    //     const left_exp2 = try allocator.create(ast.Expression);
+    //     errdefer allocator.destroy(left_exp2);
+    //     left_exp2.* = try p.parseInstance(left_exp);
+    //     return left_exp2;
+    // }
 
     // // TODO: better logic <<EXPERIMENTAL>>
     // if (p.peekTokenIs(.@",") and t) {
@@ -198,11 +197,11 @@ fn infixExp(p: *Parser, lx: *ast.Expression) anyerror!?ast.Expression {
             tk = p.cur_token;
             break :b try p.parseMethod(lx);
         },
-        // .@"{" => {
-        //     // p.nextToken();
-        //     tk = p.cur_token;
-        //     break :b try p.parseInstance(lx);
-        // },
+        .@"{" => {
+            // p.nextToken();
+            tk = p.cur_token;
+            break :b try p.parseInstance(lx);
+        },
         .@"(" => {
             p.nextToken();
             tk = p.cur_token;
@@ -806,7 +805,6 @@ fn parseNull(_: *Parser) ast.Expression {
 fn parseGroup(self: *Parser) !ast.Expression {
     self.nextToken();
 
-    self.context_parser = false;
     const exp = try self.parseExpression(.lowest);
 
     if (!self.expectPeek(.@")")) try self.missing(.@")");
@@ -852,12 +850,12 @@ fn parseIf(self: *Parser) !ast.Expression {
         .consequence = undefined,
     };
 
+    if (!self.expectPeek(.@"(")) try self.missing(.@"(");
     self.nextToken();
 
-    self.context_parser = true;
     expression.condition = try self.parseExpression(.lowest);
-    self.context_parser = false;
 
+    if (!self.expectPeek(.@")")) try self.missing(.@")");
     if (!self.expectPeek(.@"{") and !self.expectPeek(.@":")) {
         try self.missing(.@"{");
     }
@@ -1302,37 +1300,6 @@ pub fn parseHash(self: *Parser) !ast.Expression {
     return .{ .hash = .{ .pairs = try pairs.toOwnedSlice() } };
 }
 
-// (...)
-// pub fn parseExpressionList(self: *Parser, exp1: *ast.Expression, end: Token.Type) ![]ast.Expression {
-//     const allocator = self.arena.allocator();
-//     var list = std.ArrayList(ast.Expression).init(allocator);
-//     errdefer list.deinit();
-//
-//     try list.append(exp1.*);
-//
-//     var exp = try self.parseExpression(Precedence.lowest);
-//     try list.append(exp.*);
-//
-//     while (self.peekTokenIs(.@",")) {
-//         self.nextToken();
-//         self.nextToken();
-//         var exp2 = try self.parseExpression(Precedence.lowest);
-//         try list.append(exp2.*);
-//     }
-//
-//     if (self.expectPeek(.@":"))
-//         return error.NotAHash;
-//
-//     if (!self.expectPeek(end)) {
-//         return error.MissingRightBrace;
-//     }
-//
-//     var list_owned = try list.toOwnedSlice();
-//     // try self.gc.expressions.append(list_owned);
-//
-//     return list_owned;
-// }
-
 // v[exp]
 pub fn parseIndex(self: *Parser, left: *ast.Expression) !ast.Expression {
     var exp: ast.Index = .{
@@ -1360,9 +1327,10 @@ pub fn parseMatch(self: *Parser) !ast.Expression {
     if (self.curTokenIs(.@"{")) {
         match.value = &TRUE;
     } else {
-        self.context_parser = true;
+        if (!self.curTokenIs(.@"(")) try self.missing(.@"(");
+        self.nextToken();
         match.value = try self.parseExpression(.lowest);
-        self.context_parser = false;
+        if (!self.expectPeek(.@")")) try self.missing(.@")");
         if (!self.expectPeek(.@"{")) try self.missing(.@"{");
     }
 
@@ -1438,63 +1406,7 @@ pub fn parseRange(self: *Parser, left: *ast.Expression) !ast.Expression {
 
     return .{ .range = range };
 }
-//
-// pub fn parseMultiForLoopRange(self: *Parser, flr: ast.ForLoopRange) !ast.Expression {
-//     const allocator = self.arena.allocator();
-//
-//     var mflr = ast.MultiForLoopRange{
-//         .token = flr.token,
-//         .body = undefined,
-//         .loops = undefined,
-//     };
-//
-//     var loops = try std.ArrayList(ast.MultiForLoopRangeExpression.LoopVars).initCapacity(allocator, 1);
-//     errdefer loops.deinit();
-//
-//     try loops.append(.{ .index = flr.index, .ident = flr.ident, .iterable = flr.iterable });
-//
-//     self.nextToken();
-//     while (!self.curTokenIs(.@"{")) {
-//         const ident = try self.parseIdentifier();
-//
-//         var loop_elements = ast.MultiForLoopRange.LoopVars{
-//             .ident = ident.identifier.value,
-//             .iterable = undefined,
-//         };
-//
-//         if (self.expectPeek(.@",")) {
-//             self.nextToken();
-//             const index = try self.parseIdentifier();
-//             loop_elements.index = index.identifier.value;
-//         }
-//
-//         if (!self.expectPeek(.in)) {
-//             return error.ExpectTheInIdentifier;
-//         }
-//
-//         self.nextToken();
-//
-//         loop_elements.iterable = try self.parseExpression(.lowest);
-//
-//         self.nextToken();
-//
-//         try loops.append(loop_elements);
-//
-//         if (self.curTokenIs(.@";")) {
-//             self.nextToken();
-//             if (self.curTokenIs(.@"{")) break;
-//         }
-//     }
-//
-//     mflr.loops = try loops.toOwnedSlice();
-//
-//     if (!self.curTokenIs(.@"{")) return error.MissingBrance1;
-//
-//     mflr.body = try self.parseBlockStatement();
-//
-//     return .{ .multi_forloop_range = mflr };
-// }
-//
+
 pub fn parseForRange(self: *Parser, ident: ast.Identifier) !ast.Expression {
     var flr = ast.ForRange{
         .ident = ident.value, // for <ident>[, <idx>] in <range> {
@@ -1514,9 +1426,8 @@ pub fn parseForRange(self: *Parser, ident: ast.Identifier) !ast.Expression {
 
     self.nextToken();
 
-    self.context_parser = true;
     flr.iterable = try self.parseExpression(.lowest);
-    self.context_parser = false;
+    if (!self.expectPeek(.@")")) try self.missing(.@")");
 
     // if (self.expectPeek(.@";") and !self.peekTokenIs(.@"{")) {
     //     return self.parseMultiForLoopRange(flr);
@@ -1552,11 +1463,10 @@ pub fn parseFor(self: *Parser) !ast.Expression {
         return .{ .@"for" = .{ .condition = &TRUE, .consequence = try self.parseBlock() } };
     }
 
+    if (!self.expectPeek(.@"(")) try self.missing(.@"(");
     self.nextToken();
 
-    self.context_parser = true;
     const condition_or_ident = try self.parseExpression(.lowest);
-    self.context_parser = false;
 
     if (condition_or_ident.* == .identifier) {
         if (self.peekTokenIs(.in) or self.peekTokenIs(.@",")) {
@@ -1564,47 +1474,7 @@ pub fn parseFor(self: *Parser) !ast.Expression {
         }
     }
 
+    if (!self.expectPeek(.@")")) try self.missing(.@")");
+
     return self.parseForLoopCondition(condition_or_ident);
 }
-
-// fn parseEnum(self: *Parser) !ast.Expression {
-//     var enu = ast.Enum{
-//         .token = self.cur_token,
-//         .tags = undefined, // hash(ident, value)
-//     };
-//
-//     if (!self.expectPeek(.@"{")) return error.MissingBrance;
-//
-//     const allocator = self.arena.allocator();
-//
-//     var tags = std.StringHashMap(*ast.Expression).init(allocator);
-//     errdefer tags.deinit();
-//
-//     var i: usize = 0;
-//     while (!self.expectPeek(.@"}")) {
-//         const ident_exp = try self.parseIdentifier();
-//
-//         const gop = try tags.getOrPut(ident_exp.identifier.value);
-//
-//         if (gop.found_existing) return error.DuplicatedTag;
-//
-//         const int = try allocator.create(ast.Expression);
-//
-//         int.* = .{
-//             .integer = .{
-//                 .value = @intCast(i),
-//                 .token = .{ .type = .integer, .literal = try std.fmt.allocPrint(allocator, "{d}", .{i}) },
-//             },
-//         };
-//
-//         try tags.put(ident_exp.identifier.value, int);
-//
-//         i += 1;
-//
-//         self.nextToken();
-//     }
-//
-//     enu.tags = tags;
-//
-//     return .{ .enum = enu };
-// }

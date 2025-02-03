@@ -6,7 +6,7 @@ fn search(arr, target) {
     mid := 0
     val := 0
 
-    for low <= high {
+    for (low <= high) {
         mid = (low + high) / 2
         val = arr[mid]
         
@@ -24,9 +24,9 @@ fn main() {
     arr := [0, 1, 2, 3, 4, 5, 6, 7]
     index := null
 
-    for target in 8 {
+    for (target in 8) {
       index = search(arr, target)
-      if index == null { 
+      if (index == null) { 
           @print("Index not found! target:", target)
           return
       }

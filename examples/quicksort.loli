@@ -10,7 +10,7 @@ fn partition(arr, low, high) {
     # smaller element index
     i := low
 
-    for j in low..high: if arr[j] <= pivot {
+    for (j in low..high): if (arr[j] <= pivot) {
         swap(arr, i, j)
         i += 1 
     }
@@ -21,7 +21,7 @@ fn partition(arr, low, high) {
 }
 
 fn quickSortInPlaceW(arr, low, high) {
-    if low >= high: return;
+    if (low >= high): return;
     # sort around the pivot
     pivot := partition(arr, low, high)
     # LHS sort
@@ -37,14 +37,14 @@ fn quickSortInPlace(arr) {
 
 fn quickSort(arr) {
     len := arr.len
-    if len <= 1: return arr 
+    if (len <= 1): return arr 
     
     pivot := arr[len/2]
     left := []
     right := []
     middle := []
 
-    for x in arr: match {
+    for (x in arr): match {
       x < pivot => { @append(left, x) }
       x > pivot => { @append(right, x) }
       x == pivot => { @append(middle, x) }
@@ -70,17 +70,17 @@ fn testString() {
 
 fn test1(len) {
     list := @new(.int, len) 
-    for i in len: list[i] = @rand()
+    for (i in len): list[i] = @rand()
     s := quickSort(list) 
     @assert(s.len == len)
-    for i in 1..len - 1 { 
+    for (i in 1..len - 1) { 
         @assert( s[i - 1] <= s[i] <= s[i + 1] ) 
     }
 }
 
 fn test2(len) {
     s := @new(.int, len) 
-    for i in len: s[i] = @rand(0, 100)
+    for (i in len): s[i] = @rand(0, 100)
     
     @print(.sorting)
     t := @time()
@@ -89,7 +89,7 @@ fn test2(len) {
 
     @print(.checking)
     @assert(s.len == len)
-    for i in 1..len - 1 { 
+    for (i in 1..len - 1) { 
         @assert( s[i - 1] <= s[i] <= s[i + 1] ) 
     }
     @print(.sort_time, t, .ns)

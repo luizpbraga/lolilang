@@ -1,13 +1,13 @@
 fn factorial(n) {
   f := 1
 
-  for i in 1..n+1 {
+  for (i in 1..n+1) {
     f *= i
   }
 
   return f
 }
 
-for n in 13 {
+for (n in 13) {
   @print(n, factorial(n))
 }

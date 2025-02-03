@@ -1,13 +1,13 @@
 fn fibonacci(n, fib) {
-  if n <= 1 { 
+  if (n <= 1) { 
     return fib[n]
   }
     
-  if fib[n-1] == null {
+  if (fib[n-1] == null) {
     fib[n-1] = fibonacci(n-1, fib)
   }
 
-  if fib[n-2] == null {
+  if (fib[n-2] == null) {
     fib[n-2] = fibonacci(n-2, fib)
   }
 

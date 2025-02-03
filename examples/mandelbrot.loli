@@ -2,8 +2,8 @@
 # returns the number of iteration
 fn numOfIter(c, max) {
     z := 0.0
-    for n in max {
-        if @abs(z) > 2.0: return n
+    for (n in max) {
+        if (@abs(z) > 2.0): return n
         z = z * z + c
     }
     return max
@@ -15,10 +15,10 @@ fn mandelbrot(xmin, xmax, ymin, ymax, width, height, max_iter) {
     h := height - 1.0
     w := width - 1.0
     mandelbrot_image := []
-    for i in height {
+    for (i in height) {
         y := y0 * i / h
         row := []
-        for j in width {
+        for (j in width) {
             x := x0 * j / w
             c := @complex(x, y)
             @append(row, numOfIter(c, max_iter))
@@ -40,6 +40,6 @@ max_iter := 100
 # Generate the Mandelbrot set
 mandelbrot_image := mandelbrot(xmin, xmax, ymin, ymax, width, height, max_iter)
 
-for img in mandelbrot_image {
+for (img in mandelbrot_image) {
     @print(img)
 }

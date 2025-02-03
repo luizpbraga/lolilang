@@ -1,13 +1,13 @@
 # complexity: O(1) !
 fn fibonacci(n) {
-    if n <= 1: 
+    if (n <= 1): 
         return n
 
     a := 0
     b := 1
     t := 0
 
-    for i in 2..n+1 {
+    for (i in 2..n+1) {
         t = a
         a = b
         b = t + b
