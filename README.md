@@ -17,15 +17,15 @@ sex := true
 #### Function and Closures
 ```rust
 fn fibonacci(n, fib) {
-    if n <= 1 { 
+    if (n <= 1) { 
       return fib[n]
     }
       
-    if fib[n-1] == null {
+    if (fib[n-1] == null) {
       fib[n-1] = fibonacci(n-1, fib)
     }
 
-    if fib[n-2] == null {
+    if (fib[n-2] == null) {
       fib[n-2] = fibonacci(n-2, fib)
     }
 
@@ -39,7 +39,7 @@ fibonacci(45, fib)
 
 foo := fn(x, y) {
     hello := "Hello Loli"
-    return if x > y { x } else { hello }
+    return if (x > y) { x } else { hello }
 }
 
 ```
@@ -75,29 +75,29 @@ const map = {
 #### Loops
 ```js
 var i = 0
-for i < 100 {
+for (i < 100) {
     @print(i)
     i = i + 1
 }
 
 range := [1, 2, 3]
-for item in range {
+for (item in range) {
     str := item + " " + item
     @print(str)
 }
 
-for i in 10 {
+for (i in 10) {
     @print("Integer Loop")
 }
 
-for i in 10..100 {
+for (i in 10..100) {
     @print("Range Loop")
 }
 ```
 
 #### Match
 ```rust
-x := match 10 {
+x := match (10) {
     1 => { 0 }
 
     2 => { 1 }
