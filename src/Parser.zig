@@ -48,6 +48,7 @@ fn errlog(p: *Parser, msg: []const u8) !void {
         .{ p.lexer.line_index, at, msg },
     );
 }
+
 const Line = struct {
     line: []const u8,
     start: usize,
@@ -75,6 +76,10 @@ fn line(p: *Parser) Line {
 
 var NULL: ast.Expression = .null;
 var TRUE: ast.Expression = .{ .boolean = .{ .value = true } };
+var ZERO_INT: ast.Expression = .{ .integer = .{ .value = 0 } };
+var ZERO_FLOAT: ast.Expression = .{ .float = .{ .value = 0 } };
+var ZERO_CHAR: ast.Expression = .{ .char = .{ .value = 0 } };
+var ZERO_STRING: ast.Expression = .{ .string = .{ .value = "" } };
 
 pub const Precedence = enum {
     lowest,
@@ -488,13 +493,19 @@ fn parseAssignment(self: *Parser, name: *ast.Expression) !ast.Expression {
 
     // for now, this will work
     if (self.curTokenIs(.@"struct") and !self.peekTokenIs(.@"{")) {
-        try self.types.put(name.identifier.value, {});
+        if (name.* == .identifier) {
+            if (std.ascii.isLower(name.identifier.value[0])) try self.errlog("Type values must start with UpperCase");
+            try self.types.put(name.identifier.value, {});
+        }
     }
 
     stmt.value = try self.parseExpression(.lowest);
 
     if ((op.type == .@":=" or op.type == .@"=") and stmt.value.* == .type) {
-        try self.types.put(stmt.name.identifier.value, {});
+        if (name.* == .identifier) {
+            if (std.ascii.isLower(name.identifier.value[0])) try self.errlog("Type values must start with UpperCase");
+            try self.types.put(stmt.name.identifier.value, {});
+        }
     }
 
     return .{ .assignment = stmt };
@@ -632,12 +643,25 @@ fn parseVar(self: *Parser) !ast.Statement {
     };
 
     if (!self.expectPeek(.@"=")) {
-        // const var_type = try self.parseExpression(.lowest);
-
         self.nextToken();
+        // const var_type = self.parseIdentifier().identifier;
+        // var_stmt.type = var_type;
 
         if (!self.expectPeek(.@"=")) {
-            var_stmt.value = &NULL;
+            // if (std.mem.eql(u8, var_type.value, "int")) {
+            //     var_stmt.value = &ZERO_INT;
+            // } else if (std.mem.eql(u8, var_type.value, "float")) {
+            //     var_stmt.value = &ZERO_FLOAT;
+            // } else if (std.mem.eql(u8, var_type.value, "bool")) {
+            //     var_stmt.value = &TRUE;
+            // } else if (std.mem.eql(u8, var_type.value, "string")) {
+            //     var_stmt.value = &ZERO_STRING;
+            // } else if (std.mem.eql(u8, var_type.value, "null")) {
+            //     var_stmt.value = &NULL;
+            // } else {
+            //     var_stmt.value = &NULL;
+            // }
+            // var_stmt.value = &NULL;
 
             if (self.peekTokenIs(.@";")) {
                 self.nextToken();
@@ -649,15 +673,20 @@ fn parseVar(self: *Parser) !ast.Statement {
 
     self.nextToken();
 
+    const name = var_stmt.name.value;
     // for now, this will work
-    if (self.curTokenIs(.@"struct") and !self.peekTokenIs(.@"{")) {
-        try self.types.put(var_stmt.name.value, {});
+    if (self.curTokenIs(.@"struct")) {
+        if (std.ascii.isLower(name[0])) try self.errlog("Type values must start with UpperCase");
+        try self.types.put(name, {});
     }
 
     var_stmt.value = try self.parseExpression(.lowest);
 
     if (var_stmt.value.* == .type) {
-        try self.types.put(var_stmt.name.value, {});
+        if (std.ascii.isLower(name[0])) try self.errlog("Type values must start with UpperCase.");
+        try self.types.put(name, {});
+    } else {
+        _ = self.types.remove(name);
     }
 
     if (self.peekTokenIs(.@";")) {
@@ -745,6 +774,10 @@ fn instantiatable(self: *Parser, exp: *ast.Expression) bool {
             break :l self.instantiatable(gang.exp);
         },
 
+        // .type => |ty| l: {
+        //     ty.
+        //     break :l self.instantiatable(gang.exp);
+        // },
         .type, .@"if", .match, .@"for", .for_range, .index => true,
 
         else => false,
@@ -909,6 +942,7 @@ fn parseIf(self: *Parser) !ast.Expression {
 // TODO: allow single expression blocks to optionally ignore braces
 fn parseBlock(self: *Parser) anyerror!ast.Block {
     const allocator = self.arena.allocator();
+    var mask = false;
 
     var stmts: std.ArrayList(ast.Statement) = .init(allocator);
     errdefer stmts.deinit();
@@ -924,11 +958,17 @@ fn parseBlock(self: *Parser) anyerror!ast.Block {
 
     if (tk.type == .@":") {
         const stmt = try self.parseStatement();
+        if (stmt == .@"return") if (stmt.@"return".value.* == .type) {
+            mask = true;
+        };
         try stmts.append(stmt);
         // self.nextToken();
     } else {
         while (!self.curTokenIs(.@"}") and !self.curTokenIs(.eof)) {
             const stmt = try self.parseStatement();
+            if (stmt == .@"return") if (stmt.@"return".value.* == .type) {
+                mask = true;
+            };
             try stmts.append(stmt);
             self.nextToken();
         }
@@ -939,6 +979,7 @@ fn parseBlock(self: *Parser) anyerror!ast.Block {
     const stmts_owner = try stmts.toOwnedSlice();
 
     block.statements = stmts_owner;
+    block.mask = mask;
 
     return block;
 }
@@ -964,6 +1005,12 @@ fn parseFn(self: *Parser) !ast.Statement {
 
     func_stmt.func = (try self.parseFunction()).function;
 
+    if (func_stmt.func.mask and std.ascii.isLower(func_stmt.name.value[0])) {
+        try self.errlog("Function that return 'types' must have a name with at least the first letter capitalized");
+    } else if (!func_stmt.func.mask and std.ascii.isUpper(func_stmt.name.value[0])) {
+        try self.errlog("invalid function name: fuck you");
+    }
+
     return .{ .@"fn" = func_stmt };
 }
 
@@ -985,29 +1032,30 @@ fn parseType(self: *Parser) !ast.Expression {
         self.nextToken();
 
         if (self.curTokenIs(.identifier)) {
-            var field: ast.Type.Field = .{
-                .name = self.parseIdentifier().identifier,
-                .value = &NULL,
-            };
-
-            if (names.contains(field.name.value)) {
-                try self.errors.append("Duplicated field name {s}\n", .{field.name.value});
+            const name = self.parseIdentifier().identifier;
+            if (names.contains(name.value)) {
+                try self.errors.append("Duplicated field name {s}\n", .{name.value});
             }
+            try names.put(name.value, {});
 
-            try names.put(field.name.value, {});
-
+            var value = &NULL;
             if (self.expectPeek(.@"=")) {
                 self.nextToken();
-                field.value = try self.parseExpression(.lowest);
+                value = try self.parseExpression(.lowest);
+                if (value.* == .type) {
+                    try self.errlog("A field with value 'Type' is not allowed. sorry");
+                }
             }
 
             if (self.peekTokenIs(.@":")) try self.unexpected(.@":");
-
             if (self.peekTokenIs(.@",") or self.curTokenIs(.@";")) {
                 self.nextToken();
             }
 
-            try fields.append(field);
+            try fields.append(.{
+                .name = name,
+                .value = value,
+            });
             continue;
         }
 
@@ -1018,14 +1066,17 @@ fn parseType(self: *Parser) !ast.Expression {
             }
 
             const name = self.parseIdentifier().identifier;
-
             if (names.contains(name.value)) {
                 try self.errors.append("Duplicated field name {s}\n", .{name.value});
             }
-
             try names.put(name.value, {});
 
             const func = (try self.parseFunction()).function;
+            if (func.mask and std.ascii.isLower(name.value[0])) {
+                try self.errlog("Function that return 'types' must have a name with at least the first letter capitalized");
+            } else if (!func.mask and std.ascii.isUpper(name.value[0])) {
+                try self.errlog("Invalid function name; tip: follow the fucking naming convention");
+            }
 
             try descs.append(.{
                 .name = name,
@@ -1069,6 +1120,7 @@ fn parseFunction(self: *Parser) !ast.Expression {
     if (!self.expectPeek(.@"{")) try self.missing(.@"{");
 
     func.body = try self.parseBlock();
+    func.mask = func.body.mask;
 
     return .{ .function = func };
 }
@@ -1331,6 +1383,9 @@ pub fn parseHash(self: *Parser) !ast.Expression {
 
         self.nextToken();
         const val = try self.parseExpression(.lowest);
+        if (val.* == .type) {
+            try self.errlog("A hash field is not allowed to be a type");
+        }
 
         try pairs.append(.{ key, val });
 

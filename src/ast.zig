@@ -287,7 +287,7 @@ pub const Var = struct {
     at: usize = 0,
     name: Identifier,
     value: *Expression,
-    // type: ?*Expression = null,
+    type: ?Identifier = null,
 
     pub fn statementNode(self: *const @This()) void {
         _ = self;
@@ -404,6 +404,7 @@ pub const Block = struct {
     token: Token,
     at: usize = 0,
     statements: []Statement,
+    mask: bool = false,
 
     pub fn tokenLiteral(_: *const @This()) []const u8 {
         return "{";
@@ -549,6 +550,7 @@ pub const Function = struct {
     name: ?Identifier = null,
     parameters: []Identifier,
     body: Block,
+    mask: bool = false,
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return self.token.literal;

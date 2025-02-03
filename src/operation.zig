@@ -250,7 +250,7 @@ fn isNumber(v: *Value) bool {
 }
 
 /// optimizar essa merda!!!!!!
-pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
+pub inline fn executeBinary(vm: *Vm, op: code.Opcode) !void {
     const right = vm.pop();
     const left = vm.pop();
 
