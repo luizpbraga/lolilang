@@ -6,8 +6,10 @@
 
     zig master
 
-### code example
+##### Build 
+    zig build -Doptimize=ReleaseFast
 
+### code example
 #### Variable Declaration
 ```go
 var t = 3
