@@ -70,7 +70,7 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
             // if (y.type != .@"enum") {
             //     return vm.newError("Struct Not Indexable", .{});
             // }
-            const value = y.fields.get(index.tag) orelse return vm.newError("Undefined Struct/Enum Declaration", .{});
+            const value = y.fields.get(index.tag) orelse return vm.newError("no declaration/tag named '{s}' in type {s}", .{ index.tag, y.name orelse "anon" });
             return try vm.push(value);
         },
         .string => |string| {
@@ -87,7 +87,7 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
                     const char = string.items[@intCast(i)];
                     return try vm.push(.{ .char = char });
                 }
-                return vm.newError("Index Out of Bound: array len is {}, index is {}", .{ len, i });
+                return vm.newError("Index Out of Bound: string len is {}, index is {}", .{ len, i });
             }
 
             // TODO: optimize

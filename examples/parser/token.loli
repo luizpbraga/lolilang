@@ -1,0 +1,230 @@
+pub var Token = struct {
+    type
+    literal
+
+    fn init(type, literal) {
+        return Token{
+            type: type,
+            literal: literal,
+        }
+    }
+}
+
+pub var Type = enum {
+    ILLEGAL
+    EOF
+    IDENTIFIER
+    FLOAT
+    CHAR
+    INTEGER
+    STRING
+    NULL
+    PERCENT
+    EQUAL
+    COLON_EQUAL
+    EXCLAMATION
+    EQUAL_EQUAL
+    NOT_EQUAL
+    PLUS
+    MINUS
+    PLUS_PLUS
+    MINUS_MINUS
+    SLASH
+    STAR
+    GREATER
+    LESS
+    PLUS_EQUAL
+    MINUS_EQUAL
+    STAR_EQUAL
+    SLASH_EQUAL
+    GREATER_EQUAL
+    LESS_EQUAL
+    ARROW
+    COMMA
+    SEMICOLON
+    COLON
+    CARET
+    LPAREN
+    RPAREN
+    LBRACE
+    RBRACE
+    LBRACKET
+    RBRACKET
+    DOT
+    DOT_DOT_EQUAL
+    DOT_DOT
+    FN
+    ENUM
+    STRUCT
+    NEW
+    FOR
+    MATCH
+    RETURN
+    VAR
+    CON
+    FALSE
+    TRUE
+    IN
+    WITH
+    IF
+    ELSE
+    OR
+    AND
+    CONTINUE
+    BREAK
+    DEFER
+}
+
+pub fn loopUp(ident) {
+    return match (ident) {
+        "true" => {
+            Type.TRUE
+        }
+        "false" => {
+            Type.FALSE
+        }
+        "for" => {
+            Type.FOR
+        }
+        "if" => {
+            Type.IF
+        }
+        "else" => {
+            Type.ELSE
+        }
+        "var" => {
+            Type.VAR
+        }
+        "break" => {
+            Type.BREAK
+        }
+        "continue" => {
+            Type.CONTINUE
+        }
+        "defer" => {
+            Type.DEFER
+        }
+        "in" => {
+            Type.IN
+        }
+        "and" => {
+            Type.AND
+        }
+        "or" => {
+            Type.OR
+        }
+        "fn" => {
+            Type.FN
+        }
+        "con" => {
+            Type.CON
+        }
+        "struct" => {
+            Type.STRUCT
+        }
+        "enum" => {
+            Type.ENUM
+        }
+        else => {
+            Type.IDENTIFIER
+        }
+    }
+}
+
+pub var Prec = enum {
+    lowest
+    assigne
+    lor
+    land
+    equals
+    lessgreater
+    sum
+    product
+    prefix
+    call
+    index
+
+    fn peek(token_type) {
+        return match (token_type) {
+            Type.OR => {
+                Prec.lor
+            }
+            Type.AND => {
+                Prec.land
+            }
+            Type.EQUAL_EQUAL => {
+                Prec.equals
+            }
+            Type.NOT_EQUAL => {
+                Prec.equals
+            }
+            Type.GREATER => {
+                Prec.lessgreater
+            }
+            Type.GREATER_EQUAL => {
+                Prec.lessgreater
+            }
+            Type.LESS => {
+                Prec.lessgreater
+            }
+            Type.LESS_EQUAL => {
+                Prec.lessgreater
+            }
+            Type.PLUS => {
+                Prec.sum
+            }
+            Type.MINUS => {
+                Prec.sum
+            }
+            Type.STAR => {
+                Prec.product
+            }
+            Type.SLASH => {
+                Prec.product
+            }
+            Type.PERCENT => {
+                Prec.product
+            }
+            Type.LBRACE => {
+                Prec.call
+            }
+            Type.LPAREN => {
+                Prec.call
+            }
+            Type.EXCLAMATION => {
+                Prec.prefix
+            }
+            Type.LBRACKET => {
+                Prec.index
+            }
+            Type.DOT => {
+                Prec.index
+            }
+            Type.DOT_DOT => {
+                Prec.index
+            }
+            Type.EQUAL => {
+                Prec.assigne
+            }
+            Type.COLON_EQUAL => {
+                Prec.assigne
+            }
+            Type.PLUS_EQUAL => {
+                Prec.assigne
+            }
+            Type.MINUS_EQUAL => {
+                Prec.assigne
+            }
+            Type.STAR_EQUAL => {
+                Prec.assigne
+            }
+            Type.SLASH_EQUAL => {
+                Prec.assigne
+            }
+            else => {
+                Prec.lowest
+            }
+        }
+    }
+}
+

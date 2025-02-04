@@ -415,7 +415,12 @@ pub const Write = struct {
                     for (match.arms) |arm| {
                         try w.tab();
                         // try w.buffer.writer().writeByteNTimes('\t', w.block);
-                        try w.write(.{ .expression = arm.condition });
+                        for (arm.condition) |condition| {
+                            try w.write(.{ .expression = condition });
+                            try w.append(", ");
+                        }
+                        _ = w.buffer.popOrNull();
+                        _ = w.buffer.popOrNull();
                         try w.append(" => ");
                         try w.write(.{ .statement = .{ .block = arm.block } });
                         try w.newLine();

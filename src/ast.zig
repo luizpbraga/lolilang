@@ -644,7 +644,7 @@ pub const Match = struct {
     pub const Arm = struct {
         at: usize = 0,
         // =>
-        condition: *Expression,
+        condition: []*Expression,
         block: Block,
     };
 

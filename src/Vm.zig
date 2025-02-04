@@ -33,7 +33,7 @@ t: i68 = 0,
 pub fn newError(vm: *Vm, comptime fmt: []const u8, args: anytype) anyerror {
     const pos = vm.positions[if (vm.cursor < vm.positions.len) vm.cursor else vm.positions.len - 1];
     const line: Line = .init(vm.errors.input, pos);
-    try vm.errors.msg.writer().print(Error.BOLD ++ "{}:{}: ", .{ line.start, line.index });
+    try vm.errors.msg.writer().print(Error.BOLD ++ "{s}:{}:{}: ", .{ vm.errors.file, line.start, line.index });
     try vm.errors.msg.writer().print(Error.RED ++ "Runtime Error: " ++ Error.END ++ fmt ++ "\n", args);
     try vm.errors.msg.writer().print("\t{s}\n\t", .{line.line});
     try vm.errors.msg.writer().writeByteNTimes(' ', line.start);
@@ -168,15 +168,15 @@ pub fn run(vm: *Vm) anyerror!void {
             },
 
             .to_range => {
-                const pos = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-                fm.ip += 1;
+                const pos = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
+                fm.ip += 2;
                 const value = vm.pop();
                 vm.constants[pos] = .{ .range = value.toRange() };
             },
 
             .get_range => {
-                const pos = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-                fm.ip += 1;
+                const pos = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
+                fm.ip += 2;
                 var range = &vm.constants[pos].range;
 
                 const value = range.next() orelse {
@@ -240,8 +240,8 @@ pub fn run(vm: *Vm) anyerror!void {
             },
 
             .method_set => {
-                const field_pos = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-                fm.ip += 1;
+                const field_pos = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
+                fm.ip += 2;
                 const value = vm.pop();
                 var left = vm.pop();
                 const index = vm.constants[field_pos];
@@ -250,8 +250,8 @@ pub fn run(vm: *Vm) anyerror!void {
 
             .method_get => {
                 const caller = vm.pop();
-                const builtin_index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-                fm.ip += 1;
+                const builtin_index = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
+                fm.ip += 2;
                 const builtin = builtins.builtin_functions[builtin_index];
                 const value = try builtin.function(vm, &.{caller});
                 try vm.push(value);

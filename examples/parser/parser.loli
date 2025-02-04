@@ -1,0 +1,233 @@
+import "./token.loli"
+import "./ast.loli"
+
+Type := token.Type
+Prec := token.Prec
+
+pub var Parser = struct {
+    lex
+    ctk
+    ptk
+    ltk
+
+    fn init(lex) {
+        p := Parser{
+            lex: lex,
+            ltk: token.Token{
+                type: Type.EOF,
+                literal: "",
+            },
+        }
+        p.next()
+        p.next()
+        return p
+    }
+
+    fn next(p) {
+        p.ltk = p.ctk
+        p.ctk = p.ptk
+        p.ptk = p.lex.next()
+    }
+
+    fn peekPrec(p) {
+        return Prec.peek(p.ptk.type)
+    }
+
+    fn currPrec(p) {
+        return Prec.peek(p.ctk.type)
+    }
+
+    fn parseIdetifier(p) {
+        return ast.Expression{
+            ty: ast.type.identifier,
+            identifier: ast.Identifier{
+                value: p.ctk.literal,
+            },
+        }
+    }
+
+    fn parseInteger(p) {
+        return ast.Expression{
+            ty: ast.type.integer,
+            integer: ast.Integer{
+                value: @parse(.int, p.ctk.literal),
+            },
+        }
+    }
+
+    fn parseFloat(p) {
+        return ast.Expression{
+            ty: ast.type.float,
+            float: ast.Float{
+                value: @parse(.float, p.ctk.literal),
+            },
+        }
+    }
+
+    fn parseBool(p) {
+        return ast.Expression{
+            ty: ast.type.bool,
+            bool: ast.Bool{
+                value: p.ctkIs(Type.TRUE),
+            },
+        }
+    }
+
+    fn parseString(p) {
+        return ast.Expression{
+            ty: ast.type.string,
+            string: ast.String{
+                value: p.ctk.literal,
+            },
+        }
+    }
+
+    fn prefixExp(p) {
+        return match (p.ctk.type) {
+            Type.IDENTIFIER => {
+                p.parseIdetifier()
+            }
+            Type.STRING => {
+                p.parseString()
+            }
+            Type.INTEGER => {
+                p.parseInteger()
+            }
+            Type.FLOAT => {
+                p.parseFloat()
+            }
+            Type.TRUE, Type.FALSE => {
+                p.parseBool()
+            }
+            else => {
+                @print("token type:", p.ctk.type)
+                @panic("Invalid Expression for token literal " + p.ctk.literal)
+            }
+        }
+    }
+
+    fn parseVar(p) {
+        if (!Parser.expectPeek(p, Type.IDENTIFIER)) {
+            @panic("EXPECT identifier")
+        }
+        name := ast.Identifier{
+            value: p.ctk.literal,
+        }
+        if (!Parser.expectPeek(p, Type.EQUAL)) {
+            @panic("EXPECT =")
+        }
+        p.next()
+        value := Parser.parseExpression(p, Prec.lowest)
+        return ast.Statement{
+            ty: ast.type.let,
+            let: ast.Let{
+                name: name,
+                value: value,
+            },
+        }
+    }
+
+    fn parseExpStatement(p) {
+        exp := Parser.parseExpression(p, null)
+        return ast.Statement{
+            ty: ast.type.exp_stmt,
+            exp_stmt: exp,
+        }
+    }
+
+    fn parseStatement(p) {
+        ctk := p.ctk
+        return match (ctk.type) {
+            Type.VAR => {
+                p.parseVar()
+            }
+            Type.CON => {}
+            Type.CONTINUE => {}
+            Type.BREAK => {}
+            Type.RETURN => {}
+            Type.FN => {}
+            else => {
+                p.parseExpStatement()
+            }
+        }
+    }
+
+    fn parseProgram(p) {
+        stmts := []
+        for (p.ctk.type != Type.EOF) {
+            stmt := p.parseStatement()
+            @append(stmts, stmt)
+            p.next()
+        }
+        return ast.Program{
+            statements: stmts,
+        }
+    }
+
+    fn parse(p) {
+        program := p.parseProgram()
+        return ast.Node{
+            ty: ast.type.statement,
+            statement: ast.Statement{
+                ty: ast.type.program,
+                program: program,
+            },
+        }
+    }
+
+    fn ptkIs(p, tk) {
+        return tk == p.ptk
+    }
+
+    fn ctkIs(p, tk) {
+        return tk == p.ctk
+    }
+
+    fn expectPeek(p, tk) {
+        if (p.ptk.type != tk) {
+            return false
+        }
+        p.next()
+        return true
+    }
+
+    fn parseExpression(p, prec) {
+        left_exp := p.prefixExp()
+
+        for (prec < p.peekPrec()) {
+            right_exp := left_exp
+            left_exp = Parser.infixExp(p, right_exp)
+        }
+
+        return left_exp
+    }
+
+    fn parseInfix(p, left) {
+        op := p.ctk.type
+        prec := p.currPrec()
+        p.next()
+        right := Parser.parseExpression(p, prec)
+        return ast.Expression{
+            ty: ast.type.infix,
+            infix: ast.Infix{
+                op: op,
+                left: left,
+                right: right,
+            },
+        }
+    }
+
+    fn infixExp(p, lx) {
+        left_exp := match (p.ptk.type) {
+            Type.GREATER, Type.GREATER_EQUAL, Type.LESS_EQUAL, Type.LESS, Type.EQUAL_EQUAL, Type.AND, Type.OR, Type.SLASH, Type.MINUS, Type.STAR, Type.PLUS => {
+                p.next()
+                Parser.parseInfix(p, lx)
+            }
+            else => {
+                @panic("Invalid Infix Expression")
+            }
+        }
+        return left_exp
+    }
+}
+

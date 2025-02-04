@@ -37,7 +37,7 @@ pub fn main() !void {
     };
     defer allocator.free(input);
 
-    var err: Error = .{ .input = input, .msg = .init(allocator) };
+    var err: Error = .{ .file = file_name, .input = input, .msg = .init(allocator) };
     defer err.deinit();
 
     if (loli_args) |arg| f: {

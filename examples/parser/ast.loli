@@ -1,0 +1,81 @@
+pub var type = enum {
+    statement
+    expression
+    program
+    exp_stmt
+    let
+    void
+    bool
+    integer
+    float
+    identifier
+    string
+    infix
+}
+
+pub var Node = struct {
+    ty = type.statement
+    expression
+    statement
+}
+
+pub var Statement = struct {
+    ty = type.statement
+    program
+    exp_stmt
+    let
+}
+
+pub var Expression = struct {
+    ty = type.expression
+    void
+    bool
+    identifier
+    integer
+    float
+    string
+    infix
+}
+
+pub var Program = struct {
+    ty = type.program
+    statements
+}
+
+pub var Let = struct {
+    ty = type.let
+    name
+    value
+}
+
+pub var Bool = struct {
+    ty = type.bool
+    value
+}
+
+pub var Integer = struct {
+    ty = type.integer
+    value
+}
+
+pub var Float = struct {
+    ty = type.float
+    value
+}
+
+pub var Identifier = struct {
+    ty = type.identifier
+    value
+}
+
+pub var String = struct {
+    ty = type.string
+    value
+}
+
+pub var Infix = struct {
+    ty = type.infix 
+    op
+    left
+    right
+}

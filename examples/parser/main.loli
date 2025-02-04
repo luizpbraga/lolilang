@@ -1,0 +1,23 @@
+import "./lexer.loli"
+import "./parser.loli"
+
+Lexer := lexer.Lexer
+Parser := parser.Parser
+
+fn main() {
+    l := Lexer.init("./test_file")
+
+    p := Parser.init(l)
+
+    node := p.parse()
+    program := node.statement.program
+
+    for (stmt in program.statements) {
+        let := stmt.let
+        ident := let.name 
+        value := let.value
+        @print(ident.value, value)
+    }
+}
+
+main()

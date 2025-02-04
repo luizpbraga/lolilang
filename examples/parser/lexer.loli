@@ -1,0 +1,192 @@
+import "./token.loli"
+
+Type := token.Type 
+Token := token.Token
+
+pub var Lexer = struct {
+    ch
+    input
+    position = 0
+    read_position = 0
+
+    fn init(file_name) {
+        input := @read(file_name)
+        l := Lexer{
+            input: input,
+        }
+        l.readChar()
+        return l
+    }
+
+    fn initFromString(str) {
+        l := Lexer{
+            input: str,
+        }
+        l.readChar()
+        return l
+    }
+
+    fn readChar(l) {
+        l.ch = if (l.read_position >= l.input.len) {
+            0
+        } else {
+            l.input[l.read_position]
+        }
+        l.position = l.read_position
+        l.read_position = l.read_position + 1
+    }
+
+    fn peekChar(l) {
+        return if (l.read_position >= l.input.len) {
+            0
+        } else {
+            l.input[l.read_position]
+        }
+    }
+
+    fn isDigit(ch) {
+        return ('0' <= ch and ch <= '9')
+    }
+
+    fn isLetter(ch) {
+        return ('a' <= ch and ch <= 'z') or ('@' <= ch and ch <= 'Z') or (ch == '_')
+    }
+
+    fn readNumber(l) {
+        pos := l.position
+        for (Lexer.isDigit(l.ch)) {
+            l.readChar()
+        }
+        if (l.ch != '.') {
+            num := l.input[pos..l.position]
+            if (num.len == 0) {
+                return null
+            }
+            return Token.init(Type.INTEGER, num)
+        }
+        l.readChar()
+        for (Lexer.isDigit(l.ch)) {
+            l.readChar()
+        }
+        num = l.input[pos..l.position]
+        if (num.len == 0) {
+            return null
+        }
+        return Token.init(Type.FLOAT, num)
+    }
+
+    fn skipWhiteSpace(l) {
+        for (l.ch == ' ' or l.ch == '\n' or l.ch == '\t') {
+            l.readChar()
+        }
+    }
+
+    fn readIdentifer(l) {
+        pos := l.position
+        if (Lexer.isDigit(l.ch)) {
+            return null
+        }
+        for (Lexer.isLetter(l.ch) or Lexer.isDigit(l.ch)) {
+            l.readChar()
+        }
+        ident := l.input[pos..l.position]
+        if (ident.len == 0) {
+            return null
+        }
+        return ident
+    }
+
+    fn readString(l) {
+        pos := l.position + 1
+        for (true) {
+            l.readChar()
+            if (l.ch == '"' or l.ch == 0) {
+                break null
+            }
+        }
+        return l.input[pos..l.position]
+    }
+
+    fn next(l) {
+        l.skipWhiteSpace()
+        lit := l.ch
+        tk := match (lit) {
+            '[' => {
+                Type.LBRACKET
+            }
+            ']' => {
+                Type.RBRACKET
+            }
+            '(' => {
+                Type.LPAREN
+            }
+            ')' => {
+                Type.RPAREN
+            }
+            '{' => {
+                Type.LBRACE
+            }
+            '}' => {
+                Type.RBRACE
+            }
+            ',' => {
+                Type.COMMA
+            }
+            ';' => {
+                Type.SEMICOLON
+            }
+            ':' => {
+                Type.COLON
+            }
+            '+' => {
+                Type.PLUS
+            }
+            '-' => {
+                Type.MINUS
+            }
+            '*' => {
+                Type.STAR
+            }
+            '/' => {
+                Type.SLASH
+            }
+            '!' => {
+                Type.EXCLAMATION
+            }
+            '=' => {
+                Type.EQUAL
+            }
+            '>' => {
+                Type.GREATER
+            }
+            '<' => {
+                Type.LESS
+            }
+            '.' => {
+                Type.DOT
+            }
+            0 => {
+                Type.EOF
+            }
+            '"' => {
+                str := l.readString()
+                l.readChar()
+                return Token.init(Type.STRING, str)
+            }
+            else => {
+                ident := l.readIdentifer()
+                if (ident != null) {
+                    ty := token.loopUp(ident)
+                    return Token.init(ty, ident)
+                }
+                tknumber := l.readNumber()
+                if (tknumber != null) {
+                    return tknumber
+                }
+                @panic("Found an illegal token")
+            }
+        }
+        l.readChar()
+        return Token.init(tk, lit)
+    }
+}

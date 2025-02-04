@@ -18,8 +18,8 @@ fn missing(p: *Parser, tk: Token.Type) !void {
     const lin = l.line;
     const at = p.lexer.position - l.start - 1;
     try p.errors.append(
-        "\x1b[1m{}:{}: \x1b[31mSyntax error:\x1b[0m\x1b[1m Expected '{s}', found '{s}' ({s}) \x1b[0m\n\t{s}\n\t",
-        .{ p.lexer.line_index, at, @tagName(tk), p.peek_token.literal, @tagName(p.peek_token.type), lin },
+        "\x1b[1m{s}:{}:{}: \x1b[31mSyntax error:\x1b[0m\x1b[1m Expected '{s}', found '{s}' ({s}) \x1b[0m\n\t{s}\n\t",
+        .{ p.errors.file, p.lexer.line_index, at, @tagName(tk), p.peek_token.literal, @tagName(p.peek_token.type), lin },
     );
     try p.errors.msg.writer().writeByteNTimes(' ', at - 1);
     try p.errors.msg.writer().writeAll("\x1b[32m^\x1b[0m\n");
@@ -41,8 +41,8 @@ fn errlog(p: *Parser, msg: []const u8) !void {
     const l = p.line();
     const at = p.lexer.position - l.start - 1;
     try p.errors.append(
-        "\x1b[1m{}:{}: \x1b[31mSyntax error:\x1b[0m\x1b[1m {s} \x1b[0m\n",
-        .{ p.lexer.line_index, at, msg },
+        "\x1b[1m{s}:{}:{}: \x1b[31mSyntax error:\x1b[0m\x1b[1m {s} \x1b[0m\n",
+        .{ p.errors.file, p.lexer.line_index, at, msg },
     );
 }
 
@@ -362,19 +362,20 @@ fn parseImport(self: *Parser) anyerror!ast.Statement {
 
     const file_path = path_exp.string.value;
     const name = try self.findImportName(file_path);
-    const imput = std.fs.cwd().readFileAlloc(self.arena.allocator(), file_path, 4 * 1024) catch |err| b: {
+    const imput = std.fs.cwd().readFileAlloc(self.arena.allocator(), file_path, std.math.maxInt(usize)) catch |err| b: {
         try self.errlog(@errorName(err));
         break :b "";
     };
     var new_lexer = Lexer.init(imput);
-
     // old state
+    const file_name = self.errors.file;
     const last_lexer = self.lexer;
     const last_cur_token = self.cur_token;
     const last_peek_token = self.peek_token;
     const last_last_token = self.last_token;
 
     // new state
+    self.errors.file = name;
     self.lexer = &new_lexer;
     self.cur_token = undefined;
     self.peek_token = undefined;
@@ -387,6 +388,7 @@ fn parseImport(self: *Parser) anyerror!ast.Statement {
     node.* = try self.parse();
 
     // back to old state
+    self.errors.file = file_name;
     self.lexer = last_lexer;
     self.cur_token = last_cur_token;
     self.peek_token = last_peek_token;
@@ -1171,6 +1173,29 @@ fn parseCallArguments(self: *Parser) ![]*ast.Expression {
     return args_owned;
 }
 
+fn parseMatchArm(self: *Parser) ![]*ast.Expression {
+    const allocator = self.arena.allocator();
+    var args: std.ArrayList(*ast.Expression) = .init(allocator);
+    errdefer args.deinit();
+
+    const exp = try self.parseExpression(.lowest);
+    try args.append(exp);
+
+    while (self.peekTokenIs(.@",")) {
+        self.nextToken();
+        self.nextToken();
+
+        const exp2 = try self.parseExpression(.lowest);
+        try args.append(exp2);
+    }
+
+    if (!self.expectPeek(.@"=>")) try self.missing(.@"=>");
+
+    const args_owned = try args.toOwnedSlice();
+
+    return args_owned;
+}
+
 pub fn parseString(self: *Parser) ast.Expression {
     return .{
         .string = .{
@@ -1304,6 +1329,7 @@ pub fn parseMatch(self: *Parser) !ast.Expression {
 
     self.nextToken();
 
+    // BUG match () {}
     if (self.curTokenIs(.@"{")) {
         match.value = &TRUE;
     } else {
@@ -1338,11 +1364,12 @@ pub fn parseMatch(self: *Parser) !ast.Expression {
         }
 
         var arm: ast.Match.Arm = .{
-            .condition = try self.parseExpression(.lowest),
+            // .condition = try self.parseExpression(.lowest),
+            .condition = try self.parseMatchArm(),
             .block = undefined,
         };
 
-        if (!self.expectPeek(.@"=>")) try self.missing(.@"=>");
+        // if (!self.expectPeek(.@"=>")) try self.missing(.@"=>");
 
         arm.block = if (self.expectPeek(.@"{"))
             try self.parseBlock()

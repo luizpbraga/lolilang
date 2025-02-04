@@ -43,7 +43,7 @@ const Loop = struct {
 fn newError(c: *Compiler, comptime fmt: []const u8, args: anytype) anyerror {
     const pos = c.positions.getLast();
     const line: Line = .init(c.errors.input, pos);
-    try c.errors.msg.writer().print(Error.BOLD ++ "{}:{}: ", .{ line.start, line.index });
+    try c.errors.msg.writer().print(Error.BOLD ++ "{s}:{}:{}: ", .{ c.errors.file, line.start, line.index });
     try c.errors.msg.writer().print(Error.RED ++ "Compilation Error: " ++ Error.END ++ fmt ++ "\n", args);
     try c.errors.msg.writer().print("\t{s}\n\t", .{line.line});
     try c.errors.msg.writer().writeByteNTimes(' ', line.start - 1);
@@ -824,9 +824,9 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 defer jumps_pos_list.deinit();
 
                 // try c.enterScope();
-                for (match.arms) |arm| {
+                for (match.arms) |arm| for (arm.condition) |condition| {
                     try c.compile(.{ .expression = match.value });
-                    try c.compile(.{ .expression = arm.condition });
+                    try c.compile(.{ .expression = condition });
                     try c.emit(.eq, &.{});
 
                     const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
@@ -843,7 +843,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
                     const after_consequence_position = c.insLen();
                     try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
-                }
+                };
 
                 if (match.else_block) |block| {
                     if (block.statements.len == 0) {
