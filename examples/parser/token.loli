@@ -145,86 +145,42 @@ pub var Prec = enum {
     index
 
     fn peek(token_type) {
-        return match (token_type) {
+        x := match (token_type) {
             Type.OR => {
                 Prec.lor
             }
             Type.AND => {
                 Prec.land
             }
-            Type.EQUAL_EQUAL => {
+            Type.EQUAL_EQUAL, Type.NOT_EQUAL => {
                 Prec.equals
             }
-            Type.NOT_EQUAL => {
-                Prec.equals
-            }
-            Type.GREATER => {
+            Type.GREATER, Type.GREATER_EQUAL, Type.LESS, Type.LESS_EQUAL => {
                 Prec.lessgreater
             }
-            Type.GREATER_EQUAL => {
-                Prec.lessgreater
-            }
-            Type.LESS => {
-                Prec.lessgreater
-            }
-            Type.LESS_EQUAL => {
-                Prec.lessgreater
-            }
-            Type.PLUS => {
+            Type.PLUS, Type.MINUS => {
                 Prec.sum
             }
-            Type.MINUS => {
-                Prec.sum
-            }
-            Type.STAR => {
+            Type.STAR, Type.SLASH, Type.PERCENT => {
                 Prec.product
             }
-            Type.SLASH => {
-                Prec.product
-            }
-            Type.PERCENT => {
-                Prec.product
-            }
-            Type.LBRACE => {
-                Prec.call
-            }
-            Type.LPAREN => {
+            Type.LBRACE, Type.LPAREN => {
                 Prec.call
             }
             Type.EXCLAMATION => {
                 Prec.prefix
             }
-            Type.LBRACKET => {
+            Type.LBRACKET, Type.DOT, Type.DOT_DOT => {
                 Prec.index
             }
-            Type.DOT => {
-                Prec.index
-            }
-            Type.DOT_DOT => {
-                Prec.index
-            }
-            Type.EQUAL => {
-                Prec.assigne
-            }
-            Type.COLON_EQUAL => {
-                Prec.assigne
-            }
-            Type.PLUS_EQUAL => {
-                Prec.assigne
-            }
-            Type.MINUS_EQUAL => {
-                Prec.assigne
-            }
-            Type.STAR_EQUAL => {
-                Prec.assigne
-            }
-            Type.SLASH_EQUAL => {
+            Type.EQUAL, Type.COLON_EQUAL, Type.PLUS_EQUAL, Type.MINUS_EQUAL, Type.STAR_EQUAL, Type.SLASH_EQUAL => {
                 Prec.assigne
             }
             else => {
                 Prec.lowest
             }
         }
+        return x
     }
 }
 

@@ -11,6 +11,8 @@ pub var type = enum {
     identifier
     string
     infix
+    ifelse
+    block
 }
 
 pub var Node = struct {
@@ -24,6 +26,7 @@ pub var Statement = struct {
     program
     exp_stmt
     let
+    block
 }
 
 pub var Expression = struct {
@@ -35,6 +38,7 @@ pub var Expression = struct {
     float
     string
     infix
+    ifelse
 }
 
 pub var Program = struct {
@@ -46,6 +50,11 @@ pub var Let = struct {
     ty = type.let
     name
     value
+}
+
+pub var Block = struct {
+    ty = type.block
+    statements
 }
 
 pub var Bool = struct {
@@ -79,3 +88,11 @@ pub var Infix = struct {
     left
     right
 }
+
+pub var If = struct {
+    ty = type.ifelse
+    condition
+    consequence
+    alternative
+}
+

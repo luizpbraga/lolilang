@@ -82,6 +82,64 @@ pub var Parser = struct {
         }
     }
 
+    fn parseBlock(p) {
+        p.next()
+
+        stmts := []
+
+        for (!p.ctkIs(Type.RBRACE) and !p.ctkIs(Type.EOF)) {
+            stmt := p.parseStatement()
+            @append(stmts, stmt)
+            p.next()
+        }
+
+        if (!p.ctkIs(Type.RBRACE)) {
+            @print(p.ctk)
+            @panic("Missing }")
+        }
+
+        return ast.Block{
+            statements: stmts,
+        }
+    }
+
+    fn parseIf(p) {
+        if (!p.expectPeek(Type.LPAREN)) {
+            @panic("Missing Left parentesis")
+        }
+
+        p.next()
+        condition := p.parseExpression(Prec.lowest)
+
+        if (!p.expectPeek(Type.RPAREN)) {
+            @panic("Missing Right parentesis")
+        }
+
+        if (!p.expectPeek(Type.LBRACE)) {
+            @print(p.ptk)
+            @panic("Missing {")
+        }
+
+        consequence := p.parseBlock()
+
+        alternative := null
+        if (p.expectPeek(Type.ELSE)) {
+            if (!p.expectPeek(Type.LBRACE)) {
+                @panic("Missing }")
+            }
+            alternative = p.parseBlock()
+        }
+
+        return ast.Expression{
+            ty: ast.type.ifelse,
+            ifelse: ast.If{
+                condition: condition,
+                consequence: consequence,
+                alternative: alternative,
+            },
+        }
+    }
+
     fn prefixExp(p) {
         return match (p.ctk.type) {
             Type.IDENTIFIER => {
@@ -99,25 +157,26 @@ pub var Parser = struct {
             Type.TRUE, Type.FALSE => {
                 p.parseBool()
             }
+            Type.IF, Type.ELSE => {
+                p.parseIf()
+            }
             else => {
-                @print("token type:", p.ctk.type)
-                @panic("Invalid Expression for token literal " + p.ctk.literal)
+                @print("token type:", p.ctk)
+                @panic("Invalid Expression for token literal")
             }
         }
     }
 
     fn parseVar(p) {
-        if (!Parser.expectPeek(p, Type.IDENTIFIER)) {
+        if (!p.expectPeek(Type.IDENTIFIER)) {
             @panic("EXPECT identifier")
         }
-        name := ast.Identifier{
-            value: p.ctk.literal,
-        }
-        if (!Parser.expectPeek(p, Type.EQUAL)) {
+        name := p.parseIdetifier().identifier
+        if (!p.expectPeek(Type.EQUAL)) {
             @panic("EXPECT =")
         }
         p.next()
-        value := Parser.parseExpression(p, Prec.lowest)
+        value := p.parseExpression(Prec.lowest)
         return ast.Statement{
             ty: ast.type.let,
             let: ast.Let{
@@ -128,7 +187,7 @@ pub var Parser = struct {
     }
 
     fn parseExpStatement(p) {
-        exp := Parser.parseExpression(p, null)
+        exp := p.parseExpression(Prec.lowest)
         return ast.Statement{
             ty: ast.type.exp_stmt,
             exp_stmt: exp,
@@ -136,16 +195,10 @@ pub var Parser = struct {
     }
 
     fn parseStatement(p) {
-        ctk := p.ctk
-        return match (ctk.type) {
+        return match (p.ctk.type) {
             Type.VAR => {
                 p.parseVar()
             }
-            Type.CON => {}
-            Type.CONTINUE => {}
-            Type.BREAK => {}
-            Type.RETURN => {}
-            Type.FN => {}
             else => {
                 p.parseExpStatement()
             }
@@ -176,11 +229,11 @@ pub var Parser = struct {
     }
 
     fn ptkIs(p, tk) {
-        return tk == p.ptk
+        return tk == p.ptk.type
     }
 
     fn ctkIs(p, tk) {
-        return tk == p.ctk
+        return tk == p.ctk.type
     }
 
     fn expectPeek(p, tk) {
@@ -193,10 +246,11 @@ pub var Parser = struct {
 
     fn parseExpression(p, prec) {
         left_exp := p.prefixExp()
-
         for (prec < p.peekPrec()) {
+            pre := p.peekPrec()
+            @print(pre)
             right_exp := left_exp
-            left_exp = Parser.infixExp(p, right_exp)
+            left_exp = p.infixExp(right_exp)
         }
 
         return left_exp
@@ -206,7 +260,7 @@ pub var Parser = struct {
         op := p.ctk.type
         prec := p.currPrec()
         p.next()
-        right := Parser.parseExpression(p, prec)
+        right := p.parseExpression(prec)
         return ast.Expression{
             ty: ast.type.infix,
             infix: ast.Infix{
@@ -221,7 +275,7 @@ pub var Parser = struct {
         left_exp := match (p.ptk.type) {
             Type.GREATER, Type.GREATER_EQUAL, Type.LESS_EQUAL, Type.LESS, Type.EQUAL_EQUAL, Type.AND, Type.OR, Type.SLASH, Type.MINUS, Type.STAR, Type.PLUS => {
                 p.next()
-                Parser.parseInfix(p, lx)
+                p.parseInfix(lx)
             }
             else => {
                 @panic("Invalid Infix Expression")

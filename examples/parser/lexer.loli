@@ -190,3 +190,11 @@ pub var Lexer = struct {
         return Token.init(tk, lit)
     }
 }
+
+# l := Lexer.initFromString("var x = 1")
+# tk := l.next()
+# for (tk.type != Type.EOF) {
+#     @print(tk)
+#     tk = l.next()
+# }
+# @print(tk.type, tk.literal)

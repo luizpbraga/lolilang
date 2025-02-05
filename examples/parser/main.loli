@@ -1,22 +1,37 @@
 import "./lexer.loli"
 import "./parser.loli"
+import "./ast.loli"
 
 Lexer := lexer.Lexer
 Parser := parser.Parser
 
 fn main() {
     l := Lexer.init("./test_file")
-
     p := Parser.init(l)
-
     node := p.parse()
-    program := node.statement.program
 
+    program := node.statement.program
     for (stmt in program.statements) {
-        let := stmt.let
-        ident := let.name 
-        value := let.value
-        @print(ident.value, value)
+        match (stmt.ty) {
+            ast.type.let => {
+                let := stmt.let 
+                name := let.name 
+                value := let.value
+                @print(name, value)
+            }
+
+            ast.type.exp_stmt => {
+                exp_stmt := stmt.exp_stmt
+                @print(exp_stmt)
+            }
+
+            ast.type.block => {
+                block := stmt.block
+                for (s in block) {
+                    @print(s)
+                }
+            }
+        }
     }
 }
 
