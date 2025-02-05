@@ -90,6 +90,7 @@ pub fn freeObject(vm: *Vm, obj: *Object) void {
 
         .type => |*ty| {
             ty.fields.deinit();
+            if (ty.desc) |*desc| desc.deinit();
         },
 
         .instance => |*ty| {

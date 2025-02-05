@@ -909,7 +909,7 @@ fn parseFn(self: *Parser) !ast.Statement {
 }
 
 fn parseType(self: *Parser) !ast.Expression {
-    var struc: ast.Type = .{ .type = self.cur_token.type };
+    var struc_or_enum: ast.Type = .{ .type = self.cur_token.type };
 
     if (!self.expectPeek(.@"{")) try self.missing(.@"{");
 
@@ -926,20 +926,18 @@ fn parseType(self: *Parser) !ast.Expression {
         self.nextToken();
 
         if (self.curTokenIs(.identifier)) {
-            var field: ast.Type.Field = .{
-                .name = self.parseIdentifier().identifier,
-                .value = &NULL,
-            };
+            const name = self.parseIdentifier().identifier;
 
-            if (names.contains(field.name.value)) {
-                try self.errors.append("Duplicated field name {s}\n", .{field.name.value});
+            if (names.contains(name.value)) {
+                try self.errors.append("Duplicated field name {s}\n", .{name.value});
             }
 
-            try names.put(field.name.value, {});
+            try names.put(name.value, {});
 
+            var value = &NULL;
             if (self.expectPeek(.@"=")) {
                 self.nextToken();
-                field.value = try self.parseExpression(.lowest);
+                value = try self.parseExpression(.lowest);
             }
 
             if (self.peekTokenIs(.@":")) try self.unexpected(.@":");
@@ -948,7 +946,7 @@ fn parseType(self: *Parser) !ast.Expression {
                 self.nextToken();
             }
 
-            try fields.append(field);
+            try fields.append(.{ .name = name, .value = value });
             continue;
         }
 
@@ -990,11 +988,11 @@ fn parseType(self: *Parser) !ast.Expression {
 
     if (!self.curTokenIs(.@"}")) try self.missing(.@"}");
 
-    struc.fields = try fields.toOwnedSlice();
-    struc.desc = try descs.toOwnedSlice();
+    struc_or_enum.fields = try fields.toOwnedSlice();
+    struc_or_enum.desc = try descs.toOwnedSlice();
     // struc.comments = try comments.toOwnedSlice();
 
-    return .{ .type = struc };
+    return .{ .type = struc_or_enum };
 }
 
 fn parseFunction(self: *Parser) !ast.Expression {

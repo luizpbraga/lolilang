@@ -27,7 +27,11 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
     }
 
     if (left.* != .obj) {
-        return vm.newError("Invalid Index Operation on type '{s}' with index '{s}'", .{ left.name(), index.name() });
+        if (index.* == .tag) {
+            return vm.newError("Invalid Index Operation on type '{s}' with index/tag '{s}'", .{ left.name(), index.tag });
+        } else {
+            return vm.newError("Invalid Index Operation on type '{s}' with index/tag '{s}'", .{ left.name(), index.name() });
+        }
     }
 
     switch (left.obj.type) {
@@ -441,6 +445,19 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
     }
 
     switch (left) {
+        .enumtag => |left_val| switch (right) {
+            .enumtag => |right_val| {
+                const result = switch (op) {
+                    .eq => left_val.id == right_val.id,
+                    .neq => left_val.id != right_val.id,
+                    .gt => left_val.id > right_val.id,
+                    .gte => left_val.id >= right_val.id,
+                    else => return vm.newError("Invalid operation!", .{}),
+                };
+                return try vm.push(.{ .boolean = result });
+            },
+            else => {},
+        },
         .boolean => |left_val| switch (right) {
             .boolean => |right_val| {
                 const result = switch (op) {

@@ -28,7 +28,6 @@ loop: Loop = .{},
 imports: std.StringHashMap(void),
 
 struct_fields: std.ArrayList(struct { index: usize, fields: [][]const u8 = &.{} }),
-type_index: usize = 0,
 
 const Loop = struct {
     info: [1]struct {
@@ -979,20 +978,12 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                         try c.compile(.{ .expression = value });
                     }
                 } else {
-                    var n: i32 = 0;
                     for (fields) |field| {
                         const ident = field.name;
                         const value = field.value;
 
                         const pos = try c.addConstants(.{ .tag = ident.value });
                         try c.emit(.constant, &.{pos});
-
-                        if (value.* == .null) {
-                            const posx = try c.addConstants(.{ .integer = n });
-                            try c.emit(.constant, &.{posx});
-                            n += 1;
-                            continue;
-                        }
 
                         try c.compile(.{ .expression = value });
                     }
@@ -1012,8 +1003,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 //     .instructions = ...
                 // } })
 
-                try c.emit(.type, &.{ c.type_index, fields.len + descs.len + 1, @intFromEnum(e) });
-                c.type_index += 1;
+                try c.emit(.type, &.{ descs.len + 1, fields.len, @intFromEnum(e) });
             },
 
             else => |exx| {

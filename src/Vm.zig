@@ -404,27 +404,51 @@ pub fn run(vm: *Vm) anyerror!void {
             },
 
             .type => {
-                const index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-                const fields_number = std.mem.readInt(u8, instructions[ip + 2 ..][0..1], .big);
+                const desc_len = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
+                const fields_len = std.mem.readInt(u8, instructions[ip + 2 ..][0..1], .big);
                 const type_type = std.mem.readInt(u8, instructions[ip + 3 ..][0..1], .big);
 
                 fm.ip += 3;
 
                 var struct_type: Object.BuiltinType = .{
-                    .index = index,
                     .type = @enumFromInt(type_type),
                     .fields = .init(vm.allocator),
                 };
                 errdefer struct_type.fields.deinit();
 
-                const start_index = vm.sp - (fields_number - 1) * 2;
+                const start_index = vm.sp - (desc_len + fields_len - 1) * 2;
                 const end_index = vm.sp;
                 var i = start_index;
                 struct_type.name = vm.stack[i - 1].tag;
-                while (i < end_index) : (i += 2) {
-                    const name = vm.stack[i].tag;
-                    const value = vm.stack[i + 1];
-                    try struct_type.fields.put(name, value);
+
+                switch (struct_type.type) {
+                    .@"struct" => while (i < end_index) : (i += 2) {
+                        const name = vm.stack[i].tag;
+                        const value = vm.stack[i + 1];
+                        try struct_type.fields.put(name, value);
+                    },
+                    .@"enum" => {
+                        var id: usize = 0;
+                        struct_type.desc = .init(vm.allocator);
+                        // fields
+                        l: while (i < end_index) : (i += 2) {
+                            const name = vm.stack[i].tag;
+                            const value = vm.stack[i + 1];
+                            try struct_type.fields.put(name, .{ .enumtag = .{ .tag = name, .id = id, .ptr = &(struct_type.desc.?) } });
+                            try struct_type.desc.?.put(name, value);
+                            id += 1;
+                            if (id > fields_len) break :l;
+                        }
+                        // methods
+                        while (i < end_index) : (i += 2) {
+                            const name = vm.stack[i].tag;
+                            const value = vm.stack[i + 1];
+                            try struct_type.fields.put(name, value);
+                        }
+                    },
+                    else => {
+                        return vm.newError("Error type not implemented", .{});
+                    },
                 }
 
                 const obj = try memory.allocateObject(vm, .{ .type = struct_type });
@@ -489,6 +513,12 @@ pub fn run(vm: *Vm) anyerror!void {
                 const caller_value = vm.stack[vm.sp - 1 - args_number];
 
                 switch (caller_value) {
+                    .enumtag => |et| {
+                        const value = et.ptr.get(et.tag) orelse .null;
+                        std.debug.print("{}\n", .{value});
+                        try vm.push(value);
+                        continue;
+                    },
                     .obj => |ob| switch (ob.type) {
                         .desc => |func| {
                             const bp: isize = @intCast(vm.sp - args_number);
@@ -520,7 +550,7 @@ pub fn run(vm: *Vm) anyerror!void {
                             }
 
                             if (args_number != func.num_parameters) {
-                                return vm.newError("Function: Arguments Mismatched: expect {}, got {} ", .{ func.num_parameters, args_number });
+                                return vm.newError("Function {s}: Arguments Mismatched: expect {}, got {} ", .{ func.name orelse "annon", func.num_parameters, args_number });
                             }
 
                             const frame: Frame = .init(.{ .func = func }, bp);
@@ -535,7 +565,7 @@ pub fn run(vm: *Vm) anyerror!void {
                             const bp: isize = @intCast(vm.sp - args_number);
 
                             if (args_number != func.num_parameters) {
-                                return vm.newError("Function: Arguments Mismatched: expect {}, got {} ", .{ func.num_parameters, args_number });
+                                return vm.newError("Function {s}: Arguments Mismatched: expect {}, got {} ", .{ func.name orelse "annon", func.num_parameters, args_number });
                             }
 
                             const frame: Frame = .init(.{ .func = func }, bp);

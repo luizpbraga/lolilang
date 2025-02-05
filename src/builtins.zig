@@ -518,6 +518,10 @@ fn printV(value: Value) void {
             std.debug.print("{s}", .{b});
         },
 
+        .enumtag => |et| {
+            std.debug.print("{s}", .{et.tag});
+        },
+
         .range => |r| std.debug.print("[range:{s}:{}:{}]", .{ @tagName(r.value.*), r.start, r.end }),
 
         .float => |o| std.debug.print("{d}", .{o}),

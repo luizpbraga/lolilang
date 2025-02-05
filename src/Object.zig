@@ -25,8 +25,6 @@ pub const Type = union(enum) {
 
 pub const BuiltinType = struct {
     pub const BT = enum { @"struct", @"enum", @"error" };
-
-    index: usize,
     type: BT,
     name: ?[]const u8 = null,
     fields: std.StringHashMap(Value),
@@ -49,6 +47,11 @@ pub const Value = union(enum) {
     char: u8,
     range: Range,
     tag: []const u8,
+    enumtag: struct {
+        tag: []const u8,
+        id: usize,
+        ptr: *std.StringHashMap(Value),
+    },
     builtin: Builtin,
     obj: *Object,
 
