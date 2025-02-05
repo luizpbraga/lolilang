@@ -448,6 +448,9 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
     switch (left) {
         .enumtag => |left_val| switch (right) {
             .enumtag => |right_val| {
+                if (!std.mem.eql(u8, left_val.from.name.?, right_val.from.name.?)) {
+                    return try vm.push(.{ .boolean = false });
+                }
                 const result = switch (op) {
                     .eq => left_val.id == right_val.id,
                     .neq => left_val.id != right_val.id,

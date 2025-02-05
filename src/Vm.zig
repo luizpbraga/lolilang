@@ -434,7 +434,15 @@ pub fn run(vm: *Vm) anyerror!void {
                         l: while (i < end_index) : (i += 2) {
                             const name = vm.stack[i].tag;
                             const value = vm.stack[i + 1];
-                            try struct_type.fields.put(name, .{ .enumtag = .{ .tag = name, .id = id, .ptr = &(struct_type.decl.?) } });
+                            try struct_type.fields.put(name, .{
+                                .enumtag = .{
+                                    .tag = name,
+                                    .id = id,
+                                    // copy???
+                                    .from = &struct_type,
+                                    // .ptr = &(struct_type.decl.?),
+                                },
+                            });
                             try struct_type.decl.?.put(name, value);
                             id += 1;
                             if (id > fields_len) break :l;
@@ -509,8 +517,12 @@ pub fn run(vm: *Vm) anyerror!void {
 
                 switch (caller_value) {
                     .enumtag => |et| {
-                        const value = et.ptr.get(et.tag) orelse .null;
-                        try vm.push(value);
+                        if (et.from.decl) |decl| {
+                            const value = decl.get(et.tag) orelse .null;
+                            try vm.push(value);
+                            continue;
+                        }
+                        try vm.push(.null);
                         continue;
                     },
                     .obj => |ob| switch (ob.type) {

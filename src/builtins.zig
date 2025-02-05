@@ -23,6 +23,7 @@ pub var builtin_functions = [_]Object.Builtin{
     .{ .name = "@assert", .function = Builtin.assert },
     .{ .name = "@time", .function = Builtin.time },
     .{ .name = "@rand", .function = Builtin.rand },
+    .{ .name = "@tagName", .function = Builtin.tagName },
 };
 
 const LoliType = enum {
@@ -62,6 +63,15 @@ pub fn newString(vm: *Vm, value: ?[]const u8) !Value {
 
 /// TODO: THIS NEED A BIIIIG REWRITE
 const Builtin = struct {
+    pub fn tagName(vm: *Vm, args: []const Value) !Value {
+        const name = switch (args[0]) {
+            .enumtag => |t| t.tag,
+            .tag => |t| t,
+            else => return vm.newError("Invalid Argument", .{}),
+        };
+        return newString(vm, name);
+    }
+
     pub fn time(_: *Vm, _: []const Value) !Value {
         return .{ .long_int = std.time.nanoTimestamp() };
     }

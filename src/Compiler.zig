@@ -275,12 +275,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             // lazy import are better; this means we can resolve the missing symbols at compile time,
             // However there is no need to compile every statement!
             .import => |imp| {
-                if (imp.path.* != .string) {
-                    return c.newError("Invalid Module Path", .{});
-                }
-
-                const path = imp.path.string.value;
-                const name = try c.findImportName(path);
+                const name = imp.name.value;
                 const symbol = try c.symbols.?.define(name);
 
                 // old state

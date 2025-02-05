@@ -50,7 +50,8 @@ pub const Value = union(enum) {
     enumtag: struct {
         tag: []const u8,
         id: usize,
-        ptr: *std.StringHashMap(Value),
+        from: *BuiltinType,
+        // ptr: *std.StringHashMap(Value),
     },
     builtin: Builtin,
     obj: *Object,

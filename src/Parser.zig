@@ -354,14 +354,20 @@ fn parseImport(self: *Parser) anyerror!ast.Statement {
     const tk = self.cur_token;
     self.nextToken();
 
+    var name: []const u8 = "";
+    if (self.curTokenIs(.identifier)) {
+        name = self.cur_token.literal;
+        self.nextToken();
+    }
+
     const path_exp = try self.parseExpression(.lowest);
 
     if (path_exp.* != .string) {
-        @panic("import: invalid expression; expected string type");
+        try self.errlog("import: invalid expression; expected string type");
     }
 
     const file_path = path_exp.string.value;
-    const name = try self.findImportName(file_path);
+    if (name.len == 0) name = try self.findImportName(file_path);
     const imput = std.fs.cwd().readFileAlloc(self.arena.allocator(), file_path, std.math.maxInt(usize)) catch |err| b: {
         try self.errlog(@errorName(err));
         break :b "";
@@ -397,6 +403,7 @@ fn parseImport(self: *Parser) anyerror!ast.Statement {
     return .{
         .import = .{
             .name = .{ .value = name, .at = tk.at },
+            // not used
             .path = path_exp,
             .token = tk,
             .node = node,
