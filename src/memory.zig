@@ -79,7 +79,7 @@ pub fn freeObject(vm: *Vm, obj: *Object) void {
             // vm.allocator.free(hash);
         },
 
-        .function, .desc => |func| {
+        .function, .decl => |func| {
             vm.allocator.free(func.instructions);
         },
 
@@ -90,7 +90,7 @@ pub fn freeObject(vm: *Vm, obj: *Object) void {
 
         .type => |*ty| {
             ty.fields.deinit();
-            if (ty.desc) |*desc| desc.deinit();
+            if (ty.decl) |*decl| decl.deinit();
         },
 
         .instance => |*ty| {

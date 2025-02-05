@@ -64,8 +64,9 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
 
             const value = ins.fields.get(index.tag) orelse .null;
 
-            if (value == .obj and value.obj.type == .desc) {
-                value.obj.type.desc.method = left.obj;
+            // get the
+            if (value == .obj and value.obj.type == .decl) {
+                value.obj.type.decl.method = left.obj;
             }
 
             return try vm.push(value);

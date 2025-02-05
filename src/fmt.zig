@@ -473,15 +473,15 @@ pub const Write = struct {
                         try w.newLine();
                     }
 
-                    if (ty.desc.len != 0 and ty.fields.len != 0) {
+                    if (ty.decl.len != 0 and ty.fields.len != 0) {
                         try w.newLine();
                     }
 
-                    if (ty.fields.len != 0 and ty.desc.len == 0) {
+                    if (ty.fields.len != 0 and ty.decl.len == 0) {
                         _ = w.buffer.pop();
                     }
 
-                    for (ty.desc) |func_stmt| {
+                    for (ty.decl) |func_stmt| {
                         try w.tab();
                         // try w.buffer.writer().writeByteNTimes('\t', w.block);
                         try w.print("fn {s}(", .{func_stmt.name.value});
@@ -499,7 +499,7 @@ pub const Write = struct {
                         try w.newLine();
                     }
 
-                    if (ty.desc.len != 0) {
+                    if (ty.decl.len != 0) {
                         _ = w.buffer.pop();
                         _ = w.buffer.pop();
                     }

@@ -558,7 +558,7 @@ pub const Type = struct {
     type: Token.Type,
     name: ?[]const u8 = null,
     fields: []Field = &.{},
-    desc: []FunctionStatement = &.{},
+    decl: []FunctionStatement = &.{},
     // comments: []Statement = &.{},
 
     pub const Field = struct {

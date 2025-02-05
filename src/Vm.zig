@@ -404,7 +404,7 @@ pub fn run(vm: *Vm) anyerror!void {
             },
 
             .type => {
-                const desc_len = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
+                const decl_len = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
                 const fields_len = std.mem.readInt(u8, instructions[ip + 2 ..][0..1], .big);
                 const type_type = std.mem.readInt(u8, instructions[ip + 3 ..][0..1], .big);
 
@@ -416,7 +416,7 @@ pub fn run(vm: *Vm) anyerror!void {
                 };
                 errdefer struct_type.fields.deinit();
 
-                const start_index = vm.sp - (desc_len + fields_len - 1) * 2;
+                const start_index = vm.sp - (decl_len + fields_len - 1) * 2;
                 const end_index = vm.sp;
                 var i = start_index;
                 struct_type.name = vm.stack[i - 1].tag;
@@ -429,13 +429,13 @@ pub fn run(vm: *Vm) anyerror!void {
                     },
                     .@"enum" => {
                         var id: usize = 0;
-                        struct_type.desc = .init(vm.allocator);
+                        struct_type.decl = .init(vm.allocator);
                         // fields
                         l: while (i < end_index) : (i += 2) {
                             const name = vm.stack[i].tag;
                             const value = vm.stack[i + 1];
-                            try struct_type.fields.put(name, .{ .enumtag = .{ .tag = name, .id = id, .ptr = &(struct_type.desc.?) } });
-                            try struct_type.desc.?.put(name, value);
+                            try struct_type.fields.put(name, .{ .enumtag = .{ .tag = name, .id = id, .ptr = &(struct_type.decl.?) } });
+                            try struct_type.decl.?.put(name, value);
                             id += 1;
                             if (id > fields_len) break :l;
                         }
@@ -505,39 +505,28 @@ pub fn run(vm: *Vm) anyerror!void {
                 const args_number = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
                 fm.ip += 1;
 
-                // the second -1: i added a null, for method call
-                // const caller_value = vm.stack[vm.sp - 1 - args_number - 1];
-                // if (caller_value != .obj) {
-                //     caller_value = vm.stack[vm.sp - 1 - args_number];
-                // }
                 const caller_value = vm.stack[vm.sp - 1 - args_number];
 
                 switch (caller_value) {
                     .enumtag => |et| {
                         const value = et.ptr.get(et.tag) orelse .null;
-                        std.debug.print("{}\n", .{value});
                         try vm.push(value);
                         continue;
                     },
                     .obj => |ob| switch (ob.type) {
-                        .desc => |func| {
+                        .decl => |func| {
                             const bp: isize = @intCast(vm.sp - args_number);
 
                             if (func.method) |self| {
                                 if (args_number + 1 != func.num_parameters) {
-                                    return vm.newError("Desc: Arguments Mismatched", .{});
+                                    return vm.newError("decl: Arguments Mismatched", .{});
                                 }
 
                                 try vm.push(.{ .obj = self });
 
                                 // BIG FUCK ME!
                                 if (args_number + 1 > 1) {
-                                    const last = vm.stack[vm.sp - 1];
-                                    var i = vm.sp - 1;
-                                    while (i > 0) : (i -= 1) {
-                                        vm.stack[i] = vm.stack[i - 1];
-                                    }
-                                    vm.stack[vm.sp - 1 - args_number] = last;
+                                    std.mem.rotate(Value, vm.stack[vm.sp - args_number - 1 .. vm.sp], args_number);
                                 }
 
                                 // the null, first arg will be the self obj
@@ -562,12 +551,11 @@ pub fn run(vm: *Vm) anyerror!void {
                         },
 
                         .function => |func| {
-                            const bp: isize = @intCast(vm.sp - args_number);
-
                             if (args_number != func.num_parameters) {
                                 return vm.newError("Function {s}: Arguments Mismatched: expect {}, got {} ", .{ func.name orelse "annon", func.num_parameters, args_number });
                             }
 
+                            const bp: isize = @intCast(vm.sp - args_number);
                             const frame: Frame = .init(.{ .func = func }, bp);
                             vm.pushFrame(frame);
                             fm = vm.currentFrame();
@@ -582,7 +570,8 @@ pub fn run(vm: *Vm) anyerror!void {
                                 return vm.newError("Closure Arguments Mismatched", .{});
                             }
 
-                            const frame: Frame = .init(.{ .func = func }, @intCast(vm.sp - args_number));
+                            const bp: isize = @intCast(vm.sp - args_number);
+                            const frame: Frame = .init(.{ .func = func }, bp);
                             vm.pushFrame(frame);
                             fm = vm.currentFrame();
                             // the call stack space allocation
@@ -608,6 +597,18 @@ pub fn run(vm: *Vm) anyerror!void {
             },
         }
     }
+}
+
+fn newFunction(vm: *Vm, fm: *Frame, args_number: usize, func: *const Object.CompiledFn) !void {
+    if (args_number != func.num_parameters) {
+        return vm.newError("Function {s}: Arguments Mismatched: expect {}, got {} ", .{ func.name orelse "annon", func.num_parameters, args_number });
+    }
+    const bp: isize = @intCast(vm.sp - args_number);
+    const frame: Frame = .init(.{ .func = func.* }, bp);
+    vm.pushFrame(frame);
+    fm = vm.currentFrame();
+    // the call stack space allocation
+    vm.sp = @as(usize, @intCast(fm.bp)) + func.num_locals;
 }
 
 const std = @import("std");

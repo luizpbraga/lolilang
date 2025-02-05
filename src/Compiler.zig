@@ -189,7 +189,7 @@ fn emitFunction(c: *Compiler, func_stmt: *const ast.FunctionStatement) anyerror!
     try c.emit(op, &.{symbol.index});
 }
 
-fn emitDesc(c: *Compiler, func_stmt: *const ast.FunctionStatement) anyerror!usize {
+fn emitdecl(c: *Compiler, func_stmt: *const ast.FunctionStatement) anyerror!usize {
     // const symbol = try c.symbols.?.define(func_stmt.name.value);
     const func = func_stmt.func;
 
@@ -221,7 +221,7 @@ fn emitDesc(c: *Compiler, func_stmt: *const ast.FunctionStatement) anyerror!usiz
     errdefer c.allocator.free(instructions);
 
     obj.type = .{
-        .desc = .{
+        .decl = .{
             .name = func_stmt.name.value,
             .instructions = instructions,
             .num_locals = num_locals,
@@ -959,7 +959,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             // TODO: make it like a function
             .type => |ty| {
                 const fields = ty.fields;
-                const descs = ty.desc;
+                const decls = ty.decl;
 
                 const e: Object.BuiltinType.BT = if (ty.type == .@"struct") .@"struct" else .@"enum";
 
@@ -989,21 +989,21 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     }
                 }
 
-                for (descs) |dec| {
+                for (decls) |dec| {
                     // function name as a field
                     const pos = try c.addConstants(.{ .tag = dec.name.value });
                     try c.emit(.constant, &.{pos});
-                    _ = try c.emitDesc(&dec);
+                    _ = try c.emitdecl(&dec);
                 }
 
                 // const pos = c.addConstants(.{ .@"struct" = .{
                 //     .fields_len = fields.len,
-                //     .desc_len = descs.len,
+                //     .decl_len = decls.len,
                 //     .name = name
                 //     .instructions = ...
                 // } })
 
-                try c.emit(.type, &.{ descs.len + 1, fields.len, @intFromEnum(e) });
+                try c.emit(.type, &.{ decls.len + 1, fields.len, @intFromEnum(e) });
             },
 
             else => |exx| {

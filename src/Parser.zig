@@ -916,8 +916,8 @@ fn parseType(self: *Parser) !ast.Expression {
     var fields: std.ArrayList(ast.Type.Field) = .init(self.arena.allocator());
     errdefer fields.deinit();
 
-    var descs: std.ArrayList(ast.FunctionStatement) = .init(self.arena.allocator());
-    errdefer descs.deinit();
+    var decls: std.ArrayList(ast.FunctionStatement) = .init(self.arena.allocator());
+    errdefer decls.deinit();
 
     var names: std.StringHashMap(void) = .init(self.arena.allocator());
     defer names.deinit();
@@ -966,7 +966,7 @@ fn parseType(self: *Parser) !ast.Expression {
 
             const func = (try self.parseFunction()).function;
 
-            try descs.append(.{
+            try decls.append(.{
                 .name = name,
                 .func = func,
                 .token = tk,
@@ -989,7 +989,7 @@ fn parseType(self: *Parser) !ast.Expression {
     if (!self.curTokenIs(.@"}")) try self.missing(.@"}");
 
     struc_or_enum.fields = try fields.toOwnedSlice();
-    struc_or_enum.desc = try descs.toOwnedSlice();
+    struc_or_enum.decl = try decls.toOwnedSlice();
     // struc.comments = try comments.toOwnedSlice();
 
     return .{ .type = struc_or_enum };

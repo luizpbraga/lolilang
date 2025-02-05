@@ -447,7 +447,7 @@ fn printV(value: Value) void {
                 std.debug.print("fn {s}()", .{f.name orelse "?"});
             },
 
-            .desc => |f| {
+            .decl => |f| {
                 var typename: []const u8 = "";
 
                 if (f.method) |m| {
@@ -479,7 +479,7 @@ fn printV(value: Value) void {
                     const key = entry.key_ptr;
                     const val = entry.value_ptr;
 
-                    if (val.* == .obj) if (val.obj.type == .desc) continue;
+                    if (val.* == .obj) if (val.obj.type == .decl) continue;
 
                     std.debug.print("{s}: ", .{key.*});
                     printV(val.*);

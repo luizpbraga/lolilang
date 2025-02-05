@@ -17,7 +17,7 @@ pub const Type = union(enum) {
     hash: Hash,
     function: CompiledFn,
     closure: Closure,
-    desc: CompiledFn,
+    decl: CompiledFn,
     type: BuiltinType,
     instance: Instance,
     namespace: Namespace,
@@ -28,13 +28,13 @@ pub const BuiltinType = struct {
     type: BT,
     name: ?[]const u8 = null,
     fields: std.StringHashMap(Value),
-    desc: ?std.StringHashMap(Value) = null,
+    decl: ?std.StringHashMap(Value) = null,
 };
 
 pub const Instance = struct {
     type: *BuiltinType,
     fields: std.StringHashMap(Value),
-    desc: ?*std.StringHashMap(Value) = null,
+    decl: ?*std.StringHashMap(Value) = null,
 };
 
 pub const Value = union(enum) {
