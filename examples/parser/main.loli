@@ -8,30 +8,10 @@ Parser := parser.Parser
 fn main() {
     l := Lexer.init("./test_file")
     p := Parser.init(l)
-    node := p.parse()
+    program := p.parse()
 
-    program := node.statement.program
     for (stmt in program.statements) {
-        match (stmt.ty) {
-            ast.type.let => {
-                let := stmt.let 
-                name := let.name 
-                value := let.value
-                @print(name, value)
-            }
-
-            ast.type.exp_stmt => {
-                exp_stmt := stmt.exp_stmt
-                @print(exp_stmt)
-            }
-
-            ast.type.block => {
-                block := stmt.block
-                for (s in block) {
-                    @print(s)
-                }
-            }
-        }
+        @print(stmt)
     }
 }
 

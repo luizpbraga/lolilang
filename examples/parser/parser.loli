@@ -38,47 +38,32 @@ pub var Parser = struct {
     }
 
     fn parseIdetifier(p) {
-        return ast.Expression{
-            ty: ast.type.identifier,
-            identifier: ast.Identifier{
-                value: p.ctk.literal,
-            },
+        return ast.Identifier{
+            value: p.ctk.literal,
         }
     }
 
     fn parseInteger(p) {
-        return ast.Expression{
-            ty: ast.type.integer,
-            integer: ast.Integer{
-                value: @parse(.int, p.ctk.literal),
-            },
+        return ast.Integer{
+            value: @parse(.int, p.ctk.literal),
         }
     }
 
     fn parseFloat(p) {
-        return ast.Expression{
-            ty: ast.type.float,
-            float: ast.Float{
-                value: @parse(.float, p.ctk.literal),
-            },
+        return ast.Float{
+            value: @parse(.float, p.ctk.literal),
         }
     }
 
     fn parseBool(p) {
-        return ast.Expression{
-            ty: ast.type.bool,
-            bool: ast.Bool{
-                value: p.ctkIs(Type.TRUE),
-            },
+        return ast.Bool{
+            value: p.ctkIs(Type.TRUE),
         }
     }
 
     fn parseString(p) {
-        return ast.Expression{
-            ty: ast.type.string,
-            string: ast.String{
-                value: p.ctk.literal,
-            },
+        return ast.String{
+            value: p.ctk.literal,
         }
     }
 
@@ -130,13 +115,10 @@ pub var Parser = struct {
             alternative = p.parseBlock()
         }
 
-        return ast.Expression{
-            ty: ast.type.ifelse,
-            ifelse: ast.If{
-                condition: condition,
-                consequence: consequence,
-                alternative: alternative,
-            },
+        return ast.If{
+            condition: condition,
+            consequence: consequence,
+            alternative: alternative,
         }
     }
 
@@ -171,26 +153,22 @@ pub var Parser = struct {
         if (!p.expectPeek(Type.IDENTIFIER)) {
             @panic("EXPECT identifier")
         }
-        name := p.parseIdetifier().identifier
+        name := p.parseIdetifier()
         if (!p.expectPeek(Type.EQUAL)) {
             @panic("EXPECT =")
         }
         p.next()
         value := p.parseExpression(Prec.lowest)
-        return ast.Statement{
-            ty: ast.type.let,
-            let: ast.Let{
-                name: name,
-                value: value,
-            },
+        return ast.Let{
+            name: name,
+            value: value,
         }
     }
 
     fn parseExpStatement(p) {
         exp := p.parseExpression(Prec.lowest)
-        return ast.Statement{
-            ty: ast.type.exp_stmt,
-            exp_stmt: exp,
+        return ast.ExpStmt{
+            exp: exp,
         }
     }
 
@@ -205,7 +183,7 @@ pub var Parser = struct {
         }
     }
 
-    fn parseProgram(p) {
+    fn parse(p) {
         stmts := []
         for (p.ctk.type != Type.EOF) {
             stmt := p.parseStatement()
@@ -214,17 +192,6 @@ pub var Parser = struct {
         }
         return ast.Program{
             statements: stmts,
-        }
-    }
-
-    fn parse(p) {
-        program := p.parseProgram()
-        return ast.Node{
-            ty: ast.type.statement,
-            statement: ast.Statement{
-                ty: ast.type.program,
-                program: program,
-            },
         }
     }
 
@@ -261,13 +228,10 @@ pub var Parser = struct {
         prec := p.currPrec()
         p.next()
         right := p.parseExpression(prec)
-        return ast.Expression{
-            ty: ast.type.infix,
-            infix: ast.Infix{
-                op: op,
-                left: left,
-                right: right,
-            },
+        return ast.Infix{
+            op: op,
+            left: left,
+            right: right,
         }
     }
 

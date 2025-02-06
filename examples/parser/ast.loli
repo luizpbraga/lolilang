@@ -1,41 +1,15 @@
 pub var type = enum {
-    statement
-    expression
+    # statements
     program
-    exp_stmt
     let
+    block
+    exp_stmt
+    # expression 
     void
     bool
     integer
     float
     identifier
-    string
-    infix
-    ifelse
-    block
-}
-
-pub var Node = struct {
-    ty = type.statement
-    expression
-    statement
-}
-
-pub var Statement = struct {
-    ty = type.statement
-    program
-    exp_stmt
-    let
-    block
-}
-
-pub var Expression = struct {
-    ty = type.expression
-    void
-    bool
-    identifier
-    integer
-    float
     string
     infix
     ifelse
@@ -43,7 +17,7 @@ pub var Expression = struct {
 
 pub var Program = struct {
     ty = type.program
-    statements
+    statements #[]stmt 
 }
 
 pub var Let = struct {
@@ -55,6 +29,11 @@ pub var Let = struct {
 pub var Block = struct {
     ty = type.block
     statements
+}
+
+pub var ExpStmt = struct {
+    ty = type.exp_stmt
+    exp
 }
 
 pub var Bool = struct {

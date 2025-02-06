@@ -1,4 +1,6 @@
+var x = 1
+var x = "ola mundo"
 if (true) {
-  var x = 1
-  var y = x + 2
+  var y = 10
+  if (false) {} else {}
 }
