@@ -125,16 +125,16 @@ pub fn lastPopped(vm: *Vm) Value {
     return vm.stack[vm.sp];
 }
 
-fn currentFrame(vm: *Vm) *Frame {
+pub fn currentFrame(vm: *Vm) *Frame {
     return &vm.frames[vm.frames_index - 1];
 }
 
-fn pushFrame(vm: *Vm, f: Frame) void {
+pub fn pushFrame(vm: *Vm, f: Frame) void {
     vm.frames[vm.frames_index] = f;
     vm.frames_index += 1;
 }
 
-fn popFrame(vm: *Vm) *Frame {
+pub fn popFrame(vm: *Vm) *Frame {
     vm.frames_index -= 1;
     return &vm.frames[vm.frames_index];
 }
@@ -150,6 +150,7 @@ pub fn run(vm: *Vm) anyerror!void {
         ip = @intCast(fm.ip);
         instructions = fm.instructions();
         op = @enumFromInt(instructions[ip]);
+        // std.debug.print("{} {s} {}\n", .{ op, fm.cl.func.name orelse "main", fm.bp });
 
         switch (op) {
             .set_range => {
@@ -184,6 +185,23 @@ pub fn run(vm: *Vm) anyerror!void {
                     try vm.push(.{ .boolean = false });
                     continue;
                 };
+                try vm.push(value);
+                try vm.push(.{ .boolean = true });
+            },
+
+            .get_range_idx => {
+                const pos = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
+                fm.ip += 2;
+                var range = &vm.constants[pos].range;
+                defer range.c += 1;
+
+                const value = range.next() orelse {
+                    try vm.push(.null);
+                    try vm.push(.null);
+                    try vm.push(.{ .boolean = false });
+                    continue;
+                };
+                try vm.push(.{ .integer = @intCast(range.c) });
                 try vm.push(value);
                 try vm.push(.{ .boolean = true });
             },

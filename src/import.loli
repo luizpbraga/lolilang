@@ -1,3 +1,0 @@
-import "fmt"
-
-@print(fmt)

@@ -10,8 +10,10 @@ frees: std.ArrayList(*Symbol),
 def_number: usize = 0,
 outer: ?*SymbolTable = null,
 
+/// TODO: use another abstraction to deal with public and const values
 pub const Symbol = struct {
     public: bool = false,
+    con: bool = false,
     scope: ScopeType,
     name: []const u8,
     index: usize = 0,

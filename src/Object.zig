@@ -1,5 +1,6 @@
 const std = @import("std");
 const code = @import("code.zig");
+const Frame = @import("Frame.zig");
 
 /// allocated objects
 pub const Object = @This();
@@ -54,6 +55,7 @@ pub const Value = union(enum) {
         // ptr: *std.StringHashMap(Value),
     },
     builtin: Builtin,
+    frame: *Frame,
     obj: *Object,
 
     pub const Complex = struct { real: f32, imag: f32 };
@@ -112,6 +114,7 @@ pub const Range = struct {
     value: *const Value,
     start: usize,
     end: usize,
+    c: usize = 0,
 
     pub fn next(r: *Range) ?Value {
         switch (r.value.*) {

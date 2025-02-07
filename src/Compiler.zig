@@ -365,7 +365,8 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     return c.newError("Assignment mismatch", .{});
                 }
 
-                for (symbols, con_stmt.value.array.elements) |symbol, value| {
+                for (symbols, con_stmt.value.array.elements) |*symbol, value| {
+                    symbol.con = true;
                     try c.compile(.{ .expression = value });
                     const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
                     try c.emit(op, &.{symbol.index});
@@ -376,8 +377,8 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 if (c.scope_index == 0) {
                     return c.newError("Invalid Return Statement Outside Function Body", .{});
                 }
-                try c.compile(.{ .expression = ret.value });
 
+                try c.compile(.{ .expression = ret.value });
                 try c.emit(.retv, &.{});
             },
 
@@ -892,63 +893,8 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 }
             },
 
-            .for_range => |forloop| {
-                // cast the expression as a range and load it as a constant
-                const name = forloop.ident;
-                defer _ = c.symbols.?.store.swapRemove(name);
-                const pos = try c.addConstants(.null);
-                try c.emit(.constant, &.{pos});
-                try c.compile(.{ .expression = forloop.iterable });
-                try c.emit(.to_range, &.{pos});
-
-                const jump_pos = c.insLen();
-                c.loop.info[c.loop.idx].start = jump_pos;
-                // in this block, the last instruction must be boolean
-                {
-                    try c.emit(.get_range, &.{pos});
-                }
-
-                const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
-
-                // compiling the consequence
-                if (forloop.body.statements.len != 0) {
-                    // item
-                    {
-                        if (c.symbols.?.store.contains(name)) {
-                            return c.newError("Redeclaration of variable '{s}'", .{name});
-                        }
-                        const symbol = try c.symbols.?.define(name);
-                        const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
-                        try c.emit(op, &.{symbol.index});
-                    }
-                    // // index
-                    // if (forloop.index) |idx| {
-                    //     const symbol = try c.symbols.?.define(idx);
-                    //     const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
-                    //     try c.emit(op, &.{symbol.index});
-                    // }
-
-                    try c.compile(.{ .statement = .{ .block = forloop.body } });
-                    // statements add a pop in the end, wee drop the last pop (if return)
-                    if (c.lastInstructionIs(.pop)) c.removeLastPop();
-                }
-
-                try c.emit(.jump, &.{jump_pos});
-
-                // this is the real jumpifnottrue position. this is how deep the compiled forloop.consequence is
-                const after_consequence_position = c.insLen();
-
-                // Replaces the 9999 (.jump_if_not_true_pos) to the correct operand (after_consequence_position);
-                try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
-
-                // // break statement
-                if (c.loop.info[c.loop.idx].end) |pox| {
-                    try c.changeOperand(pox, after_consequence_position);
-                    c.loop.info[c.loop.idx].end = null;
-                } else {
-                    // // always jump: null is returned
-                    try c.emit(.null, &.{});
-                }
+            .for_range => |*forloop| {
+                try if (forloop.index == null) c.emitLoop(forloop) else c.emitLoopWithIndex(forloop);
             },
 
             // TODO: make it like a function
@@ -1005,6 +951,114 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 return c.newError("Invalid Expression '{}'", .{exx});
             },
         },
+    }
+}
+
+fn define(c: *Compiler, name: []const u8) !void {
+    if (c.symbols.?.store.contains(name)) return c.newError("Redeclaration of variable '{s}'", .{name});
+    const symbol = try c.symbols.?.define(name);
+    const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+    try c.emit(op, &.{symbol.index});
+}
+
+fn emitLoopWithIndex(c: *Compiler, forloop: *ast.ForRange) anyerror!void {
+    // cast the expression as a range and load it as a constant
+    const name = forloop.ident;
+    const iname = forloop.index.?;
+    defer {
+        _ = c.symbols.?.store.swapRemove(name);
+        _ = c.symbols.?.store.swapRemove(iname);
+    }
+    // TODO: dont do this shit!!!!
+    const pos = try c.addConstants(.null);
+    const ipos = try c.addConstants(.null);
+    try c.emit(.constant, &.{ipos});
+    try c.emit(.constant, &.{pos});
+    try c.compile(.{ .expression = forloop.iterable });
+    try c.emit(.to_range, &.{pos});
+
+    const jump_pos = c.insLen();
+    c.loop.info[c.loop.idx].start = jump_pos;
+    // in this block, the last instruction must be boolean
+    {
+        try c.emit(.get_range_idx, &.{pos});
+    }
+
+    const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
+
+    // compiling the consequence
+    if (forloop.body.statements.len != 0) {
+        // item
+        try c.define(name);
+        try c.define(iname);
+
+        try c.compile(.{ .statement = .{ .block = forloop.body } });
+        // statements add a pop in the end, wee drop the last pop (if return)
+        if (c.lastInstructionIs(.pop)) c.removeLastPop();
+    }
+
+    try c.emit(.jump, &.{jump_pos});
+
+    // this is the real jumpifnottrue position. this is how deep the compiled forloop.consequence is
+    const after_consequence_position = c.insLen();
+
+    // Replaces the 9999 (.jump_if_not_true_pos) to the correct operand (after_consequence_position);
+    try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
+
+    // // break statement
+    if (c.loop.info[c.loop.idx].end) |pox| {
+        try c.changeOperand(pox, after_consequence_position);
+        c.loop.info[c.loop.idx].end = null;
+    } else {
+        // // always jump: null is returned
+        try c.emit(.null, &.{});
+    }
+}
+
+fn emitLoop(c: *Compiler, forloop: *ast.ForRange) anyerror!void {
+    // cast the expression as a range and load it as a constant
+    const name = forloop.ident;
+    defer _ = c.symbols.?.store.swapRemove(name);
+
+    // TODO: dont do this shit!!!!
+    const pos = try c.addConstants(.null);
+    try c.emit(.constant, &.{pos});
+    try c.compile(.{ .expression = forloop.iterable });
+    try c.emit(.to_range, &.{pos});
+
+    const jump_pos = c.insLen();
+    c.loop.info[c.loop.idx].start = jump_pos;
+    // in this block, the last instruction must be boolean
+    {
+        try c.emit(.get_range, &.{pos});
+    }
+
+    const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
+
+    // compiling the consequence
+    if (forloop.body.statements.len != 0) {
+        try c.define(name);
+
+        try c.compile(.{ .statement = .{ .block = forloop.body } });
+        // statements add a pop in the end, wee drop the last pop (if return)
+        if (c.lastInstructionIs(.pop)) c.removeLastPop();
+    }
+
+    try c.emit(.jump, &.{jump_pos});
+
+    // this is the real jumpifnottrue position. this is how deep the compiled forloop.consequence is
+    const after_consequence_position = c.insLen();
+
+    // Replaces the 9999 (.jump_if_not_true_pos) to the correct operand (after_consequence_position);
+    try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
+
+    // // break statement
+    if (c.loop.info[c.loop.idx].end) |pox| {
+        try c.changeOperand(pox, after_consequence_position);
+        c.loop.info[c.loop.idx].end = null;
+    } else {
+        // // always jump: null is returned
+        try c.emit(.null, &.{});
     }
 }
 

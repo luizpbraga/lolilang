@@ -24,6 +24,8 @@ pub var builtin_functions = [_]Object.Builtin{
     .{ .name = "@time", .function = Builtin.time },
     .{ .name = "@rand", .function = Builtin.rand },
     .{ .name = "@tagName", .function = Builtin.tagName },
+    .{ .name = "@frame", .function = Builtin.frame },
+    .{ .name = "@resume", .function = Builtin.resumeF },
 };
 
 const LoliType = enum {
@@ -63,6 +65,14 @@ pub fn newString(vm: *Vm, value: ?[]const u8) !Value {
 
 /// TODO: THIS NEED A BIIIIG REWRITE
 const Builtin = struct {
+    pub fn resumeF(_: *Vm, args: []const Value) !Value {
+        return .{ .frame = args[0].frame };
+    }
+
+    pub fn frame(vm: *Vm, _: []const Value) !Value {
+        return .{ .frame = vm.currentFrame() };
+    }
+
     pub fn tagName(vm: *Vm, args: []const Value) !Value {
         const name = switch (args[0]) {
             .enumtag => |t| t.tag,

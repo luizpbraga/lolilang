@@ -75,6 +75,7 @@ pub const Opcode = enum(u8) {
     to_range,
     /// get the range from the stack
     get_range,
+    get_range_idx,
     /// wraps the compilerd function to a closure
     closure,
 
@@ -103,6 +104,7 @@ pub const Opcode = enum(u8) {
         .setlv = &.{1},
         .getlv = &.{1},
         .get_range = &.{2},
+        .get_range_idx = &.{2},
         .to_range = &.{2},
         .call = &.{1},
         .instance = &.{1},
