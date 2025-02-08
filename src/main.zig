@@ -2,15 +2,20 @@ const std = @import("std");
 const loli = @import("loli.zig");
 const fmt = @import("fmt.zig");
 const Error = @import("Error.zig");
+const builtin = @import("builtin");
 
 pub fn main() !void {
-    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
-    defer {
-        _ = gpa.detectLeaks();
-        _ = gpa.deinit();
-    }
-    const allocator = gpa.allocator();
-    // const allocator = std.heap.c_allocator;
+    var debug_alloc: std.heap.GeneralPurposeAllocator(.{}) = .{};
+
+    const allocator, const is_debug = switch (builtin.mode) {
+        else => .{ debug_alloc.allocator(), true },
+        .ReleaseFast, .ReleaseSmall => .{ std.heap.c_allocator, false },
+    };
+
+    defer if (is_debug) {
+        _ = debug_alloc.detectLeaks();
+        _ = debug_alloc.deinit();
+    };
 
     var args = std.process.args();
     _ = args.next();
