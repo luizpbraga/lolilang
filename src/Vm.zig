@@ -1,10 +1,9 @@
+const STACK_SIZE = 32 * 1024;
 const Vm = @This();
 
 pub var GC_MAX: usize = 64 * 1024 * @sizeOf(*Object);
 
 const FRAME_SIZE = 4 * 1024;
-
-const STACK_SIZE = 32 * 1024;
 /// max(u16)
 const GLOBALS_SIZE = 65536;
 
@@ -223,6 +222,44 @@ pub fn run(vm: *Vm) anyerror!void {
                 errdefer vm.allocator.destroy(obj);
 
                 try vm.push(.{ .obj = obj });
+            },
+
+            .destruct => {
+                const num_elements = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
+                const scope: code.Opcode = @enumFromInt(std.mem.readInt(u8, instructions[ip + 2 ..][0..1], .big));
+                const index = std.mem.readInt(u16, instructions[ip + 3 ..][0..2], .big);
+                fm.ip += 4;
+
+                const value = vm.pop();
+
+                if (value != .obj) return vm.newError("Invalid Destructuring, expect tuple/arry, got {s}", .{value.name()});
+                if (value.obj.type != .array) return vm.newError("Invalid Destructuring, expect tuple/arry, got {s}", .{value.name()});
+
+                const array = value.obj.type.array;
+                if (array.items.len != num_elements) return vm.newError("Invalid Destructuring: symbols mismatch", .{});
+
+                switch (scope) {
+                    .setgv => {
+                        for (0..num_elements) |j| {
+                            const gx: usize = index + j - num_elements;
+                            vm.globals[gx] = array.items[j];
+                        }
+                    },
+                    .setlv => {
+                        const ix = @as(usize, @intCast(fm.bp)) + index;
+                        for (0..num_elements) |j| {
+                            const gx: usize = ix + j - num_elements;
+                            vm.stack[gx] = array.items[j];
+                        }
+                    },
+
+                    else => {
+                        std.debug.print("{}\n", .{scope});
+                        unreachable;
+                    },
+                }
+
+                try vm.push(.null);
             },
 
             .hash => {

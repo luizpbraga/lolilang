@@ -1,0 +1,21 @@
+
+fn parseExp() {
+    ...
+}
+
+
+fn parseFullExp() {
+    exp = parseExp()
+
+    if ("," != nextToken())
+        return exp  
+
+
+    tuple = []
+
+    for ("," == nextToken())
+        # parseExp nao pode usar parseFullExp
+        tuple << parseExp()
+
+    return tuple
+}

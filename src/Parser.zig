@@ -12,6 +12,7 @@ last_token: Token,
 peek_token: Token,
 arena: std.heap.ArenaAllocator,
 errors: *Error,
+call: bool = false,
 /// TODO: what about pear type resolution?
 fn missing(p: *Parser, tk: Token.Type) !void {
     const l = p.line();
@@ -86,6 +87,7 @@ pub const Precedence = enum {
     prefix,
     call,
     index,
+    // tuple,
 
     pub fn peek(token_type: Token.Type) Precedence {
         return switch (token_type) {
@@ -100,57 +102,19 @@ pub const Precedence = enum {
             .@"!" => .prefix,
             .@"[", .@".", .@"..", .@"..=" => .index,
             .@"=", .@":=", .@"+=", .@"-=", .@"*=", .@"/=" => .assigne,
+            // .@"," => .tuple,
         };
     }
 };
 
 fn prefixExp(p: *Parser) anyerror!*ast.Expression {
     const allocator = p.arena.allocator();
-    const left_exp = try allocator.create(ast.Expression);
-    errdefer allocator.destroy(left_exp);
-
     const tk = p.cur_token;
-    left_exp.* = switch (tk.type) {
-        .identifier => p.parseIdentifier(),
-        .@"." => p.parseTag(),
-        .integer => try p.parseInteger(),
-        .float => try p.parseFloat(),
-        .true, .false => p.parseBoolean(),
-        .null, .@";" => p.parseNull(),
-        .@"[" => try p.parseArray(),
-        .@"{" => try p.parseHash(),
-        .@"fn" => try p.parseFunction(),
-        .@"struct", .@"enum" => try p.parseType(),
-        .string => p.parseString(),
-        .char => p.parseChar(),
-        .@"if", .@"else" => try p.parseIf(),
-        .@"for" => try p.parseFor(),
-        .match => try p.parseMatch(),
-        .@"!", .@"-" => try p.parsePrefix(),
-        .@"(" => try p.parseGroup(),
-        // .comment => {
-        //     p.nextToken();
-        //     return p.prefixExp();
-        // },
-        else => b: {
-            try p.unexpected(p.cur_token.type);
-            break :b .bad;
-        },
-    };
+    const left_exp = try p.newExp(allocator);
 
-    // // TODO: better logic <<EXPERIMENTAL>>
-    // if (p.peekTokenIs(.@",") and t) {
-    //     const left_exp2 = try allocator.create(ast.Expression);
-    //     errdefer allocator.destroy(left_exp2);
-    //     left_exp2.* = try p.parseTuple(left_exp);
-    //
-    //     switch (left_exp2.*) {
-    //         .bad, .null => {},
-    //         inline else => |*exp| exp.at = tk.at,
-    //     }
-    //
-    //     return left_exp2;
-    // }
+    if (!p.call and p.peekTokenIs(.@",")) {
+        return p.parseTuple(left_exp);
+    }
 
     switch (left_exp.*) {
         .bad, .null => {},
@@ -186,6 +150,8 @@ fn infixExp(p: *Parser, lx: *ast.Expression) anyerror!?ast.Expression {
         .@"(" => {
             p.nextToken();
             tk = p.cur_token;
+            p.call = true;
+            defer p.call = false;
             break :b try p.parseCall(lx);
         },
 
@@ -276,7 +242,7 @@ fn peekTokenIs(self: *const Parser, token_type: Token.Type) bool {
     return self.peek_token.type == token_type;
 }
 
-/// match and eat the token (if true)
+/// match and eat the peeked token (if true)
 fn expectPeek(self: *Parser, token_type: Token.Type) bool {
     if (self.peekTokenIs(token_type)) {
         self.nextToken();
@@ -313,11 +279,16 @@ fn parseReturn(self: *Parser) !ast.Statement {
 
     self.nextToken();
 
-    return_stmt.value = try self.parseExpression(.lowest);
+    var value = try self.parseExpression(.lowest);
+    if (self.peekTokenIs(.@",")) {
+        value = try self.parseTuple(value);
+    }
 
     if (self.peekTokenIs(.@";")) {
         self.nextToken();
     }
+
+    return_stmt.value = value;
 
     return .{ .@"return" = return_stmt };
 }
@@ -689,13 +660,11 @@ fn parseExpStatement(self: *Parser) !ast.Statement {
 
 fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
     const left_exp = try self.prefixExp();
-
     const allocator = self.arena.allocator();
 
     while (@intFromEnum(precedence) < @intFromEnum(self.peekPrecedence())) {
         const old_left_exp = try allocator.create(ast.Expression);
         errdefer allocator.destroy(old_left_exp);
-
         old_left_exp.* = left_exp.*;
 
         left_exp.* = try infixExp(self, old_left_exp) orelse {
@@ -773,6 +742,10 @@ fn parseNull(_: *Parser) ast.Expression {
 
 //  BUG
 fn parseGroup(self: *Parser) !ast.Expression {
+    const incall = self.call;
+    defer self.call = incall;
+    self.call = false;
+
     self.nextToken();
 
     const exp = try self.parseExpression(.lowest);
@@ -1178,6 +1151,61 @@ fn parseCallArguments(self: *Parser) ![]*ast.Expression {
     return args_owned;
 }
 
+fn parseTuple(self: *Parser, exp: *ast.Expression) !*ast.Expression {
+    const allocator = self.arena.allocator();
+    const tuple_exp = try allocator.create(ast.Expression);
+    errdefer allocator.destroy(tuple_exp);
+    tuple_exp.* = .{ .tuple = .{ .elements = try self.parseExpList(exp) } };
+    return tuple_exp;
+}
+
+fn newExp(p: *Parser, allocator: std.mem.Allocator) anyerror!*ast.Expression {
+    const left_exp = try allocator.create(ast.Expression);
+    errdefer allocator.destroy(left_exp);
+    left_exp.* = switch (p.cur_token.type) {
+        .identifier => p.parseIdentifier(),
+        .@"." => p.parseTag(),
+        .integer => try p.parseInteger(),
+        .float => try p.parseFloat(),
+        .true, .false => p.parseBoolean(),
+        .null, .@";" => p.parseNull(),
+        .@"[" => try p.parseArray(),
+        .@"{" => try p.parseHash(),
+        .@"fn" => try p.parseFunction(),
+        .@"struct", .@"enum" => try p.parseType(),
+        .string => p.parseString(),
+        .char => p.parseChar(),
+        .@"if", .@"else" => try p.parseIf(),
+        .@"for" => try p.parseFor(),
+        .match => try p.parseMatch(),
+        .@"!", .@"-" => try p.parsePrefix(),
+        .@"(" => try p.parseGroup(),
+        else => b: {
+            try p.unexpected(p.cur_token.type);
+            break :b .bad;
+        },
+    };
+    return left_exp;
+}
+
+fn parseExpList(p: *Parser, exp1: *ast.Expression) ![]*ast.Expression {
+    const allocator = p.arena.allocator();
+    var exps: std.ArrayList(*ast.Expression) = .init(allocator);
+    errdefer exps.deinit();
+
+    try exps.append(exp1);
+
+    while (p.peekTokenIs(.@",")) {
+        p.nextToken();
+        p.nextToken();
+
+        const left_exp = try p.newExp(allocator);
+        try exps.append(left_exp);
+    }
+
+    return try exps.toOwnedSlice();
+}
+
 fn parseMatchArm(self: *Parser) ![]*ast.Expression {
     const allocator = self.arena.allocator();
     var args: std.ArrayList(*ast.Expression) = .init(allocator);
@@ -1211,26 +1239,6 @@ pub fn parseString(self: *Parser) ast.Expression {
 
 fn debugCurToken(p: *Parser) void {
     std.debug.print("{s}\n", .{p.cur_token.literal});
-}
-
-var t = true;
-pub fn parseTuple(self: *Parser, exp: *ast.Expression) !ast.Expression {
-    t = false;
-    const allocator = self.arena.allocator();
-    var elements: std.ArrayList(*ast.Expression) = .init(allocator);
-    errdefer elements.deinit();
-
-    try elements.append(exp);
-    while (self.expectPeek(.@",")) {
-        self.nextToken(); // next_element
-        const element_n = try self.parseExpression(.lowest);
-        try elements.append(element_n);
-    }
-
-    t = true;
-    return .{
-        .array = .{ .elements = try elements.toOwnedSlice() },
-    };
 }
 
 pub fn parseArray(self: *Parser) !ast.Expression {

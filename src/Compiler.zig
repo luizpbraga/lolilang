@@ -424,20 +424,80 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             // TODO: not fully implemented
             .assignment => |assignment| {
                 if (assignment.operator == .@":=") {
-                    const name = assignment.name.identifier.value;
-                    if (c.symbols.?.store.contains(name)) {
-                        return c.newError("Redeclaration of variable '{s}'", .{name});
-                    }
-                    const symbol = try c.symbols.?.define(name);
+                    if (assignment.name.* == .identifier) {
+                        const name = assignment.name.identifier.value;
+                        if (c.symbols.?.store.contains(name)) {
+                            return c.newError("Redeclaration of variable '{s}'", .{name});
+                        }
+                        const symbol = try c.symbols.?.define(name);
 
-                    if (assignment.value.* == .type) {
-                        assignment.value.type.name = name;
+                        if (assignment.value.* == .type) {
+                            assignment.value.type.name = name;
+                        }
+
+                        try c.compile(.{ .expression = assignment.value });
+                        const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+                        try c.emit(op, &.{symbol.index});
+                        try c.emit(.null, &.{});
+                        return;
+                    }
+
+                    if (assignment.name.* == .tuple) {
+                        const elements = assignment.name.tuple.elements;
+                        var op: code.Opcode = .setgv;
+                        for (elements) |element| {
+                            const name = element.identifier.value;
+                            if (c.symbols.?.store.contains(name)) {
+                                return c.newError("Redeclaration of variable '{s}'", .{name});
+                            }
+                            const symbol = try c.symbols.?.define(name);
+
+                            if (assignment.value.* == .type) {
+                                assignment.value.type.name = name;
+                            }
+
+                            try c.emit(.null, &.{});
+                            op = if (symbol.scope == .global) .setgv else .setlv;
+                            try c.emit(op, &.{symbol.index});
+                        }
+
+                        try c.compile(.{ .expression = assignment.value });
+                        try c.emit(.destruct, &.{
+                            elements.len,
+                            @intFromEnum(op),
+                            c.symbols.?.def_number,
+                        });
+
+                        return;
+                    }
+                }
+
+                if (assignment.name.* == .tuple and assignment.operator == .@"=") {
+                    const elements = assignment.name.tuple.elements;
+                    var op: code.Opcode = .setgv;
+                    for (elements) |element| {
+                        const name = element.identifier.value;
+                        if (!c.symbols.?.store.contains(name)) {
+                            return c.newError("Redeclaration of variable '{s}'", .{name});
+                        }
+                        const symbol = try c.symbols.?.define(name);
+
+                        if (assignment.value.* == .type) {
+                            assignment.value.type.name = name;
+                        }
+
+                        try c.emit(.null, &.{});
+                        op = if (symbol.scope == .global) .setgv else .setlv;
+                        try c.emit(op, &.{symbol.index});
                     }
 
                     try c.compile(.{ .expression = assignment.value });
-                    const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
-                    try c.emit(op, &.{symbol.index});
-                    try c.emit(.null, &.{});
+                    try c.emit(.destruct, &.{
+                        elements.len,
+                        @intFromEnum(op),
+                        c.symbols.?.def_number,
+                    });
+
                     return;
                 }
 
@@ -694,7 +754,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(.constant, &.{pos});
             },
 
-            .array => |array| {
+            inline .array, .tuple => |array| {
                 for (array.elements) |element| {
                     try c.compile(.{ .expression = element });
                 }

@@ -106,6 +106,7 @@ pub const Expression = union(enum) {
     char: Char,
     string: String,
     array: Array,
+    tuple: Tuple,
     range: Range,
     hash: Hash,
     // enum_literal: EnumLiteral,
@@ -453,6 +454,15 @@ pub const Boolean = struct {
 
     pub fn tokenLiteral(self: *const @This()) []const u8 {
         return if (self.value) "true" else "false";
+    }
+};
+
+pub const Tuple = struct {
+    at: usize = 0,
+    elements: []*Expression,
+
+    pub fn tokenLiteral(self: *const @This()) []const u8 {
+        return self.token.literal;
     }
 };
 

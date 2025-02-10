@@ -89,6 +89,7 @@ pub const Opcode = enum(u8) {
 
     land,
     lor,
+    destruct,
 
     /// numbers of operands (bytes) for a given upcode
     /// optimize: use a single small integer
@@ -100,6 +101,7 @@ pub const Opcode = enum(u8) {
         // bytecode with 3 bytes long
         .constant = &.{2},
         .setgv = &.{2},
+        .destruct = &.{ 1, 1, 2 },
         .getgv = &.{2},
         .setlv = &.{1},
         .getlv = &.{1},
