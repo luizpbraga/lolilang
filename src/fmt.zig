@@ -324,6 +324,20 @@ pub const Write = struct {
                     }
                     try w.append("]");
                 },
+
+                .tuple => |array| {
+                    try w.append("(");
+                    for (array.elements) |element| {
+                        try w.write(.{ .expression = element });
+                        try w.append(", ");
+                    }
+
+                    if (array.elements.len != 0) {
+                        _ = w.buffer.pop();
+                        _ = w.buffer.pop();
+                    }
+                    try w.append(")");
+                },
                 .hash => |hash| {
                     try w.append("{");
                     for (hash.pairs) |pair| {

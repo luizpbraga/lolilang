@@ -1048,6 +1048,9 @@ fn parseMethod(self: *Parser, caller: *ast.Expression) !ast.Expression {
 }
 
 fn parseInstance(self: *Parser, type_exp: *ast.Expression) !ast.Expression {
+    const incall = self.call;
+    defer self.call = incall;
+    self.call = true;
     return .{
         .instance = .{ .type = type_exp, .fields = try self.parseInstanceArguments() },
     };
@@ -1207,6 +1210,10 @@ fn parseExpList(p: *Parser, exp1: *ast.Expression) ![]*ast.Expression {
 }
 
 fn parseMatchArm(self: *Parser) ![]*ast.Expression {
+    const incall = self.call;
+    defer self.call = incall;
+    self.call = true;
+
     const allocator = self.arena.allocator();
     var args: std.ArrayList(*ast.Expression) = .init(allocator);
     errdefer args.deinit();
@@ -1242,8 +1249,6 @@ fn debugCurToken(p: *Parser) void {
 }
 
 pub fn parseArray(self: *Parser) !ast.Expression {
-    // const token = self.cur_token;
-
     if (self.peekTokenIs(.@"]")) {
         self.nextToken();
         return .{
@@ -1256,6 +1261,10 @@ pub fn parseArray(self: *Parser) !ast.Expression {
     errdefer elements.deinit();
 
     self.nextToken();
+
+    const incall = self.call;
+    defer self.call = incall;
+    self.call = true;
     const element1 = try self.parseExpression(.lowest);
     try elements.append(element1);
 
@@ -1274,7 +1283,10 @@ pub fn parseArray(self: *Parser) !ast.Expression {
 
 // var hash = {1:1, 2:2, 3:3}
 pub fn parseHash(self: *Parser) !ast.Expression {
-    // const token = self.cur_token;
+    const incall = self.call;
+    defer self.call = incall;
+    self.call = true;
+
     const allocator = self.arena.allocator();
 
     var pairs: std.ArrayList([2]*ast.Expression) = .init(allocator);
