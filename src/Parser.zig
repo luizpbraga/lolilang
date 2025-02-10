@@ -1389,7 +1389,6 @@ pub fn parseMatch(self: *Parser) !ast.Expression {
         }
 
         var arm: ast.Match.Arm = .{
-            // .condition = try self.parseExpression(.lowest),
             .condition = try self.parseMatchArm(),
             .block = undefined,
         };
@@ -1432,11 +1431,11 @@ pub fn parseForRange(self: *Parser, ident: ast.Identifier) !ast.Expression {
     };
 
     if (self.expectPeek(.@",")) {
+        self.nextToken();
         const index = self.parseIdentifier();
         flr.index = index.identifier.value;
-        self.nextToken();
     }
-    //
+
     if (!self.expectPeek(.in)) {
         try self.missing(.in);
     }
@@ -1479,7 +1478,10 @@ pub fn parseFor(self: *Parser) !ast.Expression {
     if (!self.expectPeek(.@"(")) try self.missing(.@"(");
     self.nextToken();
 
+    const incall = self.call;
+    self.call = true;
     const condition_or_ident = try self.parseExpression(.lowest);
+    self.call = incall;
 
     if (condition_or_ident.* == .identifier) {
         if (self.peekTokenIs(.in) or self.peekTokenIs(.@",")) {
