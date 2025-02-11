@@ -9,15 +9,11 @@ const stderr = std.io.getStdErr();
 pub var emitbytecode = false;
 
 pub fn runVm(allocator: std.mem.Allocator, input: []const u8, err: *Error) !void {
-    // var err: Error = .{ .input = input, .msg = .init(allocator) };
-    // defer err.deinit();
-
     var lexer: Lexer = .init(input);
     var parser: Parser = .init(allocator, &lexer, err);
     defer parser.deinit();
 
     const node = try parser.parse();
-    // defer node.deinit(allocator);
 
     if (parser.errors.msg.items.len != 0) {
         try stderr.writeAll(

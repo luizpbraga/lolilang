@@ -116,7 +116,7 @@ pub fn enterScope(c: *Compiler) !void {
 
 pub fn leaveScope(c: *Compiler) !code.Instructions {
     c.scope_index -= 1;
-    var last_scope = c.scopes.pop();
+    var last_scope = c.scopes.pop() orelse unreachable;
     defer {
         for (last_scope.instructions.items) |ins| c.allocator.free(ins);
         last_scope.instructions.deinit();
@@ -1145,7 +1145,7 @@ fn currentInstruction(c: *Compiler) *std.ArrayList(code.Instructions) {
 
 /// FIX
 fn removeLastPop(c: *Compiler) void {
-    c.allocator.free(c.currentInstruction().pop());
+    c.allocator.free(c.currentInstruction().pop() orelse unreachable);
     c.scopes.items[c.scope_index].last_ins = c.scopes.items[c.scope_index].prev_ins;
 }
 

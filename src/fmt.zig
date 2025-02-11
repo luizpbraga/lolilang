@@ -123,7 +123,7 @@ pub const Write = struct {
         if (node.commentPos()) |pos| {
             const comment = std.mem.trim(u8, w.input[pos[0]..pos[1]], " ");
             const n = std.mem.count(u8, comment, "\n");
-            for (0..n) |_| _ = w.buffer.popOrNull();
+            for (0..n) |_| _ = w.buffer.pop();
             // w.line_number -= n;
             try w.print("{s}", .{comment});
             try w.tab();
@@ -372,7 +372,7 @@ pub const Write = struct {
 
                     if (instance.fields.len == 0) {
                         if (w.buffer.items[w.buffer.items.len - 2] == '}') {
-                            _ = w.buffer.popOrNull();
+                            _ = w.buffer.pop();
                         }
                         try w.append("{}");
                         return;
@@ -433,8 +433,8 @@ pub const Write = struct {
                             try w.write(.{ .expression = condition });
                             try w.append(", ");
                         }
-                        _ = w.buffer.popOrNull();
-                        _ = w.buffer.popOrNull();
+                        _ = w.buffer.pop();
+                        _ = w.buffer.pop();
                         try w.append(" => ");
                         try w.write(.{ .statement = .{ .block = arm.block } });
                         try w.newLine();

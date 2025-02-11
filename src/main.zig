@@ -5,15 +5,14 @@ const Error = @import("Error.zig");
 const builtin = @import("builtin");
 
 pub fn main() !void {
-    var debug_alloc: std.heap.GeneralPurposeAllocator(.{}) = .{};
+    var debug_alloc: std.heap.DebugAllocator(.{}) = .init;
 
     const allocator, const is_debug = switch (builtin.mode) {
         else => .{ debug_alloc.allocator(), true },
-        .ReleaseFast, .ReleaseSmall => .{ std.heap.c_allocator, false },
+        .ReleaseFast, .ReleaseSmall => .{ std.heap.smp_allocator, false },
     };
 
     defer if (is_debug) {
-        _ = debug_alloc.detectLeaks();
         _ = debug_alloc.deinit();
     };
 
