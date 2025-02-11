@@ -446,11 +446,35 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
     }
 
     switch (left) {
+        .tag => |left_val| switch (right) {
+            .tag => |right_val| {
+                const eql = std.mem.eql(u8, left_val, right_val);
+                const result = switch (op) {
+                    .eq => eql,
+                    .neq => !eql,
+                    else => return vm.newError("Invalid operation!", .{}),
+                };
+                return try vm.push(.{ .boolean = result });
+            },
+            else => {},
+        },
         .enumtag => |left_val| switch (right) {
             .enumtag => |right_val| {
                 if (!std.mem.eql(u8, left_val.from.name.?, right_val.from.name.?)) {
                     return try vm.push(.{ .boolean = false });
                 }
+                const result = switch (op) {
+                    .eq => left_val.id == right_val.id,
+                    .neq => left_val.id != right_val.id,
+                    .gt => left_val.id > right_val.id,
+                    .gte => left_val.id >= right_val.id,
+                    else => return vm.newError("Invalid operation!", .{}),
+                };
+                return try vm.push(.{ .boolean = result });
+            },
+            .tag => |name| {
+                const rv = left_val.from.fields.get(name) orelse return try vm.push(.{ .boolean = false });
+                const right_val = rv.enumtag;
                 const result = switch (op) {
                     .eq => left_val.id == right_val.id,
                     .neq => left_val.id != right_val.id,
