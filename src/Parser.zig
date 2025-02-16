@@ -13,112 +13,35 @@ peek_token: Token,
 arena: std.heap.ArenaAllocator,
 errors: *Error,
 call: bool = false,
-/// TODO: what about pear type resolution?
-fn missing(p: *Parser, tk: Token.Type) !void {
-    const l = p.line();
-    const lin = l.line;
-    const at = p.lexer.position - l.start - 1;
-    try p.errors.append(
-        "\x1b[1m{s}:{}:{}: \x1b[31mSyntax error:\x1b[0m\x1b[1m Expected '{s}', found '{s}' ({s}) \x1b[0m\n\t{s}\n\t",
-        .{ p.errors.file, p.lexer.line_index, at, @tagName(tk), p.peek_token.literal, @tagName(p.peek_token.type), lin },
-    );
-    try p.errors.msg.writer().writeByteNTimes(' ', at - 1);
-    try p.errors.msg.writer().writeAll("\x1b[32m^\x1b[0m\n");
+
+pub fn init(child_alloc: std.mem.Allocator, lexer: *Lexer, errors: *Error) Parser {
+    const arena: std.heap.ArenaAllocator = .init(child_alloc);
+
+    var parser: Parser = .{
+        .arena = arena,
+        .lexer = lexer,
+        .cur_token = undefined,
+        .peek_token = undefined,
+        .last_token = .{ .tag = .eof },
+        .errors = errors,
+    };
+
+    parser.nextToken();
+    parser.nextToken();
+
+    return parser;
 }
 
-fn unexpected(p: *Parser, tk: Token.Type) !void {
-    const l = p.line();
-    const lin = l.line;
-    const at = p.lexer.position - l.start - 1;
-    try p.errors.append(
-        "\x1b[1m{}:{}: \x1b[31mSyntax error:\x1b[0m\x1b[1m Unexpected token '{s}'\x1b[0m\n\t{s}\n\t",
-        .{ p.lexer.line_index, at, @tagName(tk), lin },
-    );
-    try p.errors.msg.writer().writeByteNTimes(' ', at - 1);
-    try p.errors.msg.writer().writeAll("\x1b[32m^\x1b[0m\n");
+pub fn deinit(self: *Parser) void {
+    self.arena.deinit();
 }
-
-fn errlog(p: *Parser, msg: []const u8) !void {
-    const l = p.line();
-    const at = p.lexer.position - l.start - 1;
-    try p.errors.append(
-        "\x1b[1m{s}:{}:{}: \x1b[31mSyntax error:\x1b[0m\x1b[1m {s} \x1b[0m\n",
-        .{ p.errors.file, p.lexer.line_index, at, msg },
-    );
-}
-
-const Line = struct {
-    line: []const u8,
-    start: usize,
-    end: usize,
-};
-
-fn line(p: *Parser) Line {
-    const input = p.lexer.input;
-
-    var pos = p.lexer.position;
-
-    if (pos >= input.len) {
-        pos = p.lexer.read_position;
-        if (pos >= input.len) {
-            pos = input.len;
-        }
-    }
-
-    const start = std.mem.lastIndexOf(u8, input[0..pos], "\n") orelse 0;
-    var end = std.mem.indexOf(u8, input[pos..], "\n") orelse input.len;
-    if (end != input.len) end += pos;
-
-    return .{ .line = std.mem.trim(u8, input[start..end], "\n"), .end = end, .start = start };
-}
-
-var NULL: ast.Expression = .null;
-var TRUE: ast.Expression = .{ .boolean = .{ .value = true } };
-
-pub const Precedence = enum {
-    lowest,
-    assigne,
-    lor,
-    land,
-    equals,
-    lessgreater,
-    sum,
-    product,
-    prefix,
-    call,
-    index,
-    // tuple,
-
-    pub fn peek(token_type: Token.Type) Precedence {
-        return switch (token_type) {
-            else => .lowest,
-            .@"or" => .lor,
-            .@"and" => .land,
-            .@"==", .@"!=" => .equals,
-            .@">", .@">=", .@"<", .@"<=" => .lessgreater,
-            .@"+", .@"-" => .sum,
-            .@"/", .@"*", .@"%" => .product,
-            .@"(", .@"{" => .call,
-            .@"!" => .prefix,
-            .@"[", .@".", .@"..", .@"..=" => .index,
-            .@"=", .@":=", .@"+=", .@"-=", .@"*=", .@"/=" => .assigne,
-            // .@"," => .tuple,
-        };
-    }
-};
 
 fn prefixExp(p: *Parser) anyerror!*ast.Expression {
     const allocator = p.arena.allocator();
-    const tk = p.cur_token;
     const left_exp = try p.newExp(allocator);
 
     if (!p.call and p.peekTokenIs(.@",")) {
         return p.parseTuple(left_exp);
-    }
-
-    switch (left_exp.*) {
-        .bad, .null => {},
-        inline else => |*exp| exp.at = tk.at,
     }
 
     return left_exp;
@@ -126,7 +49,7 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
 
 fn infixExp(p: *Parser, lx: *ast.Expression) anyerror!?ast.Expression {
     var tk: Token = p.peek_token;
-    var left_exp: ?ast.Expression = b: switch (tk.type) {
+    const left_exp: ?ast.Expression = b: switch (tk.tag) {
         .@"[" => {
             p.nextToken();
             tk = p.cur_token;
@@ -185,7 +108,6 @@ fn infixExp(p: *Parser, lx: *ast.Expression) anyerror!?ast.Expression {
                 .operator = .@"and",
                 .left = l,
                 .right = r,
-                .at = tk.at,
             } };
         },
         .@"=", .@":=", .@"+=", .@"-=", .@"*=", .@"/=" => {
@@ -197,35 +119,7 @@ fn infixExp(p: *Parser, lx: *ast.Expression) anyerror!?ast.Expression {
         else => break :b null,
     };
 
-    if (left_exp) |*lf| switch (lf.*) {
-        .bad, .null => {},
-        inline else => |*exp| exp.at = tk.at,
-    };
-
     return left_exp;
-}
-
-pub fn init(child_alloc: std.mem.Allocator, lexer: *Lexer, errors: *Error) Parser {
-    const arena: std.heap.ArenaAllocator = .init(child_alloc);
-    // const allocator = arena.allocator();
-
-    var parser: Parser = .{
-        .arena = arena,
-        .lexer = lexer,
-        .cur_token = undefined,
-        .peek_token = undefined,
-        .last_token = .{ .type = .eof, .literal = "" },
-        .errors = errors,
-    };
-
-    parser.nextToken();
-    parser.nextToken();
-
-    return parser;
-}
-
-pub fn deinit(self: *Parser) void {
-    self.arena.deinit();
 }
 
 fn nextToken(self: *Parser) void {
@@ -234,16 +128,16 @@ fn nextToken(self: *Parser) void {
     self.peek_token = self.lexer.nextToken();
 }
 
-fn curTokenIs(self: *const Parser, token_type: Token.Type) bool {
-    return self.cur_token.type == token_type;
+fn curTokenIs(self: *const Parser, token_type: Token.Tag) bool {
+    return self.cur_token.tag == token_type;
 }
 
-fn peekTokenIs(self: *const Parser, token_type: Token.Type) bool {
-    return self.peek_token.type == token_type;
+fn peekTokenIs(self: *const Parser, token_type: Token.Tag) bool {
+    return self.peek_token.tag == token_type;
 }
 
 /// match and eat the peeked token (if true)
-fn expectPeek(self: *Parser, token_type: Token.Type) bool {
+fn expectPeek(self: *Parser, token_type: Token.Tag) bool {
     if (self.peekTokenIs(token_type)) {
         self.nextToken();
         return true;
@@ -253,21 +147,25 @@ fn expectPeek(self: *Parser, token_type: Token.Type) bool {
 }
 
 fn peekPrecedence(self: *const Parser) Precedence {
-    return .peek(self.peek_token.type);
+    return .peek(self.peek_token.tag);
 }
 
 fn currentPrecedence(self: *const Parser) Precedence {
-    return .peek(self.cur_token.type);
+    return .peek(self.cur_token.tag);
 }
 
 // parsers fn -----------------------------------------------------------
 fn parseIdentifier(self: *const Parser) ast.Expression {
-    return .{ .identifier = .{ .value = self.cur_token.literal, .at = self.lexer.position } };
+    return .{ .identifier = .{
+        .value = self.tokenliteral(),
+    } };
 }
 
 fn parseTag(self: *Parser) ast.Expression {
     self.nextToken();
-    return .{ .tag = .{ .value = self.cur_token.literal } };
+    return .{ .tag = .{
+        .value = self.tokenliteral(),
+    } };
 }
 
 fn parseReturn(self: *Parser) !ast.Statement {
@@ -327,7 +225,7 @@ fn parseImport(self: *Parser) anyerror!ast.Statement {
 
     var name: []const u8 = "";
     if (self.curTokenIs(.identifier)) {
-        name = self.cur_token.literal;
+        name = self.tokenliteral();
         self.nextToken();
     }
 
@@ -356,7 +254,7 @@ fn parseImport(self: *Parser) anyerror!ast.Statement {
     self.lexer = &new_lexer;
     self.cur_token = undefined;
     self.peek_token = undefined;
-    self.last_token = .{ .type = .eof, .literal = "" };
+    self.last_token = .{ .tag = .eof };
 
     self.nextToken();
     self.nextToken();
@@ -373,7 +271,9 @@ fn parseImport(self: *Parser) anyerror!ast.Statement {
 
     return .{
         .import = .{
-            .name = .{ .value = name, .at = tk.at },
+            .name = .{
+                .value = name,
+            },
             // not used
             .path = path_exp,
             .token = tk,
@@ -433,12 +333,12 @@ fn parseAssignment(self: *Parser, name: *ast.Expression) !ast.Expression {
 
     self.nextToken();
 
-    stmt.operator = switch (op.type) {
-        .@"=", .@":=", .@"+=", .@"-=", .@"/=", .@"*=" => op.type,
+    stmt.operator = switch (op.tag) {
+        .@"=", .@":=", .@"+=", .@"-=", .@"/=", .@"*=" => op.tag,
         else => b: {
-            try self.unexpected(op.type);
+            try self.unexpected(op.tag);
             try self.errlog("Invalid Operator");
-            break :b op.type;
+            break :b op.tag;
         },
     };
 
@@ -529,7 +429,7 @@ fn parseVarBlock(self: *Parser, _: Token) !ast.VarBlock {
 
     self.nextToken();
 
-    while (self.cur_token.type != .@")") {
+    while (self.cur_token.tag != .@")") {
         const ident = self.parseIdentifier();
 
         if (ident != .identifier) try self.missing(.identifier);
@@ -574,8 +474,7 @@ fn parseVar(self: *Parser) !ast.Statement {
     if (!self.expectPeek(.identifier)) try self.missing(.identifier);
 
     var_stmt.name = .{
-        .value = self.cur_token.literal,
-        .at = self.lexer.position,
+        .value = self.tokenliteral(),
     };
 
     if (!self.expectPeek(.@"=")) {
@@ -607,7 +506,7 @@ fn parseVar(self: *Parser) !ast.Statement {
 
 fn parseStatement(self: *Parser) !ast.Statement {
     const tk = self.cur_token;
-    var stmt: ast.Statement = switch (tk.type) {
+    const stmt: ast.Statement = switch (tk.tag) {
         .@"var" => try self.parseVar(),
 
         .con => try self.parseCon(),
@@ -632,10 +531,6 @@ fn parseStatement(self: *Parser) !ast.Statement {
 
         else => try self.parseExpStatement(),
     };
-
-    switch (stmt) {
-        inline else => |*st| st.at = tk.at,
-    }
 
     return stmt;
 }
@@ -682,7 +577,7 @@ pub fn parseProgram(self: *Parser) !ast.Program {
     errdefer stmts.deinit();
 
     var stmt: ast.Statement = undefined;
-    while (self.cur_token.type != .eof) {
+    while (self.cur_token.tag != .eof) {
         stmt = try self.parseStatement();
         try stmts.append(stmt);
         self.nextToken();
@@ -696,21 +591,32 @@ pub fn parse(self: *Parser) !ast.Node {
     return .{ .statement = .{ .program = program } };
 }
 
-fn parseFloat(self: *Parser) !ast.Expression {
+fn tokenliteral(self: *const Parser) []const u8 {
+    const loc = self.cur_token.loc;
+    return self.lexer.input[loc.start..loc.end];
+}
+
+fn peektokenliteral(self: *const Parser) []const u8 {
+    const loc = self.peek_token.loc;
+    return self.lexer.input[loc.start..loc.end];
+}
+
+fn parseFloat(self: *const Parser) !ast.Expression {
     return .{ .float = .{
-        .value = try std.fmt.parseFloat(f32, self.cur_token.literal),
+        .value = try std.fmt.parseFloat(f32, self.tokenliteral()),
     } };
 }
 
 fn parseChar(self: *Parser) ast.Expression {
-    var value: u8 = self.cur_token.literal[0];
+    const literal = self.tokenliteral();
+    var value: u8 = literal[0];
 
-    if (self.cur_token.literal.len > 1) {
-        if (std.mem.eql(u8, self.cur_token.literal, "\\n")) {
+    if (literal.len > 1) {
+        if (std.mem.eql(u8, literal, "\\n")) {
             value = '\n';
-        } else if (std.mem.eql(u8, self.cur_token.literal, "\\t")) {
+        } else if (std.mem.eql(u8, literal, "\\t")) {
             value = '\t';
-        } else if (std.mem.eql(u8, self.cur_token.literal, "\\r")) {
+        } else if (std.mem.eql(u8, literal, "\\r")) {
             value = '\r';
         }
     }
@@ -720,7 +626,7 @@ fn parseChar(self: *Parser) ast.Expression {
 
 fn parseInteger(self: *Parser) !ast.Expression {
     return .{ .integer = .{
-        .value = try std.fmt.parseInt(i32, self.cur_token.literal, 10),
+        .value = try std.fmt.parseInt(i32, self.tokenliteral(), 10),
     } };
 }
 
@@ -757,11 +663,11 @@ fn parseGroup(self: *Parser) !ast.Expression {
 
 fn parsePrefix(self: *Parser) !ast.Expression {
     var expression: ast.Prefix = .{
-        .operator = self.cur_token.type,
+        .operator = self.cur_token.tag,
         .right = undefined,
     };
 
-    expression.operator = self.cur_token.type;
+    expression.operator = self.cur_token.tag;
 
     self.nextToken();
 
@@ -772,10 +678,9 @@ fn parsePrefix(self: *Parser) !ast.Expression {
 
 fn parseInfix(self: *Parser, left: *ast.Expression) !ast.Expression {
     var infix = ast.Infix{
-        .operator = self.cur_token.type,
+        .operator = self.cur_token.tag,
         .left = left,
         .right = undefined,
-        .at = self.lexer.position,
     };
 
     const precedence = self.currentPrecedence();
@@ -831,7 +736,7 @@ fn parseBlock(self: *Parser) anyerror!ast.Block {
 
     self.nextToken();
 
-    if (tk.type == .@":") {
+    if (tk.tag == .@":") {
         const stmt = try self.parseStatement();
         try stmts.append(stmt);
         // self.nextToken();
@@ -889,7 +794,7 @@ fn parseFn(self: *Parser) !ast.Statement {
 }
 
 fn parseType(self: *Parser) !ast.Expression {
-    var struc_or_enum: ast.Type = .{ .type = self.cur_token.type };
+    var struc_or_enum: ast.Type = .{ .type = self.cur_token.tag };
 
     if (!self.expectPeek(.@"{")) try self.missing(.@"{");
 
@@ -1006,8 +911,7 @@ fn parseFunctionParameters(self: *Parser) ![]ast.Identifier {
     self.nextToken();
 
     const ident: ast.Identifier = .{
-        .value = self.cur_token.literal,
-        .at = self.lexer.position,
+        .value = self.tokenliteral(),
     };
 
     try indentifiers.append(ident);
@@ -1165,7 +1069,7 @@ fn parseTuple(self: *Parser, exp: *ast.Expression) !*ast.Expression {
 fn newExp(p: *Parser, allocator: std.mem.Allocator) anyerror!*ast.Expression {
     const left_exp = try allocator.create(ast.Expression);
     errdefer allocator.destroy(left_exp);
-    left_exp.* = switch (p.cur_token.type) {
+    left_exp.* = switch (p.cur_token.tag) {
         .identifier => p.parseIdentifier(),
         .@"." => p.parseTag(),
         .integer => try p.parseInteger(),
@@ -1184,7 +1088,7 @@ fn newExp(p: *Parser, allocator: std.mem.Allocator) anyerror!*ast.Expression {
         .@"!", .@"-" => try p.parsePrefix(),
         .@"(" => try p.parseGroup(),
         else => b: {
-            try p.unexpected(p.cur_token.type);
+            try p.unexpected(p.cur_token.tag);
             break :b .bad;
         },
     };
@@ -1239,13 +1143,13 @@ fn parseMatchArm(self: *Parser) ![]*ast.Expression {
 pub fn parseString(self: *Parser) ast.Expression {
     return .{
         .string = .{
-            .value = self.cur_token.literal,
+            .value = self.tokenliteral(),
         },
     };
 }
 
 fn debugCurToken(p: *Parser) void {
-    std.debug.print("{s}\n", .{p.cur_token.literal});
+    std.debug.print("{s}\n", .{p.tokenliteral()});
 }
 
 pub fn parseArray(self: *Parser) !ast.Expression {
@@ -1412,9 +1316,13 @@ pub fn parseMatch(self: *Parser) !ast.Expression {
 pub fn parseRange(self: *Parser, left: *ast.Expression) !ast.Expression {
     var range = ast.Range{
         .start = left,
-        .end = undefined,
+        .end = &NULL,
         .inc = if (self.curTokenIs(.@"..")) .no else .yes,
     };
+
+    if (self.peekTokenIs(.@")") or self.peekTokenIs(.@"]")) {
+        return .{ .range = range };
+    }
 
     self.nextToken();
 
@@ -1493,3 +1401,97 @@ pub fn parseFor(self: *Parser) !ast.Expression {
 
     return self.parseForLoopCondition(condition_or_ident);
 }
+
+/// TODO: what about pear type resolution?
+fn missing(p: *Parser, tk: Token.Tag) !void {
+    const l = p.line();
+    const lin = l.line;
+    const at = p.lexer.position - l.start - 1;
+    try p.errors.append(
+        "\x1b[1m{s}:{}:{}: \x1b[31mSyntax error:\x1b[0m\x1b[1m Expected '{s}', found '{s}' ({s}) \x1b[0m\n\t{s}\n\t",
+        .{ p.errors.file, p.lexer.line_index, at, @tagName(tk), p.peektokenliteral(), @tagName(p.peek_token.tag), lin },
+    );
+    try p.errors.msg.writer().writeByteNTimes(' ', at - 1);
+    try p.errors.msg.writer().writeAll("\x1b[32m^\x1b[0m\n");
+}
+
+fn unexpected(p: *Parser, tk: Token.Tag) !void {
+    const l = p.line();
+    const lin = l.line;
+    const at = p.lexer.position - l.start - 1;
+    try p.errors.append(
+        "\x1b[1m{}:{}: \x1b[31mSyntax error:\x1b[0m\x1b[1m Unexpected token '{s}'\x1b[0m\n\t{s}\n\t",
+        .{ p.lexer.line_index, at, @tagName(tk), lin },
+    );
+    try p.errors.msg.writer().writeByteNTimes(' ', at - 1);
+    try p.errors.msg.writer().writeAll("\x1b[32m^\x1b[0m\n");
+}
+
+fn errlog(p: *Parser, msg: []const u8) !void {
+    const l = p.line();
+    const at = p.lexer.position - l.start - 1;
+    try p.errors.append(
+        "\x1b[1m{s}:{}:{}: \x1b[31mSyntax error:\x1b[0m\x1b[1m {s} \x1b[0m\n",
+        .{ p.errors.file, p.lexer.line_index, at, msg },
+    );
+}
+
+const Line = struct {
+    line: []const u8,
+    start: usize,
+    end: usize,
+};
+
+fn line(p: *Parser) Line {
+    const input = p.lexer.input;
+
+    var pos = p.lexer.position;
+
+    if (pos >= input.len) {
+        pos = p.lexer.read_position;
+        if (pos >= input.len) {
+            pos = input.len;
+        }
+    }
+
+    const start = std.mem.lastIndexOf(u8, input[0..pos], "\n") orelse 0;
+    var end = std.mem.indexOf(u8, input[pos..], "\n") orelse input.len;
+    if (end != input.len) end += pos;
+
+    return .{ .line = std.mem.trim(u8, input[start..end], "\n"), .end = end, .start = start };
+}
+
+var NULL: ast.Expression = .null;
+var TRUE: ast.Expression = .{ .boolean = .{ .value = true } };
+
+pub const Precedence = enum {
+    lowest,
+    assigne,
+    lor,
+    land,
+    equals,
+    lessgreater,
+    sum,
+    product,
+    prefix,
+    call,
+    index,
+    // tuple,
+
+    pub fn peek(token_type: Token.Tag) Precedence {
+        return switch (token_type) {
+            else => .lowest,
+            .@"or" => .lor,
+            .@"and" => .land,
+            .@"==", .@"!=" => .equals,
+            .@">", .@">=", .@"<", .@"<=" => .lessgreater,
+            .@"+", .@"-" => .sum,
+            .@"/", .@"*", .@"%" => .product,
+            .@"(", .@"{" => .call,
+            .@"!" => .prefix,
+            .@"[", .@".", .@"..", .@"..=" => .index,
+            .@"=", .@":=", .@"+=", .@"-=", .@"*=", .@"/=" => .assigne,
+            // .@"," => .tuple,
+        };
+    }
+};

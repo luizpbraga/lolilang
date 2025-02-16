@@ -105,6 +105,11 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
                 if (start > string.items.len) {
                     start = string.items.len;
                 }
+
+                if (start == end) {
+                    return try vm.push(.{ .char = string.items[start] });
+                }
+
                 const str = string.items[start..end];
                 const value = try builtins.newString(vm, str);
                 return try vm.push(value);
@@ -134,14 +139,23 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
 
             // optimize!
             if (index.* == .range) {
-                var start = index.range.start;
+                const start = index.range.start;
                 var end = index.range.end;
+
+                // FIX
                 if (end > array.items.len) {
                     end = array.items.len;
                 }
-                if (start > array.items.len) {
-                    start = array.items.len;
+
+                if (start >= array.items.len) {
+                    return vm.newError("Index Out of Bound: array len is {}, index is {}", .{ array.items.len, start });
+                    // start = array.items.len;
                 }
+
+                if (start == end) {
+                    return try vm.push(array.items[start]);
+                }
+
                 var arr = try std.ArrayList(Value).initCapacity(vm.allocator, end - start);
                 errdefer arr.deinit();
                 try arr.appendSlice(array.items[start..end]);

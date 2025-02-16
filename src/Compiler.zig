@@ -45,7 +45,7 @@ fn newError(c: *Compiler, comptime fmt: []const u8, args: anytype) anyerror {
     try c.errors.msg.writer().print(Error.BOLD ++ "{s}:{}:{}: ", .{ c.errors.file, line.start, line.index });
     try c.errors.msg.writer().print(Error.RED ++ "Compilation Error: " ++ Error.END ++ fmt ++ "\n", args);
     try c.errors.msg.writer().print("\t{s}\n\t", .{line.line});
-    try c.errors.msg.writer().writeByteNTimes(' ', line.start - 1);
+    try c.errors.msg.writer().writeByteNTimes(' ', line.start);
     try c.errors.msg.writer().writeAll("\x1b[32m^\x1b[0m\n");
     return error.Compilation;
 }

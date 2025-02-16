@@ -8,6 +8,7 @@ pub var builtin_functions = [_]Object.Builtin{
     .{ .name = "@print", .function = Builtin.print },
     .{ .name = "@length", .function = Builtin.length },
     .{ .name = "@append", .function = Builtin.append },
+    .{ .name = "@pop", .function = Builtin.pop },
     .{ .name = "@read", .function = Builtin.read },
     .{ .name = "@write", .function = Builtin.write },
     .{ .name = "@typeOf", .function = Builtin.typeOf },
@@ -24,8 +25,10 @@ pub var builtin_functions = [_]Object.Builtin{
     .{ .name = "@time", .function = Builtin.time },
     .{ .name = "@rand", .function = Builtin.rand },
     .{ .name = "@tagName", .function = Builtin.tagName },
-    .{ .name = "@frame", .function = Builtin.frame },
+    .{ .name = "@frame", .function = Builtin.frameF },
     .{ .name = "@resume", .function = Builtin.resumeF },
+    .{ .name = "@suspend", .function = Builtin.suspendF },
+    .{ .name = "@syscall", .function = Builtin.syscall },
 };
 
 const LoliType = enum {
@@ -65,12 +68,44 @@ pub fn newString(vm: *Vm, value: ?[]const u8) !Value {
 
 /// TODO: THIS NEED A BIIIIG REWRITE
 const Builtin = struct {
+    pub fn syscall(vm: *Vm, args: []const Value) !Value {
+        const argv = try vm.allocator.alloc([]const u8, args.len);
+        defer vm.allocator.free(argv);
+
+        for (args, 0..) |value, i| {
+            argv[i] = value.obj.type.string.items;
+        }
+
+        const result = try std.process.Child.run(.{ .allocator = vm.allocator, .argv = argv });
+        defer vm.allocator.free(result.stdout);
+        defer vm.allocator.free(result.stderr);
+
+        const stdout = if (result.stdout.len == 0) .null else try newString(vm, result.stdout);
+        const stderr = if (result.stderr.len == 0) .null else try newString(vm, result.stderr);
+
+        var array = try std.ArrayList(Value).initCapacity(vm.allocator, 2);
+        errdefer array.deinit();
+
+        try array.append(stdout);
+        try array.append(stderr);
+
+        const obj = try memory.allocateObject(vm, .{ .array = array });
+        return .{ .obj = obj };
+    }
     pub fn resumeF(_: *Vm, args: []const Value) !Value {
         return .{ .frame = args[0].frame };
     }
 
-    pub fn frame(vm: *Vm, _: []const Value) !Value {
+    pub fn frameF(vm: *Vm, _: []const Value) !Value {
         return .{ .frame = vm.currentFrame() };
+    }
+
+    pub fn suspendF(vm: *Vm, _: []const Value) !Value {
+        const frame = vm.popFrame(); // return to the callee frame
+        vm.fm = vm.currentFrame(); // ?
+        vm.sp = @intCast(frame.bp); // pop the fn
+        vm.instructions = vm.fm.instructions();
+        return .{ .frame = frame };
     }
 
     pub fn tagName(vm: *Vm, args: []const Value) !Value {
@@ -356,6 +391,17 @@ const Builtin = struct {
             .hash => |hash| .{ .integer = @intCast(hash.pairs.count()) },
             else => vm.newError("Type '{s}' don't have a length", .{arg[0].name()}),
         };
+    }
+
+    pub fn pop(vm: *Vm, arg: []const Value) anyerror!Value {
+        if (arg[0] != .obj) return vm.newError("Invalid operation: Nothing to append to type '{s}'", .{arg[0].name()});
+
+        switch (arg[0].obj.type) {
+            .array => |*arr| {
+                return arr.pop() orelse .null;
+            },
+            else => return .null,
+        }
     }
 
     pub fn append(vm: *Vm, arg: []const Value) anyerror!Value {
