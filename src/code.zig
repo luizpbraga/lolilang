@@ -23,6 +23,8 @@ pub const Opcode = enum(u8) {
     sub,
     /// remove the topmost elements of the stack and mul it
     mul,
+    /// remove the topmost elements of the stack and mul it
+    pow,
     /// remove the topmost elements of the stack and div it
     div,
     /// pops the topmost stack element after every statement

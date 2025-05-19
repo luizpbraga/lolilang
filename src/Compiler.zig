@@ -35,7 +35,7 @@ const Loop = struct {
         start: usize = 0,
         /// break position
         end: ?usize = null,
-    } = .{.{}} ** 1,
+    } = .{.{}},
     idx: usize = 0,
 };
 
@@ -656,6 +656,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     .@"+" => .add,
                     .@"-" => .sub,
                     .@"*" => .mul,
+                    .@"^" => .pow,
                     .@"/" => .div,
                     .@">" => .gt,
                     .@">=" => .gte,

@@ -4,7 +4,7 @@ const Value = Object.Value;
 const memory = @import("memory.zig");
 const Vm = @import("Vm.zig");
 
-pub var builtin_functions = [_]Object.Builtin{
+pub const builtin_functions = [_]Object.Builtin{
     .{ .name = "@print", .function = Builtin.print },
     .{ .name = "@length", .function = Builtin.length },
     .{ .name = "@append", .function = Builtin.append },
@@ -29,6 +29,10 @@ pub var builtin_functions = [_]Object.Builtin{
     .{ .name = "@resume", .function = Builtin.resumeF },
     .{ .name = "@suspend", .function = Builtin.suspendF },
     .{ .name = "@syscall", .function = Builtin.syscall },
+    .{ .name = "@sin", .function = Builtin.sin },
+    .{ .name = "@cos", .function = Builtin.cos },
+    .{ .name = "@tan", .function = Builtin.tan },
+    .{ .name = "@args", .function = Builtin.cmdLineArgs },
 };
 
 const LoliType = enum {
@@ -68,6 +72,67 @@ pub fn newString(vm: *Vm, value: ?[]const u8) !Value {
 
 /// TODO: THIS NEED A BIIIIG REWRITE
 const Builtin = struct {
+    pub fn printf(vm: *Vm, values: []const Value) !Value {
+        _ = vm;
+        _ = values;
+        return .null;
+    }
+
+    pub fn cmdLineArgs(vm: *Vm, _: []const Value) !Value {
+        var iter = std.process.args();
+        // skip path and file name
+        _ = iter.next();
+        _ = iter.next();
+
+        var array: std.ArrayList(Value) = .init(vm.allocator);
+        errdefer array.deinit();
+
+        while (iter.next()) |item| {
+            const string = try newString(vm, item);
+            try array.append(string);
+        }
+
+        // we can not iterate over nulls, right?
+        // this can cause runtime problens!!!!
+        if (array.items.len == 0) {
+            return .null;
+        }
+
+        const obj = try memory.allocateObject(vm, .{ .array = array });
+        return .{ .obj = obj };
+    }
+
+    pub fn cos(vm: *Vm, args: []const Value) !Value {
+        const arg: f32 = switch (args[0]) {
+            .float => |f| f,
+            .integer => |i| @floatFromInt(i),
+            .char => |c| @floatFromInt(c),
+            else => return vm.newError("Invalid Argument; ", .{}),
+        };
+        return .{ .float = @cos(arg) };
+    }
+
+    pub fn sin(vm: *Vm, args: []const Value) !Value {
+        const arg: f32 = switch (args[0]) {
+            .float => |f| f,
+            .integer => |i| @floatFromInt(i),
+            .char => |c| @floatFromInt(c),
+            else => return vm.newError("Invalid Argument; ", .{}),
+        };
+        return .{ .float = @sin(arg) };
+    }
+
+    pub fn tan(vm: *Vm, args: []const Value) !Value {
+        const arg: f32 = switch (args[0]) {
+            .float => |f| f,
+            .integer => |i| @floatFromInt(i),
+            .char => |c| @floatFromInt(c),
+            else => return vm.newError("Invalid Argument; ", .{}),
+        };
+        return .{ .float = @tan(arg) };
+    }
+
+    /// FIX: segfault
     pub fn syscall(vm: *Vm, args: []const Value) !Value {
         const argv = try vm.allocator.alloc([]const u8, args.len);
         defer vm.allocator.free(argv);
@@ -76,7 +141,11 @@ const Builtin = struct {
             argv[i] = value.obj.type.string.items;
         }
 
-        const result = try std.process.Child.run(.{ .allocator = vm.allocator, .argv = argv });
+        std.debug.print("check point {s}", .{argv});
+        const result = try std.process.Child.run(
+            .{ .allocator = vm.allocator, .argv = argv },
+        );
+        std.debug.print("{s}\n\n\n{s}", .{ result.stdout, result.stderr });
         defer vm.allocator.free(result.stdout);
         defer vm.allocator.free(result.stderr);
 
@@ -92,6 +161,7 @@ const Builtin = struct {
         const obj = try memory.allocateObject(vm, .{ .array = array });
         return .{ .obj = obj };
     }
+
     pub fn resumeF(_: *Vm, args: []const Value) !Value {
         return .{ .frame = args[0].frame };
     }

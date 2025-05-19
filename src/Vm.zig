@@ -391,7 +391,7 @@ pub fn run(vm: *Vm) anyerror!void {
                 try vm.push(.null); // push the return value
             },
 
-            .add, .sub, .mul, .div, .mod => try operation.executeBinary(vm, op),
+            .add, .sub, .mul, .div, .mod, .pow => try operation.executeBinary(vm, op),
 
             .eq, .neq, .gt, .gte, .land, .lor => try operation.executeComparison(vm, op),
 

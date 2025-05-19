@@ -78,7 +78,7 @@ fn infixExp(p: *Parser, lx: *ast.Expression) anyerror!?ast.Expression {
             break :b try p.parseCall(lx);
         },
 
-        .@"%", .@"+", .@"-", .@"==", .@"!=", .@"*", .@"or", .@"and", .@"/", .@">", .@">=" => {
+        .@"%", .@"+", .@"-", .@"==", .@"!=", .@"*", .@"or", .@"and", .@"/", .@">", .@">=", .@"^" => {
             p.nextToken();
             tk = p.cur_token;
             break :b try p.parseInfix(lx);
@@ -1486,7 +1486,7 @@ pub const Precedence = enum {
             .@"==", .@"!=" => .equals,
             .@">", .@">=", .@"<", .@"<=" => .lessgreater,
             .@"+", .@"-" => .sum,
-            .@"/", .@"*", .@"%" => .product,
+            .@"/", .@"*", .@"%", .@"^" => .product,
             .@"(", .@"{" => .call,
             .@"!" => .prefix,
             .@"[", .@".", .@"..", .@"..=" => .index,
