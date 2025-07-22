@@ -46,7 +46,7 @@ pub fn main() !void {
 
     if (loli_args) |arg| f: {
         if (std.mem.eql(u8, arg, "--fmt")) {
-            try fmt.format(allocator, file_name, input, &err);
+            // try fmt.format(allocator, file_name, input, &err);
             return;
         }
         if (std.mem.eql(u8, arg, "--emit-bytecode")) {

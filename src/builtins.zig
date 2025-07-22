@@ -141,7 +141,7 @@ const Builtin = struct {
             argv[i] = value.obj.type.string.items;
         }
 
-        std.debug.print("check point {s}", .{argv});
+        std.debug.print("check point {any}", .{argv});
         const result = try std.process.Child.run(
             .{ .allocator = vm.allocator, .argv = argv },
         );
@@ -411,8 +411,11 @@ const Builtin = struct {
 
     pub fn read(vm: *Vm, arg: []const Value) anyerror!Value {
         if (arg.len == 0) {
-            const bytes = try std.io.getStdIn().reader().readUntilDelimiterAlloc(vm.allocator, '\n', 10000);
-            defer vm.allocator.free(bytes);
+            const stdin: std.fs.File = .stdin();
+            var buff: [10000]u8 = undefined;
+            var r = stdin.reader(&buff);
+            const bytes = try r.interface.peekDelimiterInclusive('\n'); //readUntilDelimiterAlloc(vm.allocator, '\n', 10000);
+            // defer vm.allocator.free(bytes);
             return try newString(vm, bytes);
         }
 
