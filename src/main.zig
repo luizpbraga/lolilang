@@ -51,7 +51,6 @@ pub fn main() !void {
         }
         if (std.mem.eql(u8, arg, "--emit-bytecode")) {
             loli.emitbytecode = true;
-            // std.debug.print("flag {s}", .{arg});
             break :f;
         }
         if (std.mem.eql(u8, arg, "--eb")) {

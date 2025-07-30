@@ -959,6 +959,13 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             // TODO: make it like a function
+            //
+            // a type must have his own constants and variables list
+            // this will make modules/import more easy!
+            //
+            // * VM will have a new field called: types *
+            //
+            // in this case, methods call will have the callee passed as arguments (always)
             .type => |ty| {
                 const fields = ty.fields;
                 const decls = ty.decl;
@@ -970,25 +977,14 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 });
                 try c.emit(.constant, &.{pos_name});
 
-                if (ty.type == .@"struct") {
-                    for (fields) |field| {
-                        const ident = field.name;
-                        const value = field.value;
+                for (fields) |field| {
+                    const ident = field.name;
+                    const value = field.value;
 
-                        const pos = try c.addConstants(.{ .tag = ident.value });
-                        try c.emit(.constant, &.{pos});
-                        try c.compile(.{ .expression = value });
-                    }
-                } else {
-                    for (fields) |field| {
-                        const ident = field.name;
-                        const value = field.value;
+                    const pos = try c.addConstants(.{ .tag = ident.value });
+                    try c.emit(.constant, &.{pos});
 
-                        const pos = try c.addConstants(.{ .tag = ident.value });
-                        try c.emit(.constant, &.{pos});
-
-                        try c.compile(.{ .expression = value });
-                    }
+                    try c.compile(.{ .expression = value });
                 }
 
                 for (decls) |dec| {
@@ -998,6 +994,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     _ = try c.emitdecl(&dec);
                 }
 
+                // NOTE: will work?
                 // const pos = c.addConstants(.{ .@"struct" = .{
                 //     .fields_len = fields.len,
                 //     .decl_len = decls.len,
