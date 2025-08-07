@@ -2,7 +2,6 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const Lexer = @import("Lexer.zig");
 const Parser = @import("Parser.zig");
-const stderr = std.io.getStdErr();
 const Error = @import("Error.zig");
 
 const Line = struct {
@@ -26,6 +25,8 @@ test {
         \\}
     ;
     const allocator = std.testing.allocator;
+    var stderr = std.fs.File.stderr();
+    defer stderr.close();
 
     var lexer: Lexer = .init(input);
 
@@ -56,6 +57,9 @@ pub fn format(allocator: std.mem.Allocator, file_name: []const u8, input: []cons
     defer parser.deinit();
 
     const node = try parser.parse();
+
+    var stderr = std.fs.File.stderr();
+    defer stderr.close();
 
     if (parser.errors.msg.items.len != 0) {
         try stderr.writeAll(

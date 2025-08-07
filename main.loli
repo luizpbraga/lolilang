@@ -1,0 +1,7 @@
+System := struct {
+    fn stdOut() {
+    }
+}
+
+
+@print(System.stdOut())

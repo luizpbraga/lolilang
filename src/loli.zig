@@ -15,6 +15,8 @@ pub fn runVm(allocator: std.mem.Allocator, input: []const u8, err: *Error) !void
     var lexer: Lexer = .init(input);
     var parser: Parser = .init(allocator, &lexer, err);
     defer parser.deinit();
+    var stderr = std.fs.File.stderr();
+    defer stderr.close();
 
     const node = try parser.parse();
 
@@ -30,7 +32,7 @@ pub fn runVm(allocator: std.mem.Allocator, input: []const u8, err: *Error) !void
 
     compiler.compile(node) catch |comp_err|
         return switch (comp_err) {
-            error.Compilation => try w.interface.writeAll(
+            error.Compilation => try stderr.writeAll(
                 compiler.errors.msg.items,
             ),
             else => comp_err,
