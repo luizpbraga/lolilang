@@ -4,7 +4,6 @@ const Parser = @import("Parser.zig");
 const Compiler = @import("Compiler.zig");
 const Vm = @import("Vm.zig");
 const Error = @import("Error.zig");
-const stderr = std.io.getStdErr();
 
 pub var emitbytecode = false;
 
@@ -12,6 +11,8 @@ pub fn runVm(allocator: std.mem.Allocator, input: []const u8, err: *Error) !void
     var lexer: Lexer = .init(input);
     var parser: Parser = .init(allocator, &lexer, err);
     defer parser.deinit();
+    var stderr = std.fs.File.stderr();
+    defer stderr.close();
 
     const node = try parser.parse();
 
@@ -27,11 +28,11 @@ pub fn runVm(allocator: std.mem.Allocator, input: []const u8, err: *Error) !void
 
     compiler.compile(node) catch |comp_err|
         return switch (comp_err) {
-        error.Compilation => try stderr.writeAll(
-            compiler.errors.msg.items,
-        ),
-        else => comp_err,
-    };
+            error.Compilation => try stderr.writeAll(
+                compiler.errors.msg.items,
+            ),
+            else => comp_err,
+        };
 
     // // assert the bytecodes
     var code = try compiler.bytecode();
@@ -40,7 +41,7 @@ pub fn runVm(allocator: std.mem.Allocator, input: []const u8, err: *Error) !void
     if (emitbytecode) {
         const fmt = try @import("code.zig").formatInstruction(allocator, code.instructions);
         defer allocator.free(fmt);
-        std.log.info("token postion:\n{d}", .{code.positions});
+        std.log.info("token postion:\n{any}", .{code.positions});
         std.log.info("bytecode instructions:\n{s}", .{fmt});
     }
 
