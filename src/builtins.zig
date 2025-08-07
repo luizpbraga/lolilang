@@ -410,13 +410,6 @@ const Builtin = struct {
 
     pub fn read(vm: *Vm, arg: []const Value) anyerror!Value {
         if (arg.len == 0) {
-<<<<<<< HEAD
-            const stdin: std.fs.File = .stdin();
-            var buff: [10000]u8 = undefined;
-            var r = stdin.reader(&buff);
-            const bytes = try r.interface.peekDelimiterInclusive('\n'); //readUntilDelimiterAlloc(vm.allocator, '\n', 10000);
-            // defer vm.allocator.free(bytes);
-=======
             const buff = try vm.allocator.alloc(u8, 10000);
             defer vm.allocator.free(buff);
             // const bytes = try std.fs.File.stdin().reader(buff).readUntilDelimiterAlloc(vm.allocator, '\n', 10000);
@@ -424,7 +417,6 @@ const Builtin = struct {
             defer stdin.close();
             var r = stdin.reader(buff);
             const bytes = try r.interface.peekDelimiterExclusive('\n');
->>>>>>> 597f9d3590806dafc9b82d0742c29ea6d127d515
             return try newString(vm, bytes);
         }
 

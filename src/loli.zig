@@ -8,10 +8,6 @@ const Error = @import("Error.zig");
 pub var emitbytecode = false;
 
 pub fn runVm(allocator: std.mem.Allocator, input: []const u8, err: *Error) !void {
-    const stderr = std.fs.File.stderr();
-    var buff: [100]u8 = undefined;
-    var w = stderr.writer(&buff);
-
     var lexer: Lexer = .init(input);
     var parser: Parser = .init(allocator, &lexer, err);
     defer parser.deinit();
@@ -21,7 +17,7 @@ pub fn runVm(allocator: std.mem.Allocator, input: []const u8, err: *Error) !void
     const node = try parser.parse();
 
     if (parser.errors.msg.items.len != 0) {
-        try w.interface.writeAll(
+        try stderr.writeAll(
             parser.errors.msg.items,
         );
         return;
@@ -55,7 +51,7 @@ pub fn runVm(allocator: std.mem.Allocator, input: []const u8, err: *Error) !void
     vm.run() catch |vm_err| {
         try @import("memory.zig").collectGarbage(&vm);
         return switch (vm_err) {
-            error.Runtime => try w.interface.writeAll(
+            error.Runtime => try stderr.writeAll(
                 vm.errors.msg.items,
             ),
             else => vm_err,
