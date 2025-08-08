@@ -5,7 +5,7 @@ tag: Tag,
 loc: Loc = .{},
 const Loc = struct { start: usize = 0, end: usize = 0 };
 
-pub fn literal(s: *Self) []const u8 {
+pub fn literal(s: *const Self) []const u8 {
     return @tagName(s.tag);
 }
 
@@ -14,6 +14,7 @@ pub fn lookupIdentfier(ident: []const u8) Tag {
 }
 
 pub const keywords = std.StaticStringMap(Tag).initComptime(.{
+    .{ "class", .class },
     .{ "var", .@"var" },
     .{ "pub", .@"pub" },
     .{ "con", .con },
@@ -98,6 +99,7 @@ pub const Tag = enum {
     @"fn",
     @"enum",
     @"struct",
+    class,
     import,
     @"for",
     match,

@@ -13,9 +13,11 @@ peek_token: Token,
 arena: std.heap.ArenaAllocator,
 errors: *Error,
 call: bool = false,
+types: std.StringHashMap(*ast.Expression),
 
 pub fn init(child_alloc: std.mem.Allocator, lexer: *Lexer, errors: *Error) Parser {
-    const arena: std.heap.ArenaAllocator = .init(child_alloc);
+    var arena: std.heap.ArenaAllocator = .init(child_alloc);
+    const allocator = arena.allocator();
 
     var parser: Parser = .{
         .arena = arena,
@@ -24,6 +26,7 @@ pub fn init(child_alloc: std.mem.Allocator, lexer: *Lexer, errors: *Error) Parse
         .peek_token = undefined,
         .last_token = .{ .tag = .eof },
         .errors = errors,
+        .types = .init(allocator),
     };
 
     parser.nextToken();
@@ -344,6 +347,10 @@ fn parseAssignment(self: *Parser, name: *ast.Expression) !ast.Expression {
 
     stmt.value = try self.parseExpression(.lowest);
 
+    if (stmt.operator == .@":=" and stmt.value.* == .type) {
+        try self.types.put(name.identifier.value, stmt.value);
+    }
+
     return .{ .assignment = stmt };
 }
 
@@ -500,6 +507,8 @@ fn parseVar(self: *Parser) !ast.Statement {
     if (self.peekTokenIs(.@";")) {
         self.nextToken();
     }
+
+    if (var_stmt.value.* == .type) try self.types.put(var_stmt.name.value, var_stmt.value);
 
     return .{ .@"var" = var_stmt };
 }
@@ -691,6 +700,9 @@ fn parseInfix(self: *Parser, left: *ast.Expression) !ast.Expression {
 
     return .{ .infix = infix };
 }
+fn printCurrentToken(p: *const Parser) void {
+    std.debug.print("current token: {s}\n", .{p.cur_token.literal()});
+}
 
 fn parseIf(self: *Parser) !ast.Expression {
     var if_exp: ast.If = .{
@@ -698,12 +710,9 @@ fn parseIf(self: *Parser) !ast.Expression {
         .consequence = undefined,
     };
 
-    if (!self.expectPeek(.@"(")) try self.missing(.@"(");
     self.nextToken();
 
     if_exp.condition = try self.parseExpression(.lowest);
-
-    if (!self.expectPeek(.@")")) try self.missing(.@")");
 
     if_exp.consequence = if (self.expectPeek(.@"{"))
         try self.parseBlock()
@@ -1070,7 +1079,14 @@ fn newExp(p: *Parser, allocator: std.mem.Allocator) anyerror!*ast.Expression {
     const left_exp = try allocator.create(ast.Expression);
     errdefer allocator.destroy(left_exp);
     left_exp.* = switch (p.cur_token.tag) {
-        .identifier => p.parseIdentifier(),
+        .identifier => blk: {
+            const ident = p.parseIdentifier();
+            if (!p.peekTokenIs(.@"{")) {
+                break :blk ident;
+            }
+            const instance = p.types.get(ident.identifier.value) orelse break :blk ident;
+            break :blk try p.parseInstance(instance);
+        },
         .@"." => p.parseTag(),
         .integer => try p.parseInteger(),
         .float => try p.parseFloat(),
@@ -1079,7 +1095,7 @@ fn newExp(p: *Parser, allocator: std.mem.Allocator) anyerror!*ast.Expression {
         .@"[" => try p.parseArray(),
         .@"{" => try p.parseHash(),
         .@"fn" => try p.parseFunction(),
-        .@"struct", .@"enum" => try p.parseType(),
+        .class, .@"struct", .@"enum" => try p.parseType(),
         .string => p.parseString(),
         .char => p.parseChar(),
         .@"if", .@"else" => try p.parseIf(),
@@ -1092,6 +1108,7 @@ fn newExp(p: *Parser, allocator: std.mem.Allocator) anyerror!*ast.Expression {
             break :b .bad;
         },
     };
+    // if (left_exp.* == .type) try p.classes.append(left_exp.type.name.?, left_exp);
     return left_exp;
 }
 
@@ -1487,7 +1504,8 @@ pub const Precedence = enum {
             .@">", .@">=", .@"<", .@"<=" => .lessgreater,
             .@"+", .@"-" => .sum,
             .@"/", .@"*", .@"%", .@"^" => .product,
-            .@"(", .@"{" => .call,
+            // .@"(", .@"{" => .call,
+            .@"(" => .call,
             .@"!" => .prefix,
             .@"[", .@".", .@"..", .@"..=" => .index,
             .@"=", .@":=", .@"+=", .@"-=", .@"*=", .@"/=" => .assigne,
