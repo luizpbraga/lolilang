@@ -347,8 +347,13 @@ fn parseAssignment(self: *Parser, name: *ast.Expression) !ast.Expression {
 
     stmt.value = try self.parseExpression(.lowest);
 
-    if (stmt.operator == .@":=" and stmt.value.* == .type) {
+    // TODO: WHYYYY IT DOES NOT WOOORK?
+    if (stmt.operator == .@":=" and (stmt.value.* == .type or stmt.value.* == .class)) {
         try self.types.put(name.identifier.value, stmt.value);
+        stmt.value.class.name = name.identifier.value;
+    }
+    if (stmt.operator == .@":=" and stmt.value.* == .instance) {
+        stmt.value.instance.type.class.name = name.identifier.value;
     }
 
     return .{ .assignment = stmt };
@@ -508,7 +513,7 @@ fn parseVar(self: *Parser) !ast.Statement {
         self.nextToken();
     }
 
-    if (var_stmt.value.* == .type) try self.types.put(var_stmt.name.value, var_stmt.value);
+    if (var_stmt.value.* == .type or var_stmt.value.* == .class) try self.types.put(var_stmt.name.value, var_stmt.value);
 
     return .{ .@"var" = var_stmt };
 }
@@ -899,7 +904,9 @@ fn parseFunction(self: *Parser) !ast.Expression {
 
     func.parameters = try self.parseFunctionParameters();
 
-    if (!self.expectPeek(.@"{")) try self.missing(.@"{");
+    if (!self.expectPeek(.@"{")) {
+        try self.missing(.@"{");
+    }
 
     func.body = try self.parseBlock();
 
@@ -967,21 +974,6 @@ fn parseInstance(self: *Parser, type_exp: *ast.Expression) !ast.Expression {
     return .{
         .instance = .{ .type = type_exp, .fields = try self.parseInstanceArguments() },
     };
-}
-
-fn parseInstance3(self: *Parser) !ast.Expression {
-    return .{ .instance = .{
-        .type = try self.parseExpression(.lowest),
-        .fields = try self.parseInstanceArguments(),
-    } };
-}
-
-fn parseInstance2(self: *Parser) !ast.Expression {
-    self.nextToken();
-    return .{ .instance = .{
-        .type = try self.parseExpression(.lowest),
-        .fields = try self.parseInstanceArguments(),
-    } };
 }
 
 fn parseInstanceArguments(self: *Parser) ![]ast.Type.Field {
@@ -1095,7 +1087,8 @@ fn newExp(p: *Parser, allocator: std.mem.Allocator) anyerror!*ast.Expression {
         .@"[" => try p.parseArray(),
         .@"{" => try p.parseHash(),
         .@"fn" => try p.parseFunction(),
-        .class, .@"struct", .@"enum" => try p.parseType(),
+        .@"struct", .@"enum" => try p.parseType(),
+        .class => try p.parseClass(),
         .string => p.parseString(),
         .char => p.parseChar(),
         .@"if", .@"else" => try p.parseIf(),
@@ -1279,10 +1272,10 @@ pub fn parseMatch(self: *Parser) !ast.Expression {
     if (self.curTokenIs(.@"{")) {
         match.value = &TRUE;
     } else {
-        if (!self.curTokenIs(.@"(")) try self.missing(.@"(");
+        // if (!self.curTokenIs(.@"(")) try self.missing(.@"(");
         self.nextToken();
         match.value = try self.parseExpression(.lowest);
-        if (!self.expectPeek(.@")")) try self.missing(.@")");
+        // if (!self.expectPeek(.@")")) try self.missing(.@")");
         if (!self.expectPeek(.@"{")) try self.missing(.@"{");
     }
 
@@ -1368,7 +1361,7 @@ pub fn parseForRange(self: *Parser, ident: ast.Identifier) !ast.Expression {
     self.nextToken();
 
     flr.iterable = try self.parseExpression(.lowest);
-    if (!self.expectPeek(.@")")) try self.missing(.@")");
+    // if (!self.expectPeek(.@")")) try self.missing(.@")");
 
     if (self.expectPeek(.@"{")) {
         flr.body = try self.parseBlock();
@@ -1400,7 +1393,7 @@ pub fn parseFor(self: *Parser) !ast.Expression {
         return .{ .@"for" = .{ .condition = &TRUE, .consequence = try self.parseBlock() } };
     }
 
-    if (!self.expectPeek(.@"(")) try self.missing(.@"(");
+    // if (!self.expectPeek(.@"(")) try self.missing(.@"(");
     self.nextToken();
 
     const incall = self.call;
@@ -1414,7 +1407,7 @@ pub fn parseFor(self: *Parser) !ast.Expression {
         }
     }
 
-    if (!self.expectPeek(.@")")) try self.missing(.@")");
+    // if (!self.expectPeek(.@")")) try self.missing(.@")");
 
     return self.parseForLoopCondition(condition_or_ident);
 }
@@ -1513,3 +1506,59 @@ pub const Precedence = enum {
         };
     }
 };
+
+fn parseClass(self: *Parser) !ast.Expression {
+    var class: ast.Class = .{ .type = self.cur_token.tag, .name = "" };
+
+    if (!self.expectPeek(.@"{")) try self.missing(.@"{");
+
+    var fields: std.StringArrayHashMap(ast.Class.Field) = .init(self.arena.allocator());
+    errdefer fields.deinit();
+
+    var decls: std.StringArrayHashMap(ast.FunctionStatement) = .init(self.arena.allocator());
+    errdefer decls.deinit();
+
+    while (!self.peekTokenIs(.@"}") and !self.curTokenIs(.eof)) {
+        if (self.peekTokenIs(.@"fn")) break;
+        self.nextToken();
+
+        if (!self.curTokenIs(.identifier)) {
+            try self.errlog("Invalid Class syntax");
+            return .bad;
+        }
+
+        const name = self.parseIdentifier().identifier.value;
+        if (fields.contains(name)) {
+            try self.errors.append("Duplicated field name {s}\n", .{name});
+        }
+
+        var value = &NULL;
+        if (self.expectPeek(.@"=")) {
+            self.nextToken();
+            value = try self.parseExpression(.lowest);
+        }
+
+        try fields.put(name, .{ .name = name, .value = value });
+    }
+
+    self.nextToken();
+
+    while (self.curTokenIs(.@"fn")) {
+        const fn_stmt = try self.parseFn();
+        const func = fn_stmt.@"fn";
+        const name = func.name.value;
+        if (decls.contains(name)) {
+            try self.errors.append("Duplicated method name {s}\n", .{name});
+        }
+        try decls.put(name, func);
+        self.nextToken();
+    }
+
+    if (!self.curTokenIs(.@"}")) try self.missing(.@"}");
+    if (self.curTokenIs(.eof)) try self.errlog("EOF");
+
+    class.fields = fields.values();
+    class.decls = decls.values();
+
+    return .{ .class = class };
+}

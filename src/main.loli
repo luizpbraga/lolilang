@@ -1,11 +1,10 @@
-datetime := struct {
-    day = 1
-    month = 1
+var DateTime = class {
+    day
+    month
+    year
+
+    fn foo() {}
+
 }
 
-
-d := datetime{}
-
-@print(d.day)
-
-
+x := DateTime{}

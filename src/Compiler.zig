@@ -328,6 +328,10 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                     var_stmt.value.type.name = name;
                 }
 
+                if (var_stmt.value.* == .class) {
+                    var_stmt.value.class.name = name;
+                }
+
                 try c.compile(.{ .expression = var_stmt.value });
                 const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
                 try c.emit(op, &.{symbol.index});
@@ -431,6 +435,9 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                         }
                         const symbol = try c.symbols.?.define(name);
 
+                        if (assignment.value.* == .class) {
+                            assignment.value.class.name = name;
+                        }
                         if (assignment.value.* == .type) {
                             assignment.value.type.name = name;
                         }
@@ -1003,6 +1010,20 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 // } })
 
                 try c.emit(.type, &.{ decls.len + 1, fields.len, @intFromEnum(e) });
+            },
+
+            .class => |class| {
+                for (class.fields) |field| {
+                    const pos = try c.addConstants(.{ .tag = field.name });
+                    try c.emit(.constant, &.{pos});
+                    try c.compile(.{ .expression = field.value });
+                }
+                for (class.decls) |decls| {
+                    const pos = try c.addConstants(.{ .tag = decls.name.value });
+                    try c.emit(.constant, &.{pos});
+                    try c.compile(.{ .statement = .{ .@"fn" = decls } });
+                }
+                try c.emit(.class, &.{2 * (class.fields.len + class.decls.len)});
             },
 
             else => |exx| {

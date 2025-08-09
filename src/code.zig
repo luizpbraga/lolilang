@@ -53,6 +53,7 @@ pub const Opcode = enum(u8) {
     jump,
     /// add an array
     array,
+    class,
     /// add an hashmap
     hash,
     /// set index operation
@@ -102,6 +103,7 @@ pub const Opcode = enum(u8) {
         // 2 bytes long -> u16 (max of 65535 contants defined)
         // bytecode with 3 bytes long
         .constant = &.{2},
+        .class = &.{2},
         .setgv = &.{2},
         .destruct = &.{ 1, 1, 2 },
         .getgv = &.{2},

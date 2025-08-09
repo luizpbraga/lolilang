@@ -117,6 +117,7 @@ pub const Expression = union(enum) {
     method: Method,
     index: Index,
 
+    class: Class,
     type: Type,
     group: Group,
 
@@ -360,6 +361,18 @@ pub const Type = struct {
 
     pub const Field = struct {
         name: Identifier,
+        value: *Expression,
+    };
+};
+
+pub const Class = struct {
+    type: Token.Tag,
+    name: ?[]const u8 = null,
+    fields: []Field = &.{},
+    decls: []FunctionStatement = &.{},
+
+    pub const Field = struct {
+        name: []const u8,
         value: *Expression,
     };
 };
