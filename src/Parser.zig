@@ -223,68 +223,71 @@ fn findImportName(p: *Parser, path: []const u8) ![]const u8 {
 
 // import "fmt"
 fn parseImport(self: *Parser) anyerror!ast.Statement {
-    const tk = self.cur_token;
-    self.nextToken();
-
-    var name: []const u8 = "";
-    if (self.curTokenIs(.identifier)) {
-        name = self.tokenliteral();
-        self.nextToken();
-    }
-
-    const path_exp = try self.parseExpression(.lowest);
-
-    if (path_exp.* != .string) {
-        try self.errlog("import: invalid expression; expected string type");
-    }
-
-    const file_path = path_exp.string.value;
-    if (name.len == 0) name = try self.findImportName(file_path);
-    const imput = std.fs.cwd().readFileAlloc(self.arena.allocator(), file_path, std.math.maxInt(usize)) catch |err| b: {
-        try self.errlog(@errorName(err));
-        break :b "";
-    };
-    var new_lexer = Lexer.init(imput);
-    // old state
-    const file_name = self.errors.file;
-    const last_lexer = self.lexer;
-    const last_cur_token = self.cur_token;
-    const last_peek_token = self.peek_token;
-    const last_last_token = self.last_token;
-
-    // new state
-    self.errors.file = name;
-    self.lexer = &new_lexer;
-    self.cur_token = undefined;
-    self.peek_token = undefined;
-    self.last_token = .{ .tag = .eof };
-
-    self.nextToken();
-    self.nextToken();
-
-    const node = try self.arena.allocator().create(ast.Node);
-    node.* = try self.parse();
-
-    // back to old state
-    self.errors.file = file_name;
-    self.lexer = last_lexer;
-    self.cur_token = last_cur_token;
-    self.peek_token = last_peek_token;
-    self.last_token = last_last_token;
-
-    return .{
-        .import = .{
-            .name = .{
-                .value = name,
-            },
-            // not used
-            .path = path_exp,
-            .token = tk,
-            .node = node,
-        },
-    };
+    _ = self; // autofix
+    return error.NotImplemented;
 }
-
+//     const tk = self.cur_token;
+//     self.nextToken();
+//
+//     var name: []const u8 = "";
+//     if (self.curTokenIs(.identifier)) {
+//         name = self.tokenliteral();
+//         self.nextToken();
+//     }
+//
+//     const path_exp = try self.parseExpression(.lowest);
+//
+//     if (path_exp.* != .string) {
+//         try self.errlog("import: invalid expression; expected string type");
+//     }
+//
+//     const file_path = path_exp.string.value;
+//     if (name.len == 0) name = try self.findImportName(file_path);
+//     const imput = std.fs.cwd().readFileAlloc(self.arena.allocator(), file_path, std.math.maxInt(usize)) catch |err| b: {
+//         try self.errlog(@errorName(err));
+//         break :b "";
+//     };
+//     var new_lexer = Lexer.init(imput);
+//     // old state
+//     const file_name = self.errors.file;
+//     const last_lexer = self.lexer;
+//     const last_cur_token = self.cur_token;
+//     const last_peek_token = self.peek_token;
+//     const last_last_token = self.last_token;
+//
+//     // new state
+//     self.errors.file = name;
+//     self.lexer = &new_lexer;
+//     self.cur_token = undefined;
+//     self.peek_token = undefined;
+//     self.last_token = .{ .tag = .eof };
+//
+//     self.nextToken();
+//     self.nextToken();
+//
+//     const node = try self.arena.allocator().create(ast.Statement);
+//     node.* = try self.parse();
+//
+//     // back to old state
+//     self.errors.file = file_name;
+//     self.lexer = last_lexer;
+//     self.cur_token = last_cur_token;
+//     self.peek_token = last_peek_token;
+//     self.last_token = last_last_token;
+//
+//     return .{
+//         .import = .{
+//             .name = .{
+//                 .value = name,
+//             },
+//             // not used
+//             .path = path_exp,
+//             .token = tk,
+//             .node = node,
+//         },
+//     };
+// }
+//
 fn parseBreak(self: *Parser) !ast.Statement {
     var break_stmt: ast.Break = .{ .value = &NULL };
 
@@ -350,7 +353,7 @@ fn parseAssignment(self: *Parser, name: *ast.Expression) !ast.Expression {
     // TODO: WHYYYY IT DOES NOT WOOORK?
     if (stmt.operator == .@":=" and (stmt.value.* == .type or stmt.value.* == .class)) {
         try self.types.put(name.identifier.value, stmt.value);
-        stmt.value.class.name = name.identifier.value;
+        // stmt.value.class.name = name.identifier.value;
     }
     if (stmt.operator == .@":=" and stmt.value.* == .instance) {
         stmt.value.instance.type.class.name = name.identifier.value;
@@ -584,7 +587,7 @@ fn parseExpression(self: *Parser, precedence: Precedence) !*ast.Expression {
     return left_exp;
 }
 
-pub fn parseProgram(self: *Parser) !ast.Program {
+pub fn parse(self: *Parser) ![]ast.Statement {
     const allocator = self.arena.allocator();
 
     var stmts: std.ArrayList(ast.Statement) = .init(allocator);
@@ -597,12 +600,7 @@ pub fn parseProgram(self: *Parser) !ast.Program {
         self.nextToken();
     }
 
-    return .{ .statements = stmts };
-}
-
-pub fn parse(self: *Parser) !ast.Node {
-    const program = try self.parseProgram();
-    return .{ .statement = .{ .program = program } };
+    return try stmts.toOwnedSlice();
 }
 
 fn tokenliteral(self: *const Parser) []const u8 {

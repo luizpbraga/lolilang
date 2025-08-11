@@ -1,10 +1,8 @@
-var DateTime = class {
-    day
-    month
-    year
+print := @print
 
-    fn foo() {}
-
+txt := ""
+for i in 100000 {
+    txt.append(txt)
+    print(i)
 }
-
-x := DateTime{}
+print(txt)

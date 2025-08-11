@@ -4,6 +4,39 @@ const Value = Object.Value;
 const memory = @import("memory.zig");
 const Vm = @import("Vm.zig");
 
+pub const builtin_methods = [_]Object.Method{
+    .{ .name = "@append", .function = Method.append },
+};
+
+pub const Method = struct {
+    pub fn append(vm: *Vm, self: *Value, arg: []const Value) anyerror!Value {
+        // std.debug.print("{s}\n", .{vm.stack[vm.sp + 3].obj.type.string.items});
+        if (arg.len == 0) return .null;
+        if (arg[0] != .obj) return vm.newError("Invalid operation: Nothing to append to type '{s}'", .{arg[0].name()});
+        switch (self.obj.type) {
+            .array => |*arr| for (arg) |val| try arr.append(val),
+
+            .string => |*it| {
+                for (arg) |str| {
+                    if (str == .obj and str.obj.type == .string) {
+                        try it.appendSlice(str.obj.type.string.items);
+                        continue;
+                    }
+
+                    switch (str) {
+                        inline .integer, .float => |x| try it.writer().print("{d}", .{x}),
+                        .char => |c| try it.append(c),
+                        .boolean => |b| try it.appendSlice(if (b) "true" else "false"),
+                        else => {},
+                    }
+                }
+            },
+            else => {},
+        }
+        return .null;
+    }
+};
+
 pub const builtin_functions = [_]Object.Builtin{
     .{ .name = "@print", .function = Builtin.print },
     .{ .name = "@length", .function = Builtin.length },
@@ -479,6 +512,7 @@ const Builtin = struct {
     }
 
     pub fn append(vm: *Vm, arg: []const Value) anyerror!Value {
+        // std.debug.print("{s}\n", .{vm.stack[vm.sp + 1].obj.type.string.items});
         if (arg[0] != .obj) return vm.newError("Invalid operation: Nothing to append to type '{s}'", .{arg[0].name()});
 
         switch (arg[0].obj.type) {

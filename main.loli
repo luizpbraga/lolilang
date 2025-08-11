@@ -1,7 +1,10 @@
-System := struct {
-    fn stdOut() {
-    }
+
+
+var txt = []
+
+
+for _ in 10 {
+    txt.append("hello\n")
 }
 
-
-@print(System.stdOut())
+@print(txt)

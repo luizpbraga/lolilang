@@ -156,7 +156,7 @@ fn emitFunction(c: *Compiler, func_stmt: *const ast.FunctionStatement) anyerror!
         _ = try c.symbols.?.define(parameter.value);
     }
 
-    try c.compile(.{ .statement = .{ .block = func.body } });
+    try c.compileStatement(.{ .block = func.body });
 
     // return the last value if no return statement
     if (c.lastInstructionIs(.pop)) try c.replaceLastPopWithReturn();
@@ -204,7 +204,7 @@ fn emitdecl(c: *Compiler, func_stmt: *const ast.FunctionStatement) anyerror!usiz
         _ = try c.symbols.?.define(parameter.value);
     }
 
-    try c.compile(.{ .statement = .{ .block = func.body } });
+    try c.compileStatement(.{ .block = func.body });
 
     // return the last value if no return statement
     if (c.lastInstructionIs(.pop)) try c.replaceLastPopWithReturn();
@@ -237,260 +237,229 @@ fn emitdecl(c: *Compiler, func_stmt: *const ast.FunctionStatement) anyerror!usiz
 }
 
 /// Walks the AST recursively and evaluate the node, and add it the the pool
-pub fn compile(c: *Compiler, node: ast.Node) !void {
-    try c.positions.append(node.position());
-    switch (node) {
-        .statement => |stmt| switch (stmt) {
-            .program => |program| {
-                for (program.statements.items) |s| {
-                    try c.compile(.{ .statement = s });
+pub fn compile(c: *Compiler, stmts: []ast.Statement) anyerror!void {
+    for (stmts) |s| try c.compileStatement(s);
+}
+
+pub fn compileStatement(c: *Compiler, stmt: ast.Statement) anyerror!void {
+    try c.positions.append(stmt.position());
+    switch (stmt) {
+        .exp_statement => |exp| {
+            try c.compileExpression(exp.expression);
+            try c.emit(.pop, &.{});
+        },
+
+        .block => |block| {
+            c.block_index += 1;
+            for (block.statements) |blk_stmt| {
+                try c.compileStatement(blk_stmt);
+            }
+            c.block_index -= 1;
+        },
+
+        .@"pub" => |p| {
+            try c.compileStatement(p.stmt.*);
+
+            switch (p.stmt.*) {
+                inline .@"var", .@"fn", .import => |v| {
+                    try c.imports.put(v.name.value, {});
+                },
+                else => return c.newError("Invalid public declaration", .{}),
+            }
+        },
+
+        // this is a bad implementation
+        // lazy import are better; this means we can resolve the missing symbols at compile time,
+        // However there is no need to compile every statement!
+        .import => |imp| {
+            const name = imp.name.value;
+            const symbol = try c.symbols.?.define(name);
+
+            // old state
+            const cst = c.symbols;
+
+            // new state
+            const st = try SymbolTable.create(c.allocator);
+            c.symbols = st;
+            st.def_number = cst.?.def_number + 1;
+
+            // TODO: don't compile all, just the global imports and free var
+            try c.compileStatement(imp.node.*);
+
+            // Ay papy, such a poooor logic
+            var iter = st.store.iterator();
+            while (iter.next()) |item| {
+                const nombre = item.key_ptr.*;
+                if (!c.imports.contains(nombre)) continue;
+                item.value_ptr.public = true;
+            }
+            c.imports.clearAndFree();
+
+            // row back
+            cst.?.def_number = st.def_number + 1;
+            c.symbols = cst;
+
+            const obj = try c.allocator.create(Object);
+            errdefer c.allocator.destroy(obj);
+            obj.type = .{
+                .namespace = .{
+                    .name = name,
+                    .map = st,
+                },
+            };
+            const pos = try c.addConstants(.{ .obj = obj });
+            try c.emit(.constant, &.{pos});
+
+            const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+            try c.emit(op, &.{symbol.index});
+        },
+
+        .@"var" => |v| {
+            const name = v.name.value;
+            if (c.symbols.?.store.contains(name)) {
+                return c.newError("Redeclaration of variable '{s}'", .{name});
+            }
+            const symbol = try c.symbols.?.define(name);
+
+            if (v.value.* == .type) {
+                v.value.type.name = name;
+            }
+
+            if (v.value.* == .class) {
+                v.value.class.name = name;
+            }
+
+            try c.compileExpression(v.value);
+            const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+            try c.emit(op, &.{symbol.index});
+        },
+
+        // TODO: allow immutable data
+        .con => |con| {
+            if (con.name.len > 1 and con.value.* != .array) {
+                return c.newError("Invalid Constant Assignment", .{});
+            }
+
+            // const name = con_stmt.name.value;
+            var symbols = try c.allocator.alloc(SymbolTable.Symbol, con.name.len);
+            defer c.allocator.free(symbols);
+
+            for (con.name, 0..) |name, i| {
+                if (c.symbols.?.store.contains(name.value)) {
+                    return c.newError("Redeclaration of variable '{s}'", .{name.value});
                 }
-            },
-
-            .exp_statement => |exp| {
-                try c.compile(.{ .expression = exp.expression });
-                try c.emit(.pop, &.{});
-            },
-
-            .block => |block| {
-                c.block_index += 1;
-                for (block.statements) |blk_stmt| {
-                    try c.compile(.{ .statement = blk_stmt });
+                symbols[i] = try c.symbols.?.define(name.value);
+                if (con.value.* == .type) {
+                    con.value.type.name = name.value;
                 }
-                c.block_index -= 1;
-            },
+            }
 
-            .@"pub" => |p| {
-                try c.compile(.{ .statement = p.stmt.* });
-
-                switch (p.stmt.*) {
-                    inline .@"var", .@"fn", .import => |v| {
-                        try c.imports.put(v.name.value, {});
-                    },
-                    else => return c.newError("Invalid public declaration", .{}),
-                }
-            },
-
-            // this is a bad implementation
-            // lazy import are better; this means we can resolve the missing symbols at compile time,
-            // However there is no need to compile every statement!
-            .import => |imp| {
-                const name = imp.name.value;
-                const symbol = try c.symbols.?.define(name);
-
-                // old state
-                const cst = c.symbols;
-
-                // new state
-                const st = try SymbolTable.create(c.allocator);
-                c.symbols = st;
-                st.def_number = cst.?.def_number + 1;
-
-                // TODO: don't compile all, just the global imports and free var
-                try c.compile(imp.node.*);
-
-                // Ay papy, such a poooor logic
-                var iter = st.store.iterator();
-                while (iter.next()) |item| {
-                    const nombre = item.key_ptr.*;
-                    if (!c.imports.contains(nombre)) continue;
-                    item.value_ptr.public = true;
-                }
-                c.imports.clearAndFree();
-
-                // row back
-                cst.?.def_number = st.def_number + 1;
-                c.symbols = cst;
-
-                const obj = try c.allocator.create(Object);
-                errdefer c.allocator.destroy(obj);
-                obj.type = .{
-                    .namespace = .{
-                        .name = name,
-                        .map = st,
-                    },
-                };
-                const pos = try c.addConstants(.{ .obj = obj });
-                try c.emit(.constant, &.{pos});
-
+            if (symbols.len == 1) {
+                const symbol = symbols[0];
+                try c.compileExpression(con.value);
                 const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
                 try c.emit(op, &.{symbol.index});
-            },
+                return;
+            }
 
-            .@"var" => |var_stmt| {
-                const name = var_stmt.name.value;
-                if (c.symbols.?.store.contains(name)) {
-                    return c.newError("Redeclaration of variable '{s}'", .{name});
-                }
-                const symbol = try c.symbols.?.define(name);
+            if (symbols.len != con.value.array.elements.len) {
+                return c.newError("Assignment mismatch", .{});
+            }
 
-                if (var_stmt.value.* == .type) {
-                    var_stmt.value.type.name = name;
-                }
-
-                if (var_stmt.value.* == .class) {
-                    var_stmt.value.class.name = name;
-                }
-
-                try c.compile(.{ .expression = var_stmt.value });
+            for (symbols, con.value.array.elements) |*symbol, value| {
+                symbol.con = true;
+                try c.compileExpression(value);
                 const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
                 try c.emit(op, &.{symbol.index});
-            },
+            }
+        },
 
-            // TODO: allow immutable data
-            .con => |con_stmt| {
-                if (con_stmt.name.len > 1 and con_stmt.value.* != .array) {
-                    return c.newError("Invalid Constant Assignment", .{});
-                }
+        .@"return" => |ret| {
+            if (c.scope_index == 0) {
+                return c.newError("Invalid Return Statement Outside Function Body", .{});
+            }
 
-                // const name = con_stmt.name.value;
-                var symbols = try c.allocator.alloc(SymbolTable.Symbol, con_stmt.name.len);
-                defer c.allocator.free(symbols);
+            try c.compileExpression(ret.value);
+            try c.emit(.retv, &.{});
+        },
 
-                for (con_stmt.name, 0..) |name, i| {
-                    if (c.symbols.?.store.contains(name.value)) {
-                        return c.newError("Redeclaration of variable '{s}'", .{name.value});
+        // TODO: make it work in if/match/for
+        .@"break" => |ret| {
+            if (c.block_index == 0) {
+                return c.newError("Invalid break Statement Outside Body", .{});
+            }
+            try c.compileExpression(ret.value);
+            const pos = try c.emitPos(.jump, &.{9999});
+            c.loop.info[c.loop.idx].end = pos;
+        },
+
+        .@"continue" => |cont| {
+            if (c.block_index == 0) {
+                return c.newError("Invalid continue Statement Outside Body", .{});
+            }
+            try c.compileExpression(cont.value);
+            try c.emit(.jump, &.{c.loop.info[c.loop.idx].start});
+        },
+
+        .@"fn" => |fun| {
+            try c.emitFunction(&fun);
+        },
+
+        else => {
+            return c.newError("Invalid Statement", .{});
+        },
+    }
+}
+
+fn compileExpression(c: *Compiler, exp: *ast.Expression) anyerror!void {
+    switch (exp.*) {
+        .identifier => |ident| {
+            const symbol = try c.symbols.?.resolve(ident.value) orelse {
+                return c.newError("Undefined Variable '{s}'", .{ident.value});
+            };
+            try c.loadSymbol(symbol);
+        },
+
+        .group => |goup| {
+            try c.compileExpression(goup.exp);
+        },
+
+        // TODO: not fully implemented
+        .assignment => |ass| {
+            if (ass.operator == .@":=") {
+                if (ass.name.* == .identifier) {
+                    const name = ass.name.identifier.value;
+                    if (c.symbols.?.store.contains(name)) {
+                        return c.newError("Redeclaration of variable '{s}'", .{name});
                     }
-                    symbols[i] = try c.symbols.?.define(name.value);
-                    if (con_stmt.value.* == .type) {
-                        con_stmt.value.type.name = name.value;
-                    }
-                }
+                    const symbol = try c.symbols.?.define(name);
 
-                if (symbols.len == 1) {
-                    const symbol = symbols[0];
-                    try c.compile(.{ .expression = con_stmt.value });
+                    if (ass.value.* == .class) {
+                        ass.value.class.name = name;
+                    }
+                    if (ass.value.* == .type) {
+                        ass.value.type.name = name;
+                    }
+
+                    try c.compileExpression(ass.value);
                     const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
                     try c.emit(op, &.{symbol.index});
+                    try c.emit(.null, &.{});
                     return;
                 }
 
-                if (symbols.len != con_stmt.value.array.elements.len) {
-                    return c.newError("Assignment mismatch", .{});
-                }
-
-                for (symbols, con_stmt.value.array.elements) |*symbol, value| {
-                    symbol.con = true;
-                    try c.compile(.{ .expression = value });
-                    const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
-                    try c.emit(op, &.{symbol.index});
-                }
-            },
-
-            .@"return" => |ret| {
-                if (c.scope_index == 0) {
-                    return c.newError("Invalid Return Statement Outside Function Body", .{});
-                }
-
-                try c.compile(.{ .expression = ret.value });
-                try c.emit(.retv, &.{});
-            },
-
-            // TODO: make it work in if/match/for
-            .@"break" => |ret| {
-                if (c.block_index == 0) {
-                    return c.newError("Invalid break Statement Outside Body", .{});
-                }
-                try c.compile(.{ .expression = ret.value });
-                const pos = try c.emitPos(.jump, &.{9999});
-                c.loop.info[c.loop.idx].end = pos;
-            },
-
-            .@"continue" => |ret| {
-                if (c.block_index == 0) {
-                    return c.newError("Invalid continue Statement Outside Body", .{});
-                }
-                try c.compile(.{ .expression = ret.value });
-                try c.emit(.jump, &.{c.loop.info[c.loop.idx].start});
-            },
-
-            .@"fn" => |func_stmt| {
-                try c.emitFunction(&func_stmt);
-            },
-
-            else => {
-                return c.newError("Invalid Statement", .{});
-            },
-        },
-
-        .expression => |exp| switch (exp.*) {
-            .identifier => |ident| {
-                const symbol = try c.symbols.?.resolve(ident.value) orelse {
-                    return c.newError("Undefined Variable '{s}'", .{ident.value});
-                };
-                try c.loadSymbol(symbol);
-            },
-
-            .group => |goup| {
-                try c.compile(.{ .expression = goup.exp });
-            },
-
-            // TODO: not fully implemented
-            .assignment => |assignment| {
-                if (assignment.operator == .@":=") {
-                    if (assignment.name.* == .identifier) {
-                        const name = assignment.name.identifier.value;
+                if (ass.name.* == .tuple) {
+                    const elements = ass.name.tuple.elements;
+                    var op: code.Opcode = .setgv;
+                    for (elements) |element| {
+                        const name = element.identifier.value;
                         if (c.symbols.?.store.contains(name)) {
                             return c.newError("Redeclaration of variable '{s}'", .{name});
                         }
                         const symbol = try c.symbols.?.define(name);
 
-                        if (assignment.value.* == .class) {
-                            assignment.value.class.name = name;
-                        }
-                        if (assignment.value.* == .type) {
-                            assignment.value.type.name = name;
-                        }
-
-                        try c.compile(.{ .expression = assignment.value });
-                        const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
-                        try c.emit(op, &.{symbol.index});
-                        try c.emit(.null, &.{});
-                        return;
-                    }
-
-                    if (assignment.name.* == .tuple) {
-                        const elements = assignment.name.tuple.elements;
-                        var op: code.Opcode = .setgv;
-                        for (elements) |element| {
-                            const name = element.identifier.value;
-                            if (c.symbols.?.store.contains(name)) {
-                                return c.newError("Redeclaration of variable '{s}'", .{name});
-                            }
-                            const symbol = try c.symbols.?.define(name);
-
-                            if (assignment.value.* == .type) {
-                                assignment.value.type.name = name;
-                            }
-
-                            try c.emit(.null, &.{});
-                            op = if (symbol.scope == .global) .setgv else .setlv;
-                            try c.emit(op, &.{symbol.index});
-                        }
-
-                        try c.compile(.{ .expression = assignment.value });
-                        try c.emit(.destruct, &.{
-                            elements.len,
-                            @intFromEnum(op),
-                            c.symbols.?.def_number,
-                        });
-
-                        return;
-                    }
-                }
-
-                if (assignment.name.* == .tuple and assignment.operator == .@"=") {
-                    const elements = assignment.name.tuple.elements;
-                    var op: code.Opcode = .setgv;
-                    for (elements) |element| {
-                        const name = element.identifier.value;
-                        if (!c.symbols.?.store.contains(name)) {
-                            return c.newError("Redeclaration of variable '{s}'", .{name});
-                        }
-                        const symbol = try c.symbols.?.define(name);
-
-                        if (assignment.value.* == .type) {
-                            assignment.value.type.name = name;
+                        if (ass.value.* == .type) {
+                            ass.value.type.name = name;
                         }
 
                         try c.emit(.null, &.{});
@@ -498,7 +467,7 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                         try c.emit(op, &.{symbol.index});
                     }
 
-                    try c.compile(.{ .expression = assignment.value });
+                    try c.compileExpression(ass.value);
                     try c.emit(.destruct, &.{
                         elements.len,
                         @intFromEnum(op),
@@ -507,528 +476,557 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
 
                     return;
                 }
+            }
 
-                if (assignment.name.* == .identifier) {
-                    const symbol = try c.symbols.?.resolve(assignment.name.identifier.value) orelse {
-                        return c.newError("Undefined Variable", .{});
-                    };
+            if (ass.name.* == .tuple and ass.operator == .@"=") {
+                const elements = ass.name.tuple.elements;
+                var op: code.Opcode = .setgv;
+                for (elements) |element| {
+                    const name = element.identifier.value;
+                    if (!c.symbols.?.store.contains(name)) {
+                        return c.newError("Redeclaration of variable '{s}'", .{name});
+                    }
+                    const symbol = try c.symbols.?.define(name);
 
-                    switch (assignment.operator) {
-                        .@"=" => {
-                            try c.compile(.{ .expression = assignment.value });
-                        },
-
-                        .@"+=" => {
-                            try c.compile(.{ .expression = assignment.name });
-                            try c.compile(.{ .expression = assignment.value });
-                            try c.emit(.add, &.{});
-                        },
-
-                        .@"-=" => {
-                            try c.compile(.{ .expression = assignment.name });
-                            try c.compile(.{ .expression = assignment.value });
-                            try c.emit(.sub, &.{});
-                        },
-
-                        .@"*=" => {
-                            try c.compile(.{ .expression = assignment.name });
-                            try c.compile(.{ .expression = assignment.value });
-                            try c.emit(.mul, &.{});
-                        },
-
-                        .@"/=" => {
-                            try c.compile(.{ .expression = assignment.name });
-                            try c.compile(.{ .expression = assignment.value });
-                            try c.emit(.div, &.{});
-                        },
-
-                        else => return c.newError("Invalid Assignment Operator", .{}),
+                    if (ass.value.* == .type) {
+                        ass.value.type.name = name;
                     }
 
-                    const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
-                    try c.emit(op, &.{symbol.index}); // sapporra emite um pop
-                    try c.emit(.null, &.{}); // will be pop, no integer overflow. why?
-                    return;
+                    try c.emit(.null, &.{});
+                    op = if (symbol.scope == .global) .setgv else .setlv;
+                    try c.emit(op, &.{symbol.index});
                 }
 
-                if (assignment.name.* == .index) {
-                    const left = assignment.name.index.left;
-                    const index = assignment.name.index.index;
-                    const value = assignment.value;
-
-                    try c.compile(.{ .expression = left });
-                    try c.compile(.{ .expression = index });
-                    switch (assignment.operator) {
-                        .@"=" => {
-                            try c.compile(.{ .expression = value });
-                        },
-
-                        .@"+=" => {
-                            try c.compile(.{ .expression = assignment.name });
-                            try c.compile(.{ .expression = value });
-                            try c.emit(.add, &.{});
-                        },
-                        .@"-=" => {
-                            try c.compile(.{ .expression = assignment.name });
-                            try c.compile(.{ .expression = value });
-                            try c.emit(.sub, &.{});
-                        },
-
-                        .@"*=" => {
-                            try c.compile(.{ .expression = assignment.name });
-                            try c.compile(.{ .expression = value });
-                            try c.emit(.mul, &.{});
-                        },
-
-                        .@"/=" => {
-                            try c.compile(.{ .expression = assignment.name });
-                            try c.compile(.{ .expression = value });
-                            try c.emit(.div, &.{});
-                        },
-
-                        else => return c.newError("Invalid Assignment Operator", .{}),
-                    }
-
-                    return try c.emit(.index_set, &.{});
-                }
-
-                if (assignment.name.* == .method) {
-                    const left = assignment.name.method.caller;
-                    const method: Value = .{ .tag = assignment.name.method.method.value };
-                    const value = assignment.value;
-
-                    try c.compile(.{ .expression = left });
-                    const pos = try c.addConstants(method);
-
-                    switch (assignment.operator) {
-                        .@"=" => {
-                            try c.compile(.{ .expression = value });
-                        },
-                        .@"+=" => {
-                            try c.compile(.{ .expression = assignment.name });
-                            try c.compile(.{ .expression = value });
-                            try c.emit(.add, &.{});
-                        },
-
-                        .@"-=" => {
-                            try c.compile(.{ .expression = assignment.name });
-                            try c.compile(.{ .expression = value });
-                            try c.emit(.sub, &.{});
-                        },
-
-                        .@"*=" => {
-                            try c.compile(.{ .expression = assignment.name });
-                            try c.compile(.{ .expression = value });
-                            try c.emit(.mul, &.{});
-                        },
-
-                        .@"/=" => {
-                            try c.compile(.{ .expression = assignment.name });
-                            try c.compile(.{ .expression = value });
-                            try c.emit(.div, &.{});
-                        },
-
-                        else => return c.newError("Invalid Assignment Operator", .{}),
-                    }
-
-                    try c.emit(.method_set, &.{pos});
-                    return;
-                }
-
-                return c.newError("Invalid Assignment Operator", .{});
-            },
-
-            .infix => |infix| {
-                const operator = infix.operator;
-
-                if (operator == .@"<") {
-                    try c.compile(.{ .expression = infix.right });
-                    try c.compile(.{ .expression = infix.left });
-                    try c.emit(.gt, &.{});
-                    return;
-                }
-
-                if (operator == .@"<=") {
-                    try c.compile(.{ .expression = infix.right });
-                    try c.compile(.{ .expression = infix.left });
-                    try c.emit(.gte, &.{});
-                    return;
-                }
-
-                try c.compile(.{ .expression = infix.left });
-                try c.compile(.{ .expression = infix.right });
-                const op: code.Opcode = switch (operator) {
-                    .@"and" => .land,
-                    .@"or" => .lor,
-                    .@"+" => .add,
-                    .@"-" => .sub,
-                    .@"*" => .mul,
-                    .@"^" => .pow,
-                    .@"/" => .div,
-                    .@">" => .gt,
-                    .@">=" => .gte,
-                    .@"==" => .eq,
-                    .@"!=" => .neq,
-                    .@"%" => .mod,
-                    else => return c.newError("Unkow Operator", .{}),
-                };
-                try c.emit(op, &.{});
-            },
-
-            .prefix => |prefix| {
-                const operator = prefix.operator;
-                try c.compile(.{ .expression = prefix.right });
-                switch (operator) {
-                    .@"!" => try c.emit(.not, &.{}),
-                    .@"-" => try c.emit(.min, &.{}),
-                    else => unreachable,
-                }
-            },
-
-            .index => |index| {
-                try c.compile(.{ .expression = index.left });
-                try c.compile(.{ .expression = index.index });
-                try c.emit(.index_get, &.{});
-            },
-
-            // TODO: rework
-            .method => |method| {
-                try c.compile(.{ .expression = method.caller });
-                const pos = try c.addConstants(.{
-                    .tag = method.method.value,
+                try c.compileExpression(ass.value);
+                try c.emit(.destruct, &.{
+                    elements.len,
+                    @intFromEnum(op),
+                    c.symbols.?.def_number,
                 });
-                try c.emit(.constant, &.{pos});
-                try c.emit(.index_get, &.{});
+
                 return;
-            },
+            }
 
-            .boolean => |boolean| {
-                const op: code.Opcode = if (boolean.value) .true else .false;
-                try c.emit(op, &.{});
-            },
-
-            .null => {
-                try c.emit(.null, &.{});
-            },
-
-            // TODO: think !!
-            .range => |range| {
-                try c.compile(.{ .expression = range.end });
-                try c.compile(.{ .expression = range.start });
-                try c.emit(.set_range, &.{});
-            },
-
-            .integer => |int| {
-                const pos = try c.addConstants(.{
-                    .integer = int.value,
-                });
-                try c.emit(.constant, &.{pos});
-            },
-
-            .tag => |tag| {
-                const pos = try c.addConstants(.{
-                    .tag = tag.value,
-                    //.from = tag.from,
-                });
-                try c.emit(.constant, &.{pos});
-            },
-
-            .char => |char| {
-                const pos = try c.addConstants(.{
-                    .char = char.value,
-                });
-                try c.emit(.constant, &.{pos});
-            },
-
-            .float => |float| {
-                const pos = try c.addConstants(.{
-                    .float = float.value,
-                });
-                try c.emit(.constant, &.{pos});
-            },
-
-            .string => |str| {
-                // const cvalue = try c.allocator.dupe(u8, str.value);
-                // errdefer c.allocator.free(cvalue);
-                var cvalue = try std.ArrayList(u8).initCapacity(c.allocator, str.value.len);
-                errdefer cvalue.deinit();
-                try cvalue.appendSlice(str.value);
-
-                const obj = try c.allocator.create(Object);
-                errdefer c.allocator.destroy(obj);
-                obj.type = .{ .string = cvalue };
-
-                const pos = try c.addConstants(.{ .obj = obj });
-                try c.emit(.constant, &.{pos});
-            },
-
-            inline .array, .tuple => |array| {
-                for (array.elements) |element| {
-                    try c.compile(.{ .expression = element });
-                }
-                try c.emit(.array, &.{array.elements.len});
-            },
-
-            .hash => |hash| {
-                for (hash.pairs) |pair| {
-                    const key, const val = pair;
-                    try c.compile(.{ .expression = key });
-                    try c.compile(.{ .expression = val });
-                }
-                try c.emit(.hash, &.{hash.pairs.len * 2});
-            },
-
-            .call => |call| {
-                try c.compile(.{ .expression = call.function });
-                for (call.arguments) |arg| {
-                    try c.compile(.{ .expression = arg });
-                }
-                try c.emit(.call, &.{call.arguments.len});
-            },
-
-            .instance => |instance| {
-                try c.compile(.{ .expression = instance.type });
-                for (instance.fields) |field| {
-                    const ident = field.name;
-                    const pos = try c.addConstants(.{ .tag = ident.value });
-                    try c.emit(.constant, &.{pos});
-                    try c.compile(.{ .expression = field.value });
-                }
-                try c.emit(.instance, &.{instance.fields.len});
-            },
-
-            .function => |func| {
-                try c.enterScope();
-
-                // TODO: ast
-                if (func.name) |name| {
-                    _ = try c.symbols.?.defineFunctionName(name.value);
-                }
-
-                for (func.parameters) |parameter| {
-                    _ = try c.symbols.?.define(parameter.value);
-                }
-
-                try c.compile(.{ .statement = .{ .block = func.body } });
-
-                // return the last value if no return statement
-                if (c.lastInstructionIs(.pop)) try c.replaceLastPopWithReturn();
-
-                // return null
-                if (!c.lastInstructionIs(.retv)) try c.emit(.retn, &.{});
-
-                const free_symbols = c.symbols.?.frees;
-                const obj = try c.allocator.create(Object);
-                errdefer c.allocator.destroy(obj);
-                const num_locals = if (c.symbols) |s| s.def_number else 0;
-
-                for (free_symbols.items) |symb| {
-                    try c.loadSymbol(symb);
-                }
-                const num_free_symbols = free_symbols.items.len;
-
-                const instructions = try c.leaveScope();
-                errdefer c.allocator.free(instructions);
-
-                obj.type = .{ .closure = .{
-                    .func = .{
-                        .instructions = instructions,
-                        .num_locals = num_locals,
-                        .num_parameters = func.parameters.len,
-                    },
-                } };
-
-                const pos = try c.addConstants(.{ .obj = obj });
-                try c.emit(.closure, &.{ pos, num_free_symbols });
-            },
-
-            .@"if" => |ifexp| {
-                try c.compile(.{ .expression = ifexp.condition });
-
-                // since a new scope will be created, we need the counter
-                // const len = c.insLen();
-                const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
-
-                if (ifexp.consequence.statements.len == 0) {
-                    try c.emit(.null, &.{});
-                } else {
-                    // compiling the consequence
-                    try c.compile(.{ .statement = .{ .block = ifexp.consequence } });
-                    // statements add a pop in the end, wee drop the last pop (if return)
-                    if (c.lastInstructionIs(.pop)) c.removeLastPop();
-                }
-
-                // always jump: null is returned
-                const jump_pos = try c.emitPos(.jump, &.{9999});
-                const after_consequence_position = c.insLen();
-
-                // Replaces the 9999 (.jump_if_not_true_pos) to the correct operand (after_consequence_position);
-                try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
-
-                if (ifexp.alternative) |alt| {
-                    if (alt.statements.len == 0) {
-                        try c.emit(.null, &.{});
-                    } else {
-                        try c.compile(.{ .statement = .{ .block = alt } });
-                        // statements add a pop in the end, wee drop the last pop (if return)
-                        if (c.lastInstructionIs(.pop)) c.removeLastPop();
-                    }
-                } else {
-                    try c.emit(.null, &.{});
-                }
-
-                const after_alternative_pos = c.insLen();
-                // Replaces the 9999 (.jump) to the correct operand (after_alternative_pos);
-                try c.changeOperand(jump_pos, after_alternative_pos);
-            },
-
-            .match => |match| {
-                var jumps_pos_list = std.ArrayList(usize).init(c.allocator);
-                defer jumps_pos_list.deinit();
-
-                // try c.enterScope();
-                for (match.arms) |arm| for (arm.condition) |condition| {
-                    try c.compile(.{ .expression = match.value });
-                    try c.compile(.{ .expression = condition });
-                    try c.emit(.eq, &.{});
-
-                    const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
-
-                    if (arm.block.statements.len == 0) {
-                        try c.emit(.null, &.{});
-                    } else {
-                        try c.compile(.{ .statement = .{ .block = arm.block } });
-                        if (c.lastInstructionIs(.pop)) c.removeLastPop();
-                    }
-
-                    const jum_pos = try c.emitPos(.jump, &.{9999});
-                    try jumps_pos_list.append(jum_pos);
-
-                    const after_consequence_position = c.insLen();
-                    try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
+            if (ass.name.* == .identifier) {
+                const symbol = try c.symbols.?.resolve(ass.name.identifier.value) orelse {
+                    return c.newError("Undefined Variable", .{});
                 };
 
-                if (match.else_block) |block| {
-                    if (block.statements.len == 0) {
-                        try c.emit(.null, &.{});
-                    } else {
-                        try c.compile(.{ .statement = .{ .block = block } });
-                        if (c.lastInstructionIs(.pop)) c.removeLastPop();
-                    }
-                } else {
-                    try c.emit(.null, &.{});
+                switch (ass.operator) {
+                    .@"=" => {
+                        try c.compileExpression(ass.value);
+                    },
+
+                    .@"+=" => {
+                        try c.compileExpression(ass.name);
+                        try c.compileExpression(ass.value);
+                        try c.emit(.add, &.{});
+                    },
+
+                    .@"-=" => {
+                        try c.compileExpression(ass.name);
+                        try c.compileExpression(ass.value);
+                        try c.emit(.sub, &.{});
+                    },
+
+                    .@"*=" => {
+                        try c.compileExpression(ass.name);
+                        try c.compileExpression(ass.value);
+                        try c.emit(.mul, &.{});
+                    },
+
+                    .@"/=" => {
+                        try c.compileExpression(ass.name);
+                        try c.compileExpression(ass.value);
+                        try c.emit(.div, &.{});
+                    },
+
+                    else => return c.newError("Invalid Assignment Operator", .{}),
                 }
 
-                const after_alternative_pos = c.insLen();
+                const op: code.Opcode = if (symbol.scope == .global) .setgv else .setlv;
+                try c.emit(op, &.{symbol.index}); // sapporra emite um pop
+                try c.emit(.null, &.{}); // will be pop, no integer overflow. why?
+                return;
+            }
 
-                for (jumps_pos_list.items) |jum_pos| {
-                    try c.changeOperand(jum_pos, after_alternative_pos);
+            if (ass.name.* == .index) {
+                const left = ass.name.index.left;
+                const index = ass.name.index.index;
+                const value = ass.value;
+
+                try c.compileExpression(left);
+                try c.compileExpression(index);
+                switch (ass.operator) {
+                    .@"=" => {
+                        try c.compileExpression(value);
+                    },
+
+                    .@"+=" => {
+                        try c.compileExpression(ass.name);
+                        try c.compileExpression(value);
+                        try c.emit(.add, &.{});
+                    },
+                    .@"-=" => {
+                        try c.compileExpression(ass.name);
+                        try c.compileExpression(value);
+                        try c.emit(.sub, &.{});
+                    },
+
+                    .@"*=" => {
+                        try c.compileExpression(ass.name);
+                        try c.compileExpression(value);
+                        try c.emit(.mul, &.{});
+                    },
+
+                    .@"/=" => {
+                        try c.compileExpression(ass.name);
+                        try c.compileExpression(value);
+                        try c.emit(.div, &.{});
+                    },
+
+                    else => return c.newError("Invalid Assignment Operator", .{}),
                 }
-            },
 
-            .@"for" => |forloop| {
-                const jump_pos = c.insLen();
-                c.loop.info[c.loop.idx].start = jump_pos;
+                return try c.emit(.index_set, &.{});
+            }
 
-                try c.compile(.{ .expression = forloop.condition });
+            if (ass.name.* == .method) {
+                const left = ass.name.method.caller;
+                const method: Value = .{ .tag = ass.name.method.method.value };
+                const value = ass.value;
 
-                // fake instruction position
-                const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
+                try c.compileExpression(left);
+                const pos = try c.addConstants(method);
 
+                switch (ass.operator) {
+                    .@"=" => {
+                        try c.compileExpression(value);
+                    },
+                    .@"+=" => {
+                        try c.compileExpression(ass.name);
+                        try c.compileExpression(value);
+                        try c.emit(.add, &.{});
+                    },
+
+                    .@"-=" => {
+                        try c.compileExpression(ass.name);
+                        try c.compileExpression(value);
+                        try c.emit(.sub, &.{});
+                    },
+
+                    .@"*=" => {
+                        try c.compileExpression(ass.name);
+                        try c.compileExpression(value);
+                        try c.emit(.mul, &.{});
+                    },
+
+                    .@"/=" => {
+                        try c.compileExpression(ass.name);
+                        try c.compileExpression(value);
+                        try c.emit(.div, &.{});
+                    },
+
+                    else => return c.newError("Invalid Assignment Operator", .{}),
+                }
+
+                try c.emit(.method_set, &.{pos});
+                return;
+            }
+
+            return c.newError("Invalid Assignment Operator", .{});
+        },
+
+        .infix => |infix| {
+            const operator = infix.operator;
+
+            if (operator == .@"<") {
+                try c.compileExpression(infix.right);
+                try c.compileExpression(infix.left);
+                try c.emit(.gt, &.{});
+                return;
+            }
+
+            if (operator == .@"<=") {
+                try c.compileExpression(infix.right);
+                try c.compileExpression(infix.left);
+                try c.emit(.gte, &.{});
+                return;
+            }
+
+            try c.compileExpression(infix.left);
+            try c.compileExpression(infix.right);
+            const op: code.Opcode = switch (operator) {
+                .@"and" => .land,
+                .@"or" => .lor,
+                .@"+" => .add,
+                .@"-" => .sub,
+                .@"*" => .mul,
+                .@"^" => .pow,
+                .@"/" => .div,
+                .@">" => .gt,
+                .@">=" => .gte,
+                .@"==" => .eq,
+                .@"!=" => .neq,
+                .@"%" => .mod,
+                else => return c.newError("Unkow Operator", .{}),
+            };
+            try c.emit(op, &.{});
+        },
+
+        .prefix => |prefix| {
+            const operator = prefix.operator;
+            try c.compileExpression(prefix.right);
+            switch (operator) {
+                .@"!" => try c.emit(.not, &.{}),
+                .@"-" => try c.emit(.min, &.{}),
+                else => unreachable,
+            }
+        },
+
+        .index => |index| {
+            try c.compileExpression(index.left);
+            try c.compileExpression(index.index);
+            try c.emit(.index_get, &.{});
+        },
+
+        // TODO: rework
+        .method => |method| {
+            try c.compileExpression(method.caller);
+            const pos = try c.addConstants(.{
+                .tag = method.method.value,
+            });
+            try c.emit(.constant, &.{pos});
+            try c.emit(.index_get, &.{});
+            return;
+        },
+
+        .boolean => |boolean| {
+            const op: code.Opcode = if (boolean.value) .true else .false;
+            try c.emit(op, &.{});
+        },
+
+        .null => {
+            try c.emit(.null, &.{});
+        },
+
+        // TODO: think !!
+        .range => |range| {
+            try c.compileExpression(range.end);
+            try c.compileExpression(range.start);
+            try c.emit(.set_range, &.{});
+        },
+
+        .integer => |int| {
+            const pos = try c.addConstants(.{
+                .integer = int.value,
+            });
+            try c.emit(.constant, &.{pos});
+        },
+
+        .tag => |tag| {
+            const pos = try c.addConstants(.{
+                .tag = tag.value,
+                //.from = tag.from,
+            });
+            try c.emit(.constant, &.{pos});
+        },
+
+        .char => |char| {
+            const pos = try c.addConstants(.{
+                .char = char.value,
+            });
+            try c.emit(.constant, &.{pos});
+        },
+
+        .float => |float| {
+            const pos = try c.addConstants(.{
+                .float = float.value,
+            });
+            try c.emit(.constant, &.{pos});
+        },
+
+        .string => |str| {
+            // const cvalue = try c.allocator.dupe(u8, str.value);
+            // errdefer c.allocator.free(cvalue);
+            var cvalue = try std.ArrayList(u8).initCapacity(c.allocator, str.value.len);
+            errdefer cvalue.deinit();
+            try cvalue.appendSlice(str.value);
+
+            const obj = try c.allocator.create(Object);
+            errdefer c.allocator.destroy(obj);
+            obj.type = .{ .string = cvalue };
+
+            const pos = try c.addConstants(.{ .obj = obj });
+            try c.emit(.constant, &.{pos});
+        },
+
+        inline .array, .tuple => |array| {
+            for (array.elements) |element| {
+                try c.compileExpression(element);
+            }
+            try c.emit(.array, &.{array.elements.len});
+        },
+
+        .hash => |hash| {
+            for (hash.pairs) |pair| {
+                const key, const val = pair;
+                try c.compileExpression(key);
+                try c.compileExpression(val);
+            }
+            try c.emit(.hash, &.{hash.pairs.len * 2});
+        },
+
+        .call => |call| {
+            try c.compileExpression(call.function);
+            for (call.arguments) |arg| {
+                try c.compileExpression(arg);
+            }
+            try c.emit(.call, &.{call.arguments.len});
+        },
+
+        .instance => |instance| {
+            try c.compileExpression(instance.type);
+            for (instance.fields) |field| {
+                const ident = field.name;
+                const pos = try c.addConstants(.{ .tag = ident.value });
+                try c.emit(.constant, &.{pos});
+                try c.compileExpression(field.value);
+            }
+            try c.emit(.instance, &.{instance.fields.len});
+        },
+
+        .function => |func| {
+            try c.enterScope();
+
+            // TODO: ast
+            if (func.name) |name| {
+                _ = try c.symbols.?.defineFunctionName(name.value);
+            }
+
+            for (func.parameters) |parameter| {
+                _ = try c.symbols.?.define(parameter.value);
+            }
+
+            try c.compileStatement(.{ .block = func.body });
+
+            // return the last value if no return statement
+            if (c.lastInstructionIs(.pop)) try c.replaceLastPopWithReturn();
+
+            // return null
+            if (!c.lastInstructionIs(.retv)) try c.emit(.retn, &.{});
+
+            const free_symbols = c.symbols.?.frees;
+            const obj = try c.allocator.create(Object);
+            errdefer c.allocator.destroy(obj);
+            const num_locals = if (c.symbols) |s| s.def_number else 0;
+
+            for (free_symbols.items) |symb| {
+                try c.loadSymbol(symb);
+            }
+            const num_free_symbols = free_symbols.items.len;
+
+            const instructions = try c.leaveScope();
+            errdefer c.allocator.free(instructions);
+
+            obj.type = .{ .closure = .{
+                .func = .{
+                    .instructions = instructions,
+                    .num_locals = num_locals,
+                    .num_parameters = func.parameters.len,
+                },
+            } };
+
+            const pos = try c.addConstants(.{ .obj = obj });
+            try c.emit(.closure, &.{ pos, num_free_symbols });
+        },
+
+        .@"if" => |ifexp| {
+            try c.compileExpression(ifexp.condition);
+
+            // since a new scope will be created, we need the counter
+            // const len = c.insLen();
+            const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
+
+            if (ifexp.consequence.statements.len == 0) {
+                try c.emit(.null, &.{});
+            } else {
                 // compiling the consequence
-                if (forloop.consequence.statements.len == 0) {
+                try c.compileStatement(.{ .block = ifexp.consequence });
+                // statements add a pop in the end, wee drop the last pop (if return)
+                if (c.lastInstructionIs(.pop)) c.removeLastPop();
+            }
+
+            // always jump: null is returned
+            const jump_pos = try c.emitPos(.jump, &.{9999});
+            const after_consequence_position = c.insLen();
+
+            // Replaces the 9999 (.jump_if_not_true_pos) to the correct operand (after_consequence_position);
+            try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
+
+            if (ifexp.alternative) |alt| {
+                if (alt.statements.len == 0) {
                     try c.emit(.null, &.{});
                 } else {
-                    try c.compile(.{ .statement = .{ .block = forloop.consequence } });
+                    try c.compileStatement(.{ .block = alt });
                     // statements add a pop in the end, wee drop the last pop (if return)
                     if (c.lastInstructionIs(.pop)) c.removeLastPop();
                 }
+            } else {
+                try c.emit(.null, &.{});
+            }
 
-                try c.emit(.jump, &.{jump_pos});
+            const after_alternative_pos = c.insLen();
+            // Replaces the 9999 (.jump) to the correct operand (after_alternative_pos);
+            try c.changeOperand(jump_pos, after_alternative_pos);
+        },
 
-                // this is the real jumpifnottrue position. this is how deep the compiled forloop.consequence is
-                // const after_consequence_position = c.insLen() + start_pos;
+        .match => |match| {
+            var jumps_pos_list = std.ArrayList(usize).init(c.allocator);
+            defer jumps_pos_list.deinit();
+
+            // try c.enterScope();
+            for (match.arms) |arm| for (arm.condition) |condition| {
+                try c.compileExpression(match.value);
+                try c.compileExpression(condition);
+                try c.emit(.eq, &.{});
+
+                const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
+
+                if (arm.block.statements.len == 0) {
+                    try c.emit(.null, &.{});
+                } else {
+                    try c.compileStatement(.{ .block = arm.block });
+                    if (c.lastInstructionIs(.pop)) c.removeLastPop();
+                }
+
+                const jum_pos = try c.emitPos(.jump, &.{9999});
+                try jumps_pos_list.append(jum_pos);
+
                 const after_consequence_position = c.insLen();
                 try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
+            };
 
-                // // break statement
-                if (c.loop.info[c.loop.idx].end) |pox| {
-                    try c.changeOperand(pox, after_consequence_position);
-                    c.loop.info[c.loop.idx].end = null;
-                } else {
-                    // // always jump: null is returned
+            if (match.else_block) |block| {
+                if (block.statements.len == 0) {
                     try c.emit(.null, &.{});
+                } else {
+                    try c.compileStatement(.{ .block = block });
+                    if (c.lastInstructionIs(.pop)) c.removeLastPop();
                 }
-            },
+            } else {
+                try c.emit(.null, &.{});
+            }
 
-            .for_range => |*forloop| {
-                try if (forloop.index == null) c.emitLoop(forloop) else c.emitLoopWithIndex(forloop);
-            },
+            const after_alternative_pos = c.insLen();
 
-            // TODO: make it like a function
-            //
-            // a type must have his own constants and variables list
-            // this will make modules/import more easy!
-            //
-            // * VM will have a new field called: types *
-            //
-            // in this case, methods call will have the callee passed as arguments (always)
-            .type => |ty| {
-                const fields = ty.fields;
-                const decls = ty.decl;
+            for (jumps_pos_list.items) |jum_pos| {
+                try c.changeOperand(jum_pos, after_alternative_pos);
+            }
+        },
 
-                const e: Object.BuiltinType.BT = if (ty.type == .@"struct") .@"struct" else .@"enum";
+        .@"for" => |forloop| {
+            const jump_pos = c.insLen();
+            c.loop.info[c.loop.idx].start = jump_pos;
 
-                const pos_name = try c.addConstants(.{
-                    .tag = ty.name orelse "struct",
-                });
-                try c.emit(.constant, &.{pos_name});
+            try c.compileExpression(forloop.condition);
 
-                for (fields) |field| {
-                    const ident = field.name;
-                    const value = field.value;
+            // fake instruction position
+            const jump_if_not_true_pos = try c.emitPos(.jumpifnottrue, &.{9999});
 
-                    const pos = try c.addConstants(.{ .tag = ident.value });
-                    try c.emit(.constant, &.{pos});
+            // compiling the consequence
+            if (forloop.consequence.statements.len == 0) {
+                try c.emit(.null, &.{});
+            } else {
+                try c.compileStatement(.{ .block = forloop.consequence });
+                // statements add a pop in the end, wee drop the last pop (if return)
+                if (c.lastInstructionIs(.pop)) c.removeLastPop();
+            }
 
-                    try c.compile(.{ .expression = value });
-                }
+            try c.emit(.jump, &.{jump_pos});
 
-                for (decls) |dec| {
-                    // function name as a field
-                    const pos = try c.addConstants(.{ .tag = dec.name.value });
-                    try c.emit(.constant, &.{pos});
-                    _ = try c.emitdecl(&dec);
-                }
+            // this is the real jumpifnottrue position. this is how deep the compiled forloop.consequence is
+            // const after_consequence_position = c.insLen() + start_pos;
+            const after_consequence_position = c.insLen();
+            try c.changeOperand(jump_if_not_true_pos, after_consequence_position);
 
-                // NOTE: will work?
-                // const pos = c.addConstants(.{ .@"struct" = .{
-                //     .fields_len = fields.len,
-                //     .decl_len = decls.len,
-                //     .name = name
-                //     .instructions = ...
-                // } })
+            // // break statement
+            if (c.loop.info[c.loop.idx].end) |pox| {
+                try c.changeOperand(pox, after_consequence_position);
+                c.loop.info[c.loop.idx].end = null;
+            } else {
+                // // always jump: null is returned
+                try c.emit(.null, &.{});
+            }
+        },
 
-                try c.emit(.type, &.{ decls.len + 1, fields.len, @intFromEnum(e) });
-            },
+        .for_range => |*forloop| {
+            try if (forloop.index == null) c.emitLoop(forloop) else c.emitLoopWithIndex(forloop);
+        },
 
-            .class => |class| {
-                for (class.fields) |field| {
-                    const pos = try c.addConstants(.{ .tag = field.name });
-                    try c.emit(.constant, &.{pos});
-                    try c.compile(.{ .expression = field.value });
-                }
-                for (class.decls) |decls| {
-                    const pos = try c.addConstants(.{ .tag = decls.name.value });
-                    try c.emit(.constant, &.{pos});
-                    try c.compile(.{ .statement = .{ .@"fn" = decls } });
-                }
-                try c.emit(.class, &.{2 * (class.fields.len + class.decls.len)});
-            },
+        // TODO: make it like a function
+        //
+        // a type must have his own constants and variables list
+        // this will make modules/import more easy!
+        //
+        // * VM will have a new field called: types *
+        //
+        // in this case, methods call will have the callee passed as arguments (always)
+        .type => |ty| {
+            const fields = ty.fields;
+            const decls = ty.decl;
 
-            else => |exx| {
-                return c.newError("Invalid Expression '{}'", .{exx});
-            },
+            const e: Object.BuiltinType.BT = if (ty.type == .@"struct") .@"struct" else .@"enum";
+
+            const pos_name = try c.addConstants(.{
+                .tag = ty.name orelse "struct",
+            });
+            try c.emit(.constant, &.{pos_name});
+
+            for (fields) |field| {
+                const ident = field.name;
+                const value = field.value;
+
+                const pos = try c.addConstants(.{ .tag = ident.value });
+                try c.emit(.constant, &.{pos});
+
+                try c.compileExpression(value);
+            }
+
+            for (decls) |dec| {
+                // function name as a field
+                const pos = try c.addConstants(.{ .tag = dec.name.value });
+                try c.emit(.constant, &.{pos});
+                _ = try c.emitdecl(&dec);
+            }
+
+            // NOTE: will work?
+            // const pos = c.addConstants(.{ .@"struct" = .{
+            //     .fields_len = fields.len,
+            //     .decl_len = decls.len,
+            //     .name = name
+            //     .instructions = ...
+            // } })
+
+            try c.emit(.type, &.{ decls.len + 1, fields.len, @intFromEnum(e) });
+        },
+
+        .class => |class| {
+            for (class.fields) |field| {
+                const pos = try c.addConstants(.{ .tag = field.name });
+                try c.emit(.constant, &.{pos});
+                try c.compileExpression(field.value);
+            }
+            for (class.decls) |decls| {
+                const pos = try c.addConstants(.{ .tag = decls.name.value });
+                try c.emit(.constant, &.{pos});
+                try c.compileStatement(.{ .@"fn" = decls });
+            }
+            try c.emit(.class, &.{2 * (class.fields.len + class.decls.len)});
+        },
+
+        else => |exx| {
+            return c.newError("Invalid Expression '{}'", .{exx});
         },
     }
 }
@@ -1053,7 +1051,7 @@ fn emitLoopWithIndex(c: *Compiler, forloop: *ast.ForRange) anyerror!void {
     const ipos = try c.addConstants(.null);
     try c.emit(.constant, &.{ipos});
     try c.emit(.constant, &.{pos});
-    try c.compile(.{ .expression = forloop.iterable });
+    try c.compileExpression(forloop.iterable);
     try c.emit(.to_range, &.{pos});
 
     const jump_pos = c.insLen();
@@ -1071,7 +1069,7 @@ fn emitLoopWithIndex(c: *Compiler, forloop: *ast.ForRange) anyerror!void {
         try c.define(name);
         try c.define(iname);
 
-        try c.compile(.{ .statement = .{ .block = forloop.body } });
+        try c.compileStatement(.{ .block = forloop.body });
         // statements add a pop in the end, wee drop the last pop (if return)
         if (c.lastInstructionIs(.pop)) c.removeLastPop();
     }
@@ -1102,7 +1100,7 @@ fn emitLoop(c: *Compiler, forloop: *ast.ForRange) anyerror!void {
     // TODO: dont do this shit!!!!
     const pos = try c.addConstants(.null);
     try c.emit(.constant, &.{pos});
-    try c.compile(.{ .expression = forloop.iterable });
+    try c.compileExpression(forloop.iterable);
     try c.emit(.to_range, &.{pos});
 
     const jump_pos = c.insLen();
@@ -1118,7 +1116,7 @@ fn emitLoop(c: *Compiler, forloop: *ast.ForRange) anyerror!void {
     if (forloop.body.statements.len != 0) {
         try c.define(name);
 
-        try c.compile(.{ .statement = .{ .block = forloop.body } });
+        try c.compileStatement(.{ .block = forloop.body });
         // statements add a pop in the end, wee drop the last pop (if return)
         if (c.lastInstructionIs(.pop)) c.removeLastPop();
     }

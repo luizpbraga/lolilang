@@ -108,9 +108,20 @@ pub fn pop(vm: *Vm) Value {
     return o;
 }
 
+pub fn popPtr(vm: *Vm) *Value {
+    //if (vm.sp == 0) return .null;
+    const o: *Value = @constCast(&vm.stack[vm.sp - 1]);
+    vm.sp -= 1;
+    return o;
+}
+
 // return a pointer?
 pub fn pop2(vm: *Vm) void {
     vm.sp -= 1;
+}
+
+pub fn stackSize(vm: *Vm) usize {
+    return vm.stack[0..vm.sp].len;
 }
 
 pub fn push(vm: *Vm, obj: Value) !void {
@@ -329,8 +340,8 @@ pub fn run(vm: *Vm) anyerror!void {
 
             .index_get => {
                 const index = vm.pop();
-                const left = vm.pop();
-                try operation.executeIndex(vm, &left, &index);
+                const left = vm.popPtr();
+                try operation.executeIndex(vm, left, &index);
             },
 
             .setgv => {
@@ -658,24 +669,10 @@ pub fn run(vm: *Vm) anyerror!void {
                             continue;
                         },
 
-                        .function => |func| {
+                        inline .function, .closure => |f, tag| {
+                            const func = if (tag == .function) f else f.func;
                             if (args_number != func.num_parameters) {
-                                return vm.newError("Function {s}: Arguments Mismatched: expect {}, got {} ", .{ func.name orelse "annon", func.num_parameters, args_number });
-                            }
-
-                            const bp: isize = @intCast(vm.sp - args_number);
-                            const frame: Frame = .init(.{ .func = func }, bp);
-                            vm.pushFrame(frame);
-                            fm = vm.currentFrame();
-                            // the call stack space allocation
-                            vm.sp = @as(usize, @intCast(fm.bp)) + func.num_locals;
-                            continue;
-                        },
-
-                        .closure => |cl| {
-                            const func = cl.func;
-                            if (args_number != func.num_parameters) {
-                                return vm.newError("Closure Arguments Mismatched", .{});
+                                return vm.newError("Function/closure {s}: Arguments Mismatched: expect {}, got {} ", .{ func.name orelse "annon", func.num_parameters, args_number });
                             }
 
                             const bp: isize = @intCast(vm.sp - args_number);
@@ -696,6 +693,14 @@ pub fn run(vm: *Vm) anyerror!void {
                         const args = vm.stack[vm.sp - args_number .. vm.sp];
                         vm.sp = vm.sp - args_number - 1;
                         try vm.push(try bui.function(vm, args));
+                    },
+
+                    .method => |met| {
+                        var self = vm.stack[vm.sp - args_number - 2];
+                        // var method = vm.stack[vm.sp - args_number - 1];
+                        const args = vm.stack[vm.sp - args_number .. vm.sp];
+                        vm.sp = vm.sp - args_number - 2;
+                        try vm.push(try met.function(vm, &self, args));
                     },
 
                     else => {

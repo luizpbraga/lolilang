@@ -1,36 +1,6 @@
 const std = @import("std");
 const Token = @import("Token.zig");
 
-// interface
-pub const Node = union(enum) {
-    expression: *Expression,
-    statement: Statement,
-
-    pub fn position(self: *const Node) usize {
-        switch (self.*) {
-            inline else => |node| return node.position(),
-        }
-    }
-
-    pub fn commentPos(self: *const Node) ?[2]usize {
-        switch (self.*) {
-            inline else => |node| return node.commentPos(),
-        }
-    }
-
-    pub fn deinit(self: *Node, alloc: std.mem.Allocator) void {
-        switch (self.*) {
-            .statement => |stmt| switch (stmt) {
-                .block => |blk| alloc.free(blk.statements),
-                .program => |p| p.statements.deinit(),
-                else => {},
-            },
-            else => {},
-        }
-    }
-};
-
-/// implements Node,
 /// interface: {return, var, expression} statements
 pub const Statement = union(enum) {
     // implements Node,
@@ -50,8 +20,6 @@ pub const Statement = union(enum) {
 
     @"fn": FunctionStatement,
     exp_statement: ExpStatement,
-
-    program: Program,
 
     import: Import,
     @"pub": Pub,
@@ -215,7 +183,7 @@ pub const Import = struct {
     token: Token,
     name: Identifier,
     path: *Expression,
-    node: *Node,
+    node: *Statement,
 
     pub fn statementNode(self: *const @This()) void {
         _ = self;

@@ -7,7 +7,7 @@ const Vm = @import("Vm.zig");
 const builtins = @import("builtins.zig");
 
 /// [], .
-pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
+pub fn executeIndex(vm: *Vm, left: *Value, index: *const Value) !void {
     if (left.* == .complex) {
         const z = left.complex;
 
@@ -82,6 +82,12 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
             if (index.* == .tag) {
                 if (std.mem.eql(u8, index.tag, "len")) {
                     return vm.push(.{ .integer = @intCast(string.items.len) });
+                }
+
+                if (std.mem.eql(u8, index.tag, "append")) {
+                    const method = @import("builtins.zig").builtin_methods[0];
+                    try vm.push(left.*);
+                    return try vm.push(.{ .method = method });
                 }
             }
 

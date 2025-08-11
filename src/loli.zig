@@ -11,22 +11,20 @@ pub fn runVm(allocator: std.mem.Allocator, input: []const u8, err: *Error) !void
     var lexer: Lexer = .init(input);
     var parser: Parser = .init(allocator, &lexer, err);
     defer parser.deinit();
+    const stmts = try parser.parse();
+
     var stderr = std.fs.File.stderr();
     defer stderr.close();
-
-    const node = try parser.parse();
-
     if (parser.errors.msg.items.len != 0) {
-        try stderr.writeAll(
+        return try stderr.writeAll(
             parser.errors.msg.items,
         );
-        return;
     }
 
     var compiler: Compiler = try .init(allocator, err);
     defer compiler.deinit();
 
-    compiler.compile(node) catch |comp_err|
+    compiler.compile(stmts) catch |comp_err|
         return switch (comp_err) {
             error.Compilation => try stderr.writeAll(
                 compiler.errors.msg.items,

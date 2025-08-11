@@ -55,6 +55,7 @@ pub const Value = union(enum) {
         // ptr: *std.StringHashMap(Value),
     },
     builtin: Builtin,
+    method: Method,
     frame: *Frame,
     obj: *Object,
 
@@ -231,6 +232,11 @@ pub const Closure = struct {
 pub const Builtin = struct {
     name: []const u8,
     function: *const fn (*@import("Vm.zig"), []const Value) anyerror!Value,
+};
+
+pub const Method = struct {
+    name: []const u8,
+    function: *const fn (*@import("Vm.zig"), *Value, []const Value) anyerror!Value,
 };
 
 pub const Hash = struct {
