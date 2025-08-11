@@ -37,6 +37,8 @@ pub const Statement = union(enum) {
     @"var": Var,
     var_block: VarBlock,
 
+    field: struct { name: Identifier, value: *Expression },
+
     con: Con,
     // con_block: ConBlock,
 
@@ -368,13 +370,7 @@ pub const Type = struct {
 pub const Class = struct {
     type: Token.Tag,
     name: ?[]const u8 = null,
-    fields: []Field = &.{},
-    decls: []FunctionStatement = &.{},
-
-    pub const Field = struct {
-        name: []const u8,
-        value: *Expression,
-    };
+    stmts: []Statement = &.{},
 };
 
 pub const Instance = struct {

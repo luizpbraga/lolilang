@@ -95,7 +95,7 @@ pub fn deinit(c: *Compiler) void {
 
 fn loadSymbol(c: *Compiler, s: *SymbolTable.Symbol) !void {
     switch (s.scope) {
-        .local => try c.emit(.getlv, &.{s.index}),
+        .field, .local => try c.emit(.getlv, &.{s.index}),
         .global => try c.emit(.getgv, &.{s.index}),
         .builtin => try c.emit(.getbf, &.{s.index}),
         .free => try c.emit(.getfree, &.{s.index}),
@@ -317,12 +317,16 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
                 try c.emit(op, &.{symbol.index});
             },
 
-            .@"var" => |var_stmt| {
+            inline .@"var", .field => |var_stmt, tag| {
                 const name = var_stmt.name.value;
                 if (c.symbols.?.store.contains(name)) {
                     return c.newError("Redeclaration of variable '{s}'", .{name});
                 }
-                const symbol = try c.symbols.?.define(name);
+
+                const symbol = if (tag == .field)
+                    try c.symbols.?.defineField(name)
+                else
+                    try c.symbols.?.define(name);
 
                 if (var_stmt.value.* == .type) {
                     var_stmt.value.type.name = name;
@@ -1013,17 +1017,21 @@ pub fn compile(c: *Compiler, node: ast.Node) !void {
             },
 
             .class => |class| {
-                for (class.fields) |field| {
-                    const pos = try c.addConstants(.{ .tag = field.name });
-                    try c.emit(.constant, &.{pos});
-                    try c.compile(.{ .expression = field.value });
+                for (class.stmts) |stmt| {
+                    try c.compile(.{ .statement = stmt });
                 }
-                for (class.decls) |decls| {
-                    const pos = try c.addConstants(.{ .tag = decls.name.value });
-                    try c.emit(.constant, &.{pos});
-                    try c.compile(.{ .statement = .{ .@"fn" = decls } });
-                }
-                try c.emit(.class, &.{2 * (class.fields.len + class.decls.len)});
+                try c.emit(.null, &.{});
+                // for (class.fields) |field| {
+                //     const pos = try c.addConstants(.{ .tag = field.name });
+                //     try c.emit(.constant, &.{pos});
+                //     try c.compile(.{ .expression = field.value });
+                // }
+                // for (class.decls) |decls| {
+                //     const pos = try c.addConstants(.{ .tag = decls.name.value });
+                //     try c.emit(.constant, &.{pos});
+                //     try c.compile(.{ .statement = .{ .@"fn" = decls } });
+                // }
+                // try c.emit(.class, &.{2 * (class.fields.len + class.decls.len)});
             },
 
             else => |exx| {

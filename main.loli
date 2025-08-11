@@ -1,7 +1,6 @@
-System := struct {
-    fn stdOut() {
-    }
+x := class {
+    var t = 10
 }
 
+@print(t)
 
-@print(System.stdOut())

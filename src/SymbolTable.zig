@@ -22,6 +22,7 @@ pub const Symbol = struct {
 pub const ScopeType = enum {
     global,
     local,
+    field,
     builtin,
     free,
     function,
@@ -79,6 +80,17 @@ pub fn define(t: *SymbolTable, name: []const u8) !Symbol {
     const symbol: Symbol = .{
         .name = name,
         .scope = if (t.outer == null) .global else .local,
+        .index = t.def_number,
+    };
+    try t.store.put(name, symbol);
+    t.def_number += 1;
+    return symbol;
+}
+
+pub fn defineField(t: *SymbolTable, name: []const u8) !Symbol {
+    const symbol: Symbol = .{
+        .name = name,
+        .scope = .field,
         .index = t.def_number,
     };
     try t.store.put(name, symbol);

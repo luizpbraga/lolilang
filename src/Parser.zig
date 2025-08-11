@@ -43,9 +43,9 @@ fn prefixExp(p: *Parser) anyerror!*ast.Expression {
     const allocator = p.arena.allocator();
     const left_exp = try p.newExp(allocator);
 
-    if (!p.call and p.peekTokenIs(.@",")) {
-        return p.parseTuple(left_exp);
-    }
+    // if (!p.call and p.peekTokenIs(.@",")) {
+    //     return p.parseTuple(left_exp);
+    // }
 
     return left_exp;
 }
@@ -543,7 +543,19 @@ fn parseStatement(self: *Parser) !ast.Statement {
 
         // .comment => self.parseComment(tk),
 
-        else => try self.parseExpStatement(),
+        else => blk: {
+            const exp = try self.parseExpStatement();
+            if (exp.exp_statement.expression.* == .identifier) {
+                if (self.expectPeek(.@",")) {
+                    std.debug.print("debug\n", .{});
+                    break :blk .{ .field = .{
+                        .name = exp.exp_statement.expression.identifier,
+                        .value = &NULL,
+                    } };
+                }
+            }
+            break :blk exp;
+        },
     };
 
     return stmt;
@@ -1509,56 +1521,75 @@ pub const Precedence = enum {
 
 fn parseClass(self: *Parser) !ast.Expression {
     var class: ast.Class = .{ .type = self.cur_token.tag, .name = "" };
-
     if (!self.expectPeek(.@"{")) try self.missing(.@"{");
+    const allocator = self.arena.allocator();
+    var stmts: std.ArrayList(ast.Statement) = .init(allocator);
+    errdefer stmts.deinit();
 
-    var fields: std.StringArrayHashMap(ast.Class.Field) = .init(self.arena.allocator());
-    errdefer fields.deinit();
-
-    var decls: std.StringArrayHashMap(ast.FunctionStatement) = .init(self.arena.allocator());
-    errdefer decls.deinit();
-
+    var stmt: ast.Statement = undefined;
     while (!self.peekTokenIs(.@"}") and !self.curTokenIs(.eof)) {
-        if (self.peekTokenIs(.@"fn")) break;
+        stmt = try self.parseStatement();
+        try stmts.append(stmt);
         self.nextToken();
-
-        if (!self.curTokenIs(.identifier)) {
-            try self.errlog("Invalid Class syntax");
-            return .bad;
-        }
-
-        const name = self.parseIdentifier().identifier.value;
-        if (fields.contains(name)) {
-            try self.errors.append("Duplicated field name {s}\n", .{name});
-        }
-
-        var value = &NULL;
-        if (self.expectPeek(.@"=")) {
-            self.nextToken();
-            value = try self.parseExpression(.lowest);
-        }
-
-        try fields.put(name, .{ .name = name, .value = value });
     }
 
     self.nextToken();
 
-    while (self.curTokenIs(.@"fn")) {
-        const fn_stmt = try self.parseFn();
-        const func = fn_stmt.@"fn";
-        const name = func.name.value;
-        if (decls.contains(name)) {
-            try self.errors.append("Duplicated method name {s}\n", .{name});
-        }
-        try decls.put(name, func);
-        self.nextToken();
-    }
-
-    if (!self.curTokenIs(.@"}")) try self.missing(.@"}");
-    if (self.curTokenIs(.eof)) try self.errlog("EOF");
-
-    class.fields = fields.values();
-    class.decls = decls.values();
-
+    class.stmts = try stmts.toOwnedSlice();
     return .{ .class = class };
 }
+// fn parseClass(self: *Parser) !ast.Expression {
+//     var class: ast.Class = .{ .type = self.cur_token.tag, .name = "" };
+//
+//     if (!self.expectPeek(.@"{")) try self.missing(.@"{");
+//
+//     var fields: std.StringArrayHashMap(ast.Class.Field) = .init(self.arena.allocator());
+//     errdefer fields.deinit();
+//
+//     var decls: std.StringArrayHashMap(ast.FunctionStatement) = .init(self.arena.allocator());
+//     errdefer decls.deinit();
+//
+//     while (!self.peekTokenIs(.@"}") and !self.curTokenIs(.eof)) {
+//         if (self.peekTokenIs(.@"fn")) break;
+//         self.nextToken();
+//
+//         if (!self.curTokenIs(.identifier)) {
+//             try self.errlog("Invalid Class syntax");
+//             return .bad;
+//         }
+//
+//         const name = self.parseIdentifier().identifier.value;
+//         if (fields.contains(name)) {
+//             try self.errors.append("Duplicated field name {s}\n", .{name});
+//         }
+//
+//         var value = &NULL;
+//         if (self.expectPeek(.@"=")) {
+//             self.nextToken();
+//             value = try self.parseExpression(.lowest);
+//         }
+//
+//         try fields.put(name, .{ .name = name, .value = value });
+//     }
+//
+//     self.nextToken();
+//
+//     while (self.curTokenIs(.@"fn")) {
+//         const fn_stmt = try self.parseFn();
+//         const func = fn_stmt.@"fn";
+//         const name = func.name.value;
+//         if (decls.contains(name)) {
+//             try self.errors.append("Duplicated method name {s}\n", .{name});
+//         }
+//         try decls.put(name, func);
+//         self.nextToken();
+//     }
+//
+//     if (!self.curTokenIs(.@"}")) try self.missing(.@"}");
+//     if (self.curTokenIs(.eof)) try self.errlog("EOF");
+//
+//     class.fields = fields.values();
+//     class.decls = decls.values();
+//
+//     return .{ .class = class };
+// }
