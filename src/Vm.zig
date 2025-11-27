@@ -1,70 +1,79 @@
-const STACK_SIZE = 32 * 1024;
 const Vm = @This();
+const Allocator = std.mem.Allocator;
 
 pub var GC_MAX: usize = 64 * 1024 * @sizeOf(*Object);
-
+const STACK_SIZE = 32 * 1024;
 const FRAME_SIZE = 4 * 1024;
 /// max(u16)
 const GLOBALS_SIZE = 65536;
 
-constants: []Value,
-/// in scope objects
-stack: []Value,
 /// points to the next value. top is stack[sp - 1]
 sp: usize = 0,
+cursor: usize = 0,
+// frames: std.ArrayList(Frame),
+fm: *Frame,
+frames_index: usize = 1,
+frames: [FRAME_SIZE]Frame,
+errors: *Error,
+positions: []usize,
+instructions: []u8,
+/// in scope objects
+stack: []Value,
+constants: []Value,
 /// Global Declared
 globals: []?Value,
-// frames: std.ArrayList(Frame),
-frames: [FRAME_SIZE]Frame,
-frames_index: usize = 1,
-fm: *Frame,
-instructions: []u8,
-
-allocator: std.mem.Allocator,
+/// GC: allocated objects linked list
+objects: ?*Object = null,
 gray_stack: std.ArrayList(*Object),
 gray_count: usize = 0,
 bytes_allocated: usize = 0,
-positions: []usize,
-cursor: usize = 0,
-/// GC: allocated objects linked list
-objects: ?*Object = null,
-errors: *Error,
-t: i68 = 0,
 
-pub fn newError(vm: *Vm, comptime fmt: []const u8, args: anytype) anyerror {
+pub fn newError(vm: *Vm, gpa: Allocator, comptime fmt: []const u8, args: anytype) anyerror {
     const pos = vm.positions[if (vm.cursor < vm.positions.len) vm.cursor else vm.positions.len - 1];
     const line: Line = .init(vm.errors.input, pos);
-    try vm.errors.msg.writer().print(Error.BOLD ++ "{s}:{}:{}: ", .{ vm.errors.file, line.start, line.index });
-    try vm.errors.msg.writer().print(Error.RED ++ "Runtime Error: " ++ Error.END ++ fmt ++ "\n", args);
-    try vm.errors.msg.writer().print("\t{s}\n\t", .{line.line});
-    try vm.errors.msg.writer().writeByteNTimes(' ', line.start);
-    try vm.errors.msg.writer().writeAll("\x1b[32m^\x1b[0m\n");
+    try vm.errors.append(gpa, Error.BOLD ++ "{s}:{}:{}: ", .{ vm.errors.file, line.start, line.index });
+    try vm.errors.append(gpa, Error.RED ++ "Runtime Error: " ++ Error.END ++ fmt ++ "\n", args);
+    try vm.errors.append(gpa, "\t{s}\n\t", .{line.line});
+    // TODO
+    // try vm.errors.msg.writer().writeByteNTimes(' ', line.start);
+    try vm.errors.append(gpa, "\x1b[32m^\x1b[0m\n", .{});
     return error.Runtime;
 }
 
-pub fn init(allocator: std.mem.Allocator, b: *Compiler.Bytecode, errors: *Error) !Vm {
+fn newFunction(vm: *Vm, gpa: Allocator, fm: *Frame, args_number: usize, func: *const Object.CompiledFn) !void {
+    if (args_number != func.num_parameters) {
+        return vm.newError(gpa, "Function {s}: Arguments Mismatched: expect {}, got {} ", .{ func.name orelse "annon", func.num_parameters, args_number });
+    }
+    const bp: isize = @intCast(vm.sp - args_number);
+    const frame: Frame = .init(.{ .func = func.* }, bp);
+    vm.pushFrame(frame);
+    fm = vm.currentFrame();
+    // the call stack space allocation
+    vm.sp = @as(usize, @intCast(fm.bp)) + func.num_locals;
+}
+
+pub fn init(gpa: Allocator, b: *Compiler.Bytecode, errors: *Error) !Vm {
     var vm: Vm = .{
         .constants = b.constants,
         .positions = b.positions,
-        .allocator = allocator,
-        .gray_stack = try .initCapacity(allocator, FRAME_SIZE / 4),
-        .stack = try allocator.alloc(Value, STACK_SIZE),
-        .globals = try allocator.alloc(?Value, GLOBALS_SIZE),
+        .gray_stack = try .initCapacity(gpa, FRAME_SIZE / 4),
+        .stack = try gpa.alloc(Value, STACK_SIZE),
+        .globals = try gpa.alloc(?Value, GLOBALS_SIZE),
         .sp = 0,
         .bytes_allocated = 0,
         .fm = undefined,
         .instructions = undefined,
         .frames = undefined,
         .errors = errors,
-        .t = std.time.timestamp(),
     };
 
     // main frame
-    vm.frames[0] = .init(.{ .func = .{ .instructions = b.instructions } }, 0);
+    // vm.frames[0] = .init(.{ .func = .{ .instructions = b.instructions } }, 0);
+    Frame.initMain(&vm.frames, b.instructions);
 
     for (b.constants) |value| {
         switch (value) {
-            .obj => |obj| try vm.instantiateAtVm(obj),
+            .obj => |obj| try vm.instantiate(gpa, obj),
             else => continue,
         }
     }
@@ -72,32 +81,30 @@ pub fn init(allocator: std.mem.Allocator, b: *Compiler.Bytecode, errors: *Error)
     return vm;
 }
 
-pub fn instantiateAtVm(vm: *Vm, obj: *Object) !void {
+pub fn instantiate(vm: *Vm, gpa: Allocator, obj: *Object) !void {
     vm.bytes_allocated += @sizeOf(*Object);
-
     if (vm.bytes_allocated > Vm.GC_MAX) {
-        try memory.collectGarbage(vm);
+        try gc.collectGarbage(gpa, vm);
     }
-
     obj.next = vm.objects;
     vm.objects = obj;
 }
 
-fn freeObjects(vm: *Vm) void {
+fn freeObjects(vm: *Vm, gpa: Allocator) void {
     var obj = vm.objects;
     while (obj != null) {
         const next = obj.?.next;
-        memory.freeObject(vm, obj.?);
+        gc.freeObject(gpa, vm, obj.?);
         obj = next;
     }
 }
 
-pub fn deinit(vm: *Vm) void {
-    vm.gray_stack.deinit();
-    vm.freeObjects();
-    vm.allocator.free(vm.stack);
-    vm.allocator.free(vm.globals);
-    vm.allocator.free(vm.positions);
+pub fn deinit(vm: *Vm, gpa: Allocator) void {
+    vm.gray_stack.deinit(gpa);
+    vm.freeObjects(gpa);
+    gpa.free(vm.stack);
+    gpa.free(vm.globals);
+    gpa.free(vm.positions);
 }
 
 // return a pointer?
@@ -145,7 +152,7 @@ pub fn popFrame(vm: *Vm) *Frame {
 }
 
 /// decode cycle
-pub fn run(vm: *Vm) anyerror!void {
+pub fn run(vm: *Vm, gpa: Allocator) anyerror!void {
     var ip: *usize = undefined;
     var op: code.Opcode = undefined;
     var fm = vm.currentFrame();
@@ -160,7 +167,7 @@ pub fn run(vm: *Vm) anyerror!void {
                 const start = vm.pop();
 
                 if (start != .integer) {
-                    return vm.newError("Invalid Range", .{});
+                    return vm.newError(gpa, "Invalid Range", .{});
                 }
 
                 var end = vm.pop();
@@ -219,15 +226,15 @@ pub fn run(vm: *Vm) anyerror!void {
                 const start_index = vm.sp - num_elements;
                 const end_index = vm.sp;
 
-                var array = try std.ArrayList(Value).initCapacity(vm.allocator, end_index - start_index);
+                var array = try std.ArrayList(Value).initCapacity(gpa, end_index - start_index);
                 for (start_index..end_index) |i| {
-                    try array.append(vm.stack[i]);
+                    try array.append(gpa, vm.stack[i]);
                 }
 
                 vm.sp = vm.sp - num_elements;
 
-                const obj = try memory.allocateObject(vm, .{ .array = array });
-                errdefer vm.allocator.destroy(obj);
+                const obj = try gc.allocObject(gpa, vm, .{ .array = array });
+                errdefer gpa.destroy(obj);
 
                 try vm.push(.{ .obj = obj });
             },
@@ -240,11 +247,11 @@ pub fn run(vm: *Vm) anyerror!void {
 
                 const value = vm.pop();
 
-                if (value != .obj) return vm.newError("Invalid Destructuring, expect tuple/arry, got {s}", .{value.name()});
-                if (value.obj.type != .array) return vm.newError("Invalid Destructuring, expect tuple/arry, got {s}", .{value.name()});
+                if (value != .obj) return vm.newError(gpa, "Invalid Destructuring, expect tuple/arry, got {s}", .{value.name()});
+                if (value.obj.type != .array) return vm.newError(gpa, "Invalid Destructuring, expect tuple/arry, got {s}", .{value.name()});
 
                 const array = value.obj.type.array;
-                if (array.items.len != num_elements) return vm.newError("Invalid Destructuring: symbols mismatch", .{});
+                if (array.items.len != num_elements) return vm.newError(gpa, "Invalid Destructuring: symbols mismatch", .{});
 
                 switch (scope) {
                     .setgv => {
@@ -275,7 +282,7 @@ pub fn run(vm: *Vm) anyerror!void {
                 fm.ip += 2;
 
                 var hash: Object.Hash = .{
-                    .pairs = .init(vm.allocator),
+                    .pairs = .init(gpa),
                 };
 
                 const start_index = vm.sp - num_elements;
@@ -296,8 +303,8 @@ pub fn run(vm: *Vm) anyerror!void {
                 }
 
                 vm.sp = vm.sp - num_elements;
-                const obj = try memory.allocateObject(vm, .{ .hash = hash });
-                errdefer vm.allocator.destroy(obj);
+                const obj = try gc.allocObject(gpa, vm, .{ .hash = hash });
+                errdefer gpa.destroy(obj);
 
                 try vm.push(.{ .obj = obj });
             },
@@ -308,7 +315,7 @@ pub fn run(vm: *Vm) anyerror!void {
                 const value = vm.pop();
                 var left = vm.pop();
                 const index = vm.constants[field_pos];
-                try operation.setIndex(vm, &left, index, value);
+                try operation.setIndex(gpa, vm, &left, index, value);
             },
 
             .method_get => {
@@ -316,7 +323,7 @@ pub fn run(vm: *Vm) anyerror!void {
                 const builtin_index = std.mem.readInt(u16, vm.instructions[ip.* + 1 ..][0..2], .big);
                 fm.ip += 2;
                 const builtin = builtins.builtin_functions[builtin_index];
-                const value = try builtin.function(vm, &.{caller});
+                const value = try builtin.function(gpa, vm, &.{caller});
                 try vm.push(value);
             },
 
@@ -324,13 +331,13 @@ pub fn run(vm: *Vm) anyerror!void {
                 const value = vm.pop();
                 const index = vm.pop();
                 var left = vm.pop();
-                try operation.setIndex(vm, &left, index, value);
+                try operation.setIndex(gpa, vm, &left, index, value);
             },
 
             .index_get => {
                 const index = vm.pop();
                 const left = vm.pop();
-                try operation.executeIndex(vm, &left, &index);
+                try operation.executeIndex(gpa, vm, &left, &index);
             },
 
             .setgv => {
@@ -391,11 +398,11 @@ pub fn run(vm: *Vm) anyerror!void {
                 try vm.push(.null); // push the return value
             },
 
-            .add, .sub, .mul, .div, .mod, .pow => try operation.executeBinary(vm, op),
+            .add, .sub, .mul, .div, .mod, .pow => try operation.executeBinary(gpa, vm, op),
 
-            .eq, .neq, .gt, .gte, .land, .lor => try operation.executeComparison(vm, op),
+            .eq, .neq, .gt, .gte, .land, .lor => try operation.executeComparison(gpa, vm, op),
 
-            .not, .min => try operation.executePrefix(vm, op),
+            .not, .min => try operation.executePrefix(gpa, vm, op),
 
             .true => try vm.push(.{ .boolean = true }),
 
@@ -428,7 +435,7 @@ pub fn run(vm: *Vm) anyerror!void {
                     continue;
                 }
 
-                return vm.newError("Invalid Condition; expect boolean, got {s}\n", .{condition.name()});
+                return vm.newError(gpa, "Invalid Condition; expect boolean, got {s}\n", .{condition.name()});
             },
 
             .pop => vm.pop2(),
@@ -443,7 +450,7 @@ pub fn run(vm: *Vm) anyerror!void {
             // this is used for recursive closure
             .current_closure => {
                 const closure = fm.cl;
-                const obj = try memory.allocateObject(vm, .{ .closure = closure });
+                const obj = try gc.allocObject(gpa, vm, .{ .closure = closure });
                 try vm.push(.{ .obj = obj });
             },
 
@@ -453,8 +460,8 @@ pub fn run(vm: *Vm) anyerror!void {
                 fm.ip += 3;
 
                 var closure = &vm.constants[index];
-                var frees = try vm.allocator.alloc(Value, num_free);
-                errdefer vm.allocator.free(frees);
+                var frees = try gpa.alloc(Value, num_free);
+                errdefer gpa.free(frees);
 
                 for (0..num_free) |i| {
                     frees[i] = vm.stack[vm.sp - num_free + i];
@@ -475,7 +482,7 @@ pub fn run(vm: *Vm) anyerror!void {
 
                 var struct_type: Object.BuiltinType = .{
                     .type = @enumFromInt(type_type),
-                    .fields = .init(vm.allocator),
+                    .fields = .init(gpa),
                 };
                 errdefer struct_type.fields.deinit();
 
@@ -492,7 +499,7 @@ pub fn run(vm: *Vm) anyerror!void {
                     },
                     .@"enum" => {
                         var id: usize = 0;
-                        struct_type.decl = .init(vm.allocator);
+                        struct_type.decl = .init(gpa);
                         // fields
                         l: while (i < end_index) : (i += 2) {
                             const name = vm.stack[i].tag;
@@ -518,12 +525,12 @@ pub fn run(vm: *Vm) anyerror!void {
                         }
                     },
                     else => {
-                        return vm.newError("Error type not implemented", .{});
+                        return vm.newError(gpa, "Error type not implemented", .{});
                     },
                 }
 
-                const obj = try memory.allocateObject(vm, .{ .type = struct_type });
-                errdefer vm.allocator.destroy(obj);
+                const obj = try gc.allocObject(gpa, vm, .{ .type = struct_type });
+                errdefer gpa.destroy(obj);
                 // vm.sp -= 1;
                 try vm.push(.{ .obj = obj });
             },
@@ -536,7 +543,7 @@ pub fn run(vm: *Vm) anyerror!void {
 
                 var instance: Object.Instance = .{
                     .type = value_type,
-                    .fields = .init(vm.allocator),
+                    .fields = .init(gpa),
                 };
                 errdefer instance.fields.deinit();
 
@@ -556,14 +563,14 @@ pub fn run(vm: *Vm) anyerror!void {
                     const name = vm.stack[i].tag;
                     const value = vm.stack[i + 1];
                     if (!value_type.fields.contains(name)) {
-                        return vm.newError("struct {s} have no field called {s}", .{ value_type.name orelse "annon", name });
+                        return vm.newError(gpa, "struct {s} have no field called {s}", .{ value_type.name orelse "annon", name });
                     }
                     try instance.fields.put(name, value);
                     f += 2;
                 }
 
-                const obj = try memory.allocateObject(vm, .{ .instance = instance });
-                errdefer vm.allocator.destroy(obj);
+                const obj = try gc.allocObject(gpa, vm, .{ .instance = instance });
+                errdefer gpa.destroy(obj);
                 // is not clear why, but works!
                 // TODO: why reassign a field in a struct needs this?
                 vm.sp -= f;
@@ -594,7 +601,7 @@ pub fn run(vm: *Vm) anyerror!void {
 
                             if (func.method) |self| {
                                 if (args_number + 1 != func.num_parameters) {
-                                    return vm.newError("decl: Arguments Mismatched", .{});
+                                    return vm.newError(gpa, "decl: Arguments Mismatched", .{});
                                 }
 
                                 try vm.push(.{ .obj = self });
@@ -614,7 +621,7 @@ pub fn run(vm: *Vm) anyerror!void {
                             }
 
                             if (args_number != func.num_parameters) {
-                                return vm.newError("Function {s}: Arguments Mismatched: expect {}, got {} ", .{ func.name orelse "annon", func.num_parameters, args_number });
+                                return vm.newError(gpa, "Function {s}: Arguments Mismatched: expect {}, got {} ", .{ func.name orelse "annon", func.num_parameters, args_number });
                             }
 
                             const frame: Frame = .init(.{ .func = func }, bp);
@@ -627,7 +634,7 @@ pub fn run(vm: *Vm) anyerror!void {
 
                         .function => |func| {
                             if (args_number != func.num_parameters) {
-                                return vm.newError("Function {s}: Arguments Mismatched: expect {}, got {} ", .{ func.name orelse "annon", func.num_parameters, args_number });
+                                return vm.newError(gpa, "Function {s}: Arguments Mismatched: expect {}, got {} ", .{ func.name orelse "annon", func.num_parameters, args_number });
                             }
 
                             const bp: isize = @intCast(vm.sp - args_number);
@@ -642,7 +649,7 @@ pub fn run(vm: *Vm) anyerror!void {
                         .closure => |cl| {
                             const func = cl.func;
                             if (args_number != func.num_parameters) {
-                                return vm.newError("Closure Arguments Mismatched", .{});
+                                return vm.newError(gpa, "Closure Arguments Mismatched", .{});
                             }
 
                             const bp: isize = @intCast(vm.sp - args_number);
@@ -655,18 +662,18 @@ pub fn run(vm: *Vm) anyerror!void {
                         },
 
                         else => {
-                            return vm.newError("Caller is not a Function: got {s}", .{caller_value.name()});
+                            return vm.newError(gpa, "Caller is not a Function: got {s}", .{caller_value.name()});
                         },
                     },
 
-                    .builtin => |bui| {
+                    .builtin => |builtin| {
                         const args = vm.stack[vm.sp - args_number .. vm.sp];
                         vm.sp = vm.sp - args_number - 1;
-                        try vm.push(try bui.function(vm, args));
+                        try vm.push(try builtin.function(gpa, vm, args));
                     },
 
                     else => {
-                        return vm.newError("Caller is not a Function: got {s}", .{caller_value.name()});
+                        return vm.newError(gpa, "Caller is not a Function: got {s}", .{caller_value.name()});
                     },
                 }
             },
@@ -674,549 +681,10 @@ pub fn run(vm: *Vm) anyerror!void {
     }
 }
 
-/// decode cycle
-// pub fn run(vm: *Vm) anyerror!void {
-//     var ip: usize = 0;
-//     var instructions: code.Instructions = undefined;
-//     var op: code.Opcode = undefined;
-//     var fm = vm.currentFrame();
-//     while (fm.ip + 1 < fm.instructions().len) : (vm.cursor += 1) {
-//         fm.ip += 1;
-//         ip = @intCast(fm.ip);
-//         instructions = fm.instructions();
-//         op = @enumFromInt(instructions[ip]);
-//
-//         switch (op) {
-//             .set_range => {
-//                 const start = vm.pop();
-//                 const end = vm.pop();
-//
-//                 if (start != .integer or end != .integer) {
-//                     return vm.newError("Invalid Range", .{});
-//                 }
-//
-//                 try vm.push(.{ .range = .{
-//                     .start = @intCast(start.integer),
-//                     .end = @intCast(end.integer),
-//                     .value = &.null,
-//                 } });
-//             },
-//
-//             .to_range => {
-//                 const pos = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-//                 fm.ip += 2;
-//                 const value = vm.pop();
-//                 vm.constants[pos] = .{ .range = value.toRange() };
-//             },
-//
-//             .get_range => {
-//                 const pos = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-//                 fm.ip += 2;
-//                 var range = &vm.constants[pos].range;
-//
-//                 const value = range.next() orelse {
-//                     try vm.push(.null);
-//                     try vm.push(.{ .boolean = false });
-//                     continue;
-//                 };
-//                 try vm.push(value);
-//                 try vm.push(.{ .boolean = true });
-//             },
-//
-//             .get_range_idx => {
-//                 const pos = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-//                 fm.ip += 2;
-//                 var range = &vm.constants[pos].range;
-//                 defer range.c += 1;
-//
-//                 const value = range.next() orelse {
-//                     try vm.push(.null);
-//                     try vm.push(.null);
-//                     try vm.push(.{ .boolean = false });
-//                     continue;
-//                 };
-//                 try vm.push(.{ .integer = @intCast(range.c) });
-//                 try vm.push(value);
-//                 try vm.push(.{ .boolean = true });
-//             },
-//
-//             .array => {
-//                 const num_elements = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-//                 fm.ip += 2;
-//                 const start_index = vm.sp - num_elements;
-//                 const end_index = vm.sp;
-//
-//                 var array = try std.ArrayList(Value).initCapacity(vm.allocator, end_index - start_index);
-//                 for (start_index..end_index) |i| {
-//                     try array.append(vm.stack[i]);
-//                 }
-//
-//                 vm.sp = vm.sp - num_elements;
-//
-//                 const obj = try memory.allocateObject(vm, .{ .array = array });
-//                 errdefer vm.allocator.destroy(obj);
-//
-//                 try vm.push(.{ .obj = obj });
-//             },
-//
-//             .destruct => {
-//                 const num_elements = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-//                 const scope: code.Opcode = @enumFromInt(std.mem.readInt(u8, instructions[ip + 2 ..][0..1], .big));
-//                 const index = std.mem.readInt(u16, instructions[ip + 3 ..][0..2], .big);
-//                 fm.ip += 4;
-//
-//                 const value = vm.pop();
-//
-//                 if (value != .obj) return vm.newError("Invalid Destructuring, expect tuple/arry, got {s}", .{value.name()});
-//                 if (value.obj.type != .array) return vm.newError("Invalid Destructuring, expect tuple/arry, got {s}", .{value.name()});
-//
-//                 const array = value.obj.type.array;
-//                 if (array.items.len != num_elements) return vm.newError("Invalid Destructuring: symbols mismatch", .{});
-//
-//                 switch (scope) {
-//                     .setgv => {
-//                         for (0..num_elements) |j| {
-//                             const gx: usize = index + j - num_elements;
-//                             vm.globals[gx] = array.items[j];
-//                         }
-//                     },
-//                     .setlv => {
-//                         const ix = @as(usize, @intCast(fm.bp)) + index;
-//                         for (0..num_elements) |j| {
-//                             const gx: usize = ix + j - num_elements;
-//                             vm.stack[gx] = array.items[j];
-//                         }
-//                     },
-//
-//                     else => {
-//                         std.debug.print("{}\n", .{scope});
-//                         unreachable;
-//                     },
-//                 }
-//
-//                 try vm.push(.null);
-//             },
-//
-//             .hash => {
-//                 const num_elements = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-//                 fm.ip += 2;
-//
-//                 var hash: Object.Hash = .{
-//                     .pairs = .init(vm.allocator),
-//                 };
-//
-//                 const start_index = vm.sp - num_elements;
-//                 const end_index = vm.sp;
-//                 var i = start_index;
-//                 while (i < end_index) : (i += 2) {
-//                     const key_value = vm.stack[i];
-//                     const value_value = vm.stack[i + 1];
-//
-//                     const hash_key: Object.Hash.Key = try .init(&key_value);
-//
-//                     const hash_pair: Object.Hash.Pair = .{
-//                         .key = key_value,
-//                         .value = value_value,
-//                     };
-//
-//                     try hash.pairs.put(hash_key, hash_pair);
-//                 }
-//
-//                 vm.sp = vm.sp - num_elements;
-//                 const obj = try memory.allocateObject(vm, .{ .hash = hash });
-//                 errdefer vm.allocator.destroy(obj);
-//
-//                 try vm.push(.{ .obj = obj });
-//             },
-//
-//             .method_set => {
-//                 const field_pos = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-//                 fm.ip += 2;
-//                 const value = vm.pop();
-//                 var left = vm.pop();
-//                 const index = vm.constants[field_pos];
-//                 try operation.setIndex(vm, &left, index, value);
-//             },
-//
-//             .method_get => {
-//                 const caller = vm.pop();
-//                 const builtin_index = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-//                 fm.ip += 2;
-//                 const builtin = builtins.builtin_functions[builtin_index];
-//                 const value = try builtin.function(vm, &.{caller});
-//                 try vm.push(value);
-//             },
-//
-//             .index_set => {
-//                 const value = vm.pop();
-//                 const index = vm.pop();
-//                 var left = vm.pop();
-//                 try operation.setIndex(vm, &left, index, value);
-//             },
-//
-//             .index_get => {
-//                 const index = vm.pop();
-//                 const left = vm.pop();
-//                 try operation.executeIndex(vm, &left, &index);
-//             },
-//
-//             .setgv => {
-//                 const global_index = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-//                 fm.ip += 2;
-//                 const value = vm.pop();
-//                 vm.globals[global_index] = value;
-//             },
-//
-//             .getgv => {
-//                 const global_index = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-//                 fm.ip += 2;
-//                 try vm.push(vm.globals[global_index].?);
-//             },
-//
-//             .setlv => {
-//                 const local_index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-//                 fm.ip += 1;
-//                 const value = vm.pop();
-//                 const index = @as(usize, @intCast(fm.bp)) + local_index;
-//                 vm.stack[index] = value;
-//             },
-//
-//             .getlv => {
-//                 const local_index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-//                 fm.ip += 1;
-//                 const index = @as(usize, @intCast(fm.bp)) + local_index;
-//                 const value = vm.stack[index];
-//                 try vm.push(value);
-//             },
-//
-//             .getbf => {
-//                 const builtin_index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-//                 fm.ip += 1;
-//                 const builtin = builtins.builtin_functions[builtin_index];
-//                 try vm.push(.{ .builtin = builtin });
-//             },
-//
-//             .constant => {
-//                 const const_index = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-//                 fm.ip += 2;
-//                 try vm.push(vm.constants[const_index]);
-//             },
-//
-//             .retv => {
-//                 const returned_value = vm.pop(); // get the return value
-//                 const frame = vm.popFrame(); // return to the callee frame
-//                 fm = vm.currentFrame(); // ?
-//                 vm.sp = @intCast(frame.bp - 1); // pop the fn
-//                 // _ = vm.pop(); // pop the fn
-//                 try vm.push(returned_value); // push the return value
-//             },
-//
-//             .retn => {
-//                 const frame = vm.popFrame(); // return to the callee frame
-//                 fm = vm.currentFrame();
-//                 vm.sp = @intCast(frame.bp - 1); // pop the fn
-//                 try vm.push(.null); // push the return value
-//             },
-//
-//             .add, .sub, .mul, .div, .mod => try operation.executeBinary(vm, op),
-//
-//             .eq, .neq, .gt, .gte, .land, .lor => try operation.executeComparison(vm, op),
-//
-//             .not, .min => try operation.executePrefix(vm, op),
-//
-//             .true => try vm.push(.{ .boolean = true }),
-//
-//             .false => try vm.push(.{ .boolean = false }),
-//
-//             .null => try vm.push(.null),
-//
-//             .jump => {
-//                 const last_ip = fm.ip;
-//                 // get the operand located right after the opcode
-//                 const pos = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-//                 // move ip to the target out of jump
-//                 fm.ip = @as(isize, @intCast(pos)) - 1;
-//
-//                 // the 'if' don't need to pop, just the 'for' loop, so we compare
-//                 // the last ip value with the current jump position;.
-//                 // If ip is bigger (for loop) we pop the null value. This prevent accumulating nulls in the stack
-//                 if (last_ip >= pos) {
-//                     vm.pop2();
-//                 }
-//             },
-//
-//             .jumpifnottrue => {
-//                 const pos = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-//                 fm.ip += 2;
-//                 const condition = vm.pop();
-//
-//                 if (condition == .boolean) {
-//                     if (!condition.boolean) fm.ip = pos - 1;
-//                     continue;
-//                 }
-//
-//                 return vm.newError("Invalid Condition; expect boolean, got {s}\n", .{condition.name()});
-//             },
-//
-//             .pop => vm.pop2(),
-//
-//             .getfree => {
-//                 const free_index = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-//                 fm.ip += 1;
-//                 const closure = fm.cl;
-//                 if (closure.free.len != 0) try vm.push(closure.free[free_index]);
-//             },
-//
-//             // this is used for recursive closure
-//             .current_closure => {
-//                 const closure = fm.cl;
-//                 const obj = try memory.allocateObject(vm, .{ .closure = closure });
-//                 try vm.push(.{ .obj = obj });
-//             },
-//
-//             .closure => {
-//                 const index = std.mem.readInt(u16, instructions[ip + 1 ..][0..2], .big);
-//                 const num_free = std.mem.readInt(u8, instructions[ip + 3 ..][0..1], .big);
-//                 fm.ip += 3;
-//
-//                 var closure = &vm.constants[index];
-//                 var frees = try vm.allocator.alloc(Value, num_free);
-//                 errdefer vm.allocator.free(frees);
-//
-//                 for (0..num_free) |i| {
-//                     frees[i] = vm.stack[vm.sp - num_free + i];
-//                 }
-//                 vm.sp = vm.sp - num_free;
-//
-//                 closure.obj.type.closure.free = frees;
-//
-//                 try vm.push(closure.*);
-//             },
-//
-//             .type => {
-//                 const decl_len = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-//                 const fields_len = std.mem.readInt(u8, instructions[ip + 2 ..][0..1], .big);
-//                 const type_type = std.mem.readInt(u8, instructions[ip + 3 ..][0..1], .big);
-//
-//                 fm.ip += 3;
-//
-//                 var struct_type: Object.BuiltinType = .{
-//                     .type = @enumFromInt(type_type),
-//                     .fields = .init(vm.allocator),
-//                 };
-//                 errdefer struct_type.fields.deinit();
-//
-//                 const start_index = vm.sp - (decl_len + fields_len - 1) * 2;
-//                 const end_index = vm.sp;
-//                 var i = start_index;
-//                 struct_type.name = vm.stack[i - 1].tag;
-//
-//                 switch (struct_type.type) {
-//                     .@"struct" => while (i < end_index) : (i += 2) {
-//                         const name = vm.stack[i].tag;
-//                         const value = vm.stack[i + 1];
-//                         try struct_type.fields.put(name, value);
-//                     },
-//                     .@"enum" => {
-//                         var id: usize = 0;
-//                         struct_type.decl = .init(vm.allocator);
-//                         // fields
-//                         l: while (i < end_index) : (i += 2) {
-//                             const name = vm.stack[i].tag;
-//                             const value = vm.stack[i + 1];
-//                             try struct_type.fields.put(name, .{
-//                                 .enumtag = .{
-//                                     .tag = name,
-//                                     .id = id,
-//                                     // copy???
-//                                     .from = &struct_type,
-//                                     // .ptr = &(struct_type.decl.?),
-//                                 },
-//                             });
-//                             try struct_type.decl.?.put(name, value);
-//                             id += 1;
-//                             if (id > fields_len) break :l;
-//                         }
-//                         // methods
-//                         while (i < end_index) : (i += 2) {
-//                             const name = vm.stack[i].tag;
-//                             const value = vm.stack[i + 1];
-//                             try struct_type.fields.put(name, value);
-//                         }
-//                     },
-//                     else => {
-//                         return vm.newError("Error type not implemented", .{});
-//                     },
-//                 }
-//
-//                 const obj = try memory.allocateObject(vm, .{ .type = struct_type });
-//                 errdefer vm.allocator.destroy(obj);
-//                 // vm.sp -= 1;
-//                 try vm.push(.{ .obj = obj });
-//             },
-//
-//             .instance => {
-//                 const fields_number = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-//                 fm.ip += 1;
-//
-//                 const value_type = &vm.stack[vm.sp - 1 - fields_number * 2].obj.type.type;
-//
-//                 var instance: Object.Instance = .{
-//                     .type = value_type,
-//                     .fields = .init(vm.allocator),
-//                 };
-//                 errdefer instance.fields.deinit();
-//
-//                 // default values
-//                 var iter = value_type.fields.iterator();
-//                 while (iter.next()) |entry| {
-//                     try instance.fields.put(entry.key_ptr.*, entry.value_ptr.*);
-//                 }
-//
-//                 // user define values
-//                 const start_index = vm.sp - fields_number * 2;
-//                 const end_index = vm.sp;
-//                 var i = start_index;
-//                 // number of fields
-//                 var f: usize = 1;
-//                 while (i < end_index) : (i += 2) {
-//                     const name = vm.stack[i].tag;
-//                     const value = vm.stack[i + 1];
-//                     if (!value_type.fields.contains(name)) {
-//                         return vm.newError("struct {s} have no field called {s}", .{ value_type.name orelse "annon", name });
-//                     }
-//                     try instance.fields.put(name, value);
-//                     f += 2;
-//                 }
-//
-//                 const obj = try memory.allocateObject(vm, .{ .instance = instance });
-//                 errdefer vm.allocator.destroy(obj);
-//                 // is not clear why, but works!
-//                 // TODO: why reassign a field in a struct needs this?
-//                 vm.sp -= f;
-//
-//                 try vm.push(.{ .obj = obj });
-//             },
-//
-//             // TODO: better method call logic
-//             .call => {
-//                 const args_number = std.mem.readInt(u8, instructions[ip + 1 ..][0..1], .big);
-//                 fm.ip += 1;
-//
-//                 const caller_value = vm.stack[vm.sp - 1 - args_number];
-//
-//                 switch (caller_value) {
-//                     .enumtag => |et| {
-//                         if (et.from.decl) |decl| {
-//                             const value = decl.get(et.tag) orelse .null;
-//                             try vm.push(value);
-//                             continue;
-//                         }
-//                         try vm.push(.null);
-//                         continue;
-//                     },
-//                     .obj => |ob| switch (ob.type) {
-//                         .decl => |func| {
-//                             const bp: isize = @intCast(vm.sp - args_number);
-//
-//                             if (func.method) |self| {
-//                                 if (args_number + 1 != func.num_parameters) {
-//                                     return vm.newError("decl: Arguments Mismatched", .{});
-//                                 }
-//
-//                                 try vm.push(.{ .obj = self });
-//
-//                                 // BIG FUCK ME!
-//                                 if (args_number + 1 > 1) {
-//                                     std.mem.rotate(Value, vm.stack[vm.sp - args_number - 1 .. vm.sp], args_number);
-//                                 }
-//
-//                                 // the null, first arg will be the self obj
-//                                 const frame: Frame = .init(.{ .func = func }, bp);
-//                                 vm.pushFrame(frame);
-//                                 fm = vm.currentFrame();
-//                                 // the call stack space allocation
-//                                 vm.sp = @as(usize, @intCast(fm.bp)) + func.num_locals;
-//                                 continue;
-//                             }
-//
-//                             if (args_number != func.num_parameters) {
-//                                 return vm.newError("Function {s}: Arguments Mismatched: expect {}, got {} ", .{ func.name orelse "annon", func.num_parameters, args_number });
-//                             }
-//
-//                             const frame: Frame = .init(.{ .func = func }, bp);
-//                             vm.pushFrame(frame);
-//                             fm = vm.currentFrame();
-//                             // the call stack space allocation
-//                             vm.sp = @as(usize, @intCast(fm.bp)) + func.num_locals;
-//                             continue;
-//                         },
-//
-//                         .function => |func| {
-//                             if (args_number != func.num_parameters) {
-//                                 return vm.newError("Function {s}: Arguments Mismatched: expect {}, got {} ", .{ func.name orelse "annon", func.num_parameters, args_number });
-//                             }
-//
-//                             const bp: isize = @intCast(vm.sp - args_number);
-//                             const frame: Frame = .init(.{ .func = func }, bp);
-//                             vm.pushFrame(frame);
-//                             fm = vm.currentFrame();
-//                             // the call stack space allocation
-//                             vm.sp = @as(usize, @intCast(fm.bp)) + func.num_locals;
-//                             continue;
-//                         },
-//
-//                         .closure => |cl| {
-//                             const func = cl.func;
-//                             if (args_number != func.num_parameters) {
-//                                 return vm.newError("Closure Arguments Mismatched", .{});
-//                             }
-//
-//                             const bp: isize = @intCast(vm.sp - args_number);
-//                             const frame: Frame = .init(.{ .func = func }, bp);
-//                             vm.pushFrame(frame);
-//                             fm = vm.currentFrame();
-//                             // the call stack space allocation
-//                             vm.sp = @as(usize, @intCast(frame.bp)) + func.num_locals;
-//                             continue;
-//                         },
-//
-//                         else => {
-//                             return vm.newError("Caller is not a Function: got {s}", .{caller_value.name()});
-//                         },
-//                     },
-//
-//                     .builtin => |bui| {
-//                         const args = vm.stack[vm.sp - args_number .. vm.sp];
-//                         vm.sp = vm.sp - args_number - 1;
-//                         try vm.push(try bui.function(vm, args));
-//                     },
-//
-//                     else => {
-//                         return vm.newError("Caller is not a Function: got {s}", .{caller_value.name()});
-//                     },
-//                 }
-//             },
-//         }
-//     }
-// }
-
-fn newFunction(vm: *Vm, fm: *Frame, args_number: usize, func: *const Object.CompiledFn) !void {
-    if (args_number != func.num_parameters) {
-        return vm.newError("Function {s}: Arguments Mismatched: expect {}, got {} ", .{ func.name orelse "annon", func.num_parameters, args_number });
-    }
-    const bp: isize = @intCast(vm.sp - args_number);
-    const frame: Frame = .init(.{ .func = func.* }, bp);
-    vm.pushFrame(frame);
-    fm = vm.currentFrame();
-    // the call stack space allocation
-    vm.sp = @as(usize, @intCast(fm.bp)) + func.num_locals;
-}
-
 const std = @import("std");
 const code = @import("code.zig");
 const Compiler = @import("Compiler.zig");
-const memory = @import("memory.zig");
+const gc = @import("gc.zig");
 const Object = @import("Object.zig");
 const Value = Object.Value;
 const operation = @import("operation.zig");

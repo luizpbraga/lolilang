@@ -2,39 +2,36 @@ const Vm = @import("Vm.zig");
 const std = @import("std");
 const Object = @import("Object.zig");
 const Compiler = @import("Compiler.zig");
+const Allocator = std.mem.Allocator;
 
-pub fn allocateObject(vm: *Vm, tag: Object.Type) !*Object {
-    const allocator = vm.allocator;
-    const obj = try allocator.create(Object);
-    errdefer allocator.destroy(obj);
-
+pub fn allocObject(gpa: Allocator, vm: *Vm, tag: Object.Type) !*Object {
+    const obj = try gpa.create(Object);
+    errdefer gpa.destroy(obj);
     vm.bytes_allocated += @sizeOf(*Object);
     // if (vm.bytes_allocated > ) {
     if (vm.bytes_allocated > Vm.GC_MAX) {
-        try collectGarbage(vm);
-        vm.t = std.time.timestamp() - vm.t;
-        if (vm.t < 60) {
-            Vm.GC_MAX = 5 * Vm.GC_MAX;
-            vm.t = std.time.timestamp();
-        }
+        try collectGarbage(gpa, vm);
+        // TODO
+        // vm.t = std.time.timestamp() - vm.t;
+        // if (vm.t < 60) {
+        //     Vm.GC_MAX = 5 * Vm.GC_MAX;
+        //     vm.t = std.time.timestamp();
+        // }
     }
-
     obj.type = tag;
     obj.marked = false;
-
     obj.next = vm.objects;
     vm.objects = obj;
-
     return obj;
 }
 
-pub fn collectGarbage(vm: *Vm) !void {
-    try markRoots(vm);
-    try traceReference(vm);
-    sweep(vm);
+pub fn collectGarbage(gpa: Allocator, vm: *Vm) !void {
+    try markRoots(gpa, vm);
+    try traceReference(gpa, vm);
+    sweep(gpa, vm);
 }
 
-pub fn sweep(vm: *Vm) void {
+pub fn sweep(gpa: Allocator, vm: *Vm) void {
     var previous: ?*Object = null;
     var obj: ?*Object = vm.objects;
 
@@ -55,23 +52,23 @@ pub fn sweep(vm: *Vm) void {
             vm.objects = obj;
         }
 
-        freeObject(vm, unreached);
+        freeObject(gpa, vm, unreached);
     }
 }
 
-pub fn freeObject(vm: *Vm, obj: *Object) void {
+pub fn freeObject(gpa: Allocator, vm: *Vm, obj: *Object) void {
     defer vm.bytes_allocated -= @sizeOf(*Object);
-    defer vm.allocator.destroy(obj);
+    defer gpa.destroy(obj);
     switch (obj.type) {
-        .string => |string| {
+        .string => |*string| {
             // vm.allocator.free(str);
             // vm.allocator.destroy(obj);
-            string.deinit();
+            string.deinit(gpa);
         },
 
-        .array => |array| {
+        .array => |*array| {
             // vm.allocator.free(array);
-            array.deinit();
+            array.deinit(gpa);
         },
 
         .hash => |*hash| {
@@ -80,12 +77,12 @@ pub fn freeObject(vm: *Vm, obj: *Object) void {
         },
 
         .function, .decl => |func| {
-            vm.allocator.free(func.instructions);
+            gpa.free(func.instructions);
         },
 
         .closure => |cl| {
-            vm.allocator.free(cl.func.instructions);
-            vm.allocator.free(cl.free);
+            gpa.free(cl.func.instructions);
+            gpa.free(cl.free);
         },
 
         .type => |*ty| {
@@ -98,54 +95,54 @@ pub fn freeObject(vm: *Vm, obj: *Object) void {
         },
 
         .namespace => |*ns| {
-            ns.map.deinit();
-            vm.allocator.destroy(ns.map);
+            ns.map.deinit(gpa);
+            gpa.destroy(ns.map);
         },
     }
 }
 
-pub fn traceReference(vm: *Vm) !void {
+pub fn traceReference(gpa: Allocator, vm: *Vm) !void {
     while (vm.gray_count > 0) {
         vm.gray_count -= 1;
         const obj = vm.gray_stack.orderedRemove(vm.gray_count);
-        try blackenObject(vm, obj);
+        try blackenObject(gpa, vm, obj);
     }
 }
 
-pub fn blackenObject(vm: *Vm, obj: *Object) !void {
+pub fn blackenObject(gpa: Allocator, vm: *Vm, obj: *Object) !void {
     switch (obj.type) {
         .array => |array| {
             for (array.items) |element| {
-                try markValue(vm, element);
+                try markValue(gpa, vm, element);
             }
         },
         else => {},
     }
 }
 
-pub fn markRoots(vm: *Vm) !void {
+pub fn markRoots(gpa: Allocator, vm: *Vm) !void {
     for (vm.stack) |values| {
-        try markValue(vm, values);
+        try markValue(gpa, vm, values);
     }
 
     for (vm.globals) |globals| {
         if (globals) |glob| {
-            try markValue(vm, glob);
+            try markValue(gpa, vm, glob);
         }
     }
 }
-pub fn markValue(vm: *Vm, value: Object.Value) !void {
+
+pub fn markValue(gpa: Allocator, vm: *Vm, value: Object.Value) !void {
     if (value == .obj) {
-        return try markObject(vm, value.obj);
+        return try markObject(gpa, vm, value.obj);
     }
 }
 
 // mark heap objects
-pub fn markObject(vm: *Vm, ob: *Object) !void {
+pub fn markObject(gpa: std.mem.Allocator, vm: *Vm, ob: *Object) !void {
     if (ob.marked) return;
-
     ob.marked = true;
-    try vm.gray_stack.insert(vm.gray_count, ob);
+    try vm.gray_stack.insert(gpa, vm.gray_count, ob);
     vm.gray_count += 1;
 }
 

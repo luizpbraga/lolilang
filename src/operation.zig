@@ -1,18 +1,18 @@
 const std = @import("std");
+const gc = @import("gc.zig");
 const code = @import("code.zig");
-const memory = @import("memory.zig");
+const Vm = @import("Vm.zig");
 const Object = @import("Object.zig");
 const Value = Object.Value;
-const Vm = @import("Vm.zig");
 const builtins = @import("builtins.zig");
 
 /// [], .
-pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
+pub fn executeIndex(gpa: std.mem.Allocator, vm: *Vm, left: *const Value, index: *const Value) !void {
     if (left.* == .complex) {
         const z = left.complex;
 
         if (index.* != .tag) {
-            return vm.newError("Invalid Index Operation: complex number is not indexable", .{});
+            return vm.newError(gpa, "Invalid Index Operation: complex number is not indexable", .{});
         }
 
         if (std.mem.eql(u8, index.tag, "real")) {
@@ -23,43 +23,43 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
             return vm.push(.{ .float = z.imag });
         }
 
-        return vm.newError("Invalid Index Operation", .{});
+        return vm.newError(gpa, "Invalid Index Operation", .{});
     }
 
     if (left.* != .obj) {
         if (index.* == .tag) {
-            return vm.newError("Invalid Index Operation on type '{s}' with index/tag '{s}'", .{ left.name(), index.tag });
+            return vm.newError(gpa, "Invalid Index Operation on type '{s}' with index/tag '{s}'", .{ left.name(), index.tag });
         } else {
-            return vm.newError("Invalid Index Operation on type '{s}' with index/tag '{s}'", .{ left.name(), index.name() });
+            return vm.newError(gpa, "Invalid Index Operation on type '{s}' with index/tag '{s}'", .{ left.name(), index.name() });
         }
     }
 
     switch (left.obj.type) {
         .namespace => |ns| {
             if (index.* != .tag) {
-                return vm.newError("Invalid Index Operation: namespace is not indexable", .{});
+                return vm.newError(gpa, "Invalid Index Operation: namespace is not indexable", .{});
             }
 
             const variable = index.tag;
             if (!ns.map.store.contains(variable)) {
-                return vm.newError("variable '{s}' was not declared at namespace {s}", .{ index.tag, ns.name });
+                return vm.newError(gpa, "variable '{s}' was not declared at namespace {s}", .{ index.tag, ns.name });
             }
 
             const symbol = ns.map.store.getPtr(variable).?;
             const idx = if (symbol.public) symbol.index else {
-                return vm.newError("Symbol '{s}' from namespace '{s}' was not marked as public", .{ symbol.name, ns.name });
+                return vm.newError(gpa, "Symbol '{s}' from namespace '{s}' was not marked as public", .{ symbol.name, ns.name });
             };
 
             return vm.push(vm.globals[idx].?);
         },
         .instance => |ins| {
             if (index.* != .tag) {
-                return vm.newError("Invalid Index Operation: instance is not indexable", .{});
+                return vm.newError(gpa, "Invalid Index Operation: instance is not indexable", .{});
                 // return try vm.push(.null);
             }
 
             if (!ins.fields.contains(index.tag)) {
-                return vm.newError("No field named '{s}' in type {s}", .{ index.tag, ins.type.name orelse "anon" });
+                return vm.newError(gpa, "No field named '{s}' in type {s}", .{ index.tag, ins.type.name orelse "anon" });
             }
 
             const value = ins.fields.get(index.tag) orelse .null;
@@ -73,9 +73,9 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
         },
         .type => |y| {
             // if (y.type != .@"enum") {
-            //     return vm.newError("Struct Not Indexable", .{});
+            //     return vm.newError(gpa, "Struct Not Indexable", .{});
             // }
-            const value = y.fields.get(index.tag) orelse return vm.newError("no declaration/tag named '{s}' in type {s}", .{ index.tag, y.name orelse "anon" });
+            const value = y.fields.get(index.tag) orelse return vm.newError(gpa, "no declaration/tag named '{s}' in type {s}", .{ index.tag, y.name orelse "anon" });
             return try vm.push(value);
         },
         .string => |string| {
@@ -92,7 +92,7 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
                     const char = string.items[@intCast(i)];
                     return try vm.push(.{ .char = char });
                 }
-                return vm.newError("Index Out of Bound: string len is {}, index is {}", .{ len, i });
+                return vm.newError(gpa, "Index Out of Bound: string len is {}, index is {}", .{ len, i });
             }
 
             // TODO: optimize
@@ -111,7 +111,7 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
                 }
 
                 const str = string.items[start..end];
-                const value = try builtins.newString(vm, str);
+                const value = try builtins.newString(gpa, vm, str);
                 return try vm.push(value);
             }
         },
@@ -134,7 +134,7 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
                     const l: i32 = @intCast(len);
                     return try vm.push(array.items[@intCast(l + i)]);
                 }
-                return vm.newError("Index Out of Bound: array len is {}, index is {}", .{ len, i });
+                return vm.newError(gpa, "Index Out of Bound: array len is {}, index is {}", .{ len, i });
             }
 
             // optimize!
@@ -148,7 +148,7 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
                 }
 
                 if (start >= array.items.len) {
-                    return vm.newError("Index Out of Bound: array len is {}, index is {}", .{ array.items.len, start });
+                    return vm.newError(gpa, "Index Out of Bound: array len is {}, index is {}", .{ array.items.len, start });
                     // start = array.items.len;
                 }
 
@@ -156,10 +156,10 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
                     return try vm.push(array.items[start]);
                 }
 
-                var arr = try std.ArrayList(Value).initCapacity(vm.allocator, end - start);
-                errdefer arr.deinit();
-                try arr.appendSlice(array.items[start..end]);
-                const obj = try memory.allocateObject(vm, .{ .array = arr });
+                var arr = try std.ArrayList(Value).initCapacity(gpa, end - start);
+                errdefer arr.deinit(gpa);
+                try arr.appendSlice(gpa, array.items[start..end]);
+                const obj = try gc.allocObject(gpa, vm, .{ .array = arr });
                 return try vm.push(.{ .obj = obj });
             }
         },
@@ -172,41 +172,41 @@ pub fn executeIndex(vm: *Vm, left: *const Value, index: *const Value) !void {
             return vm.push(pair.value);
         },
 
-        else => return vm.newError("Invalid Index Operation on type '{s}'", .{left.name()}),
+        else => return vm.newError(gpa, "Invalid Index Operation on type '{s}'", .{left.name()}),
     }
 
     return try vm.push(.null);
 }
 
-pub fn setIndex(vm: *Vm, left: *Value, index: Value, value: Value) !void {
+pub fn setIndex(gpa: std.mem.Allocator, vm: *Vm, left: *Value, index: Value, value: Value) !void {
     switch (left.*) {
         .obj => |ob| switch (ob.type) {
             .instance => |*ins| {
                 if (index == .tag) {
                     if (!ins.fields.contains(index.tag)) {
-                        return vm.newError("No field named '{s}' in type {s}", .{ index.tag, ins.type.name orelse "anon" });
+                        return vm.newError(gpa, "No field named '{s}' in type {s}", .{ index.tag, ins.type.name orelse "anon" });
                     }
                     try ins.fields.put(index.tag, value);
                     return vm.push(.null);
                 }
-                return vm.newError("Invalid Index Operation <3", .{});
+                return vm.newError(gpa, "Invalid Index Operation <3", .{});
             },
 
             .string => |string| {
-                if (index != .integer) return vm.newError("Invalid Index Type", .{});
-                if (value != .char) return vm.newError("Invalid String Assigmente, expect char, got {s}", .{value.name()});
+                if (index != .integer) return vm.newError(gpa, "Invalid Index Type", .{});
+                if (value != .char) return vm.newError(gpa, "Invalid String Assigmente, expect char, got {s}", .{value.name()});
 
                 const i = index.integer;
                 const len = string.items.len;
 
-                if (i < 0 or i >= len) return vm.newError("Index Out of Bound", .{});
+                if (i < 0 or i >= len) return vm.newError(gpa, "Index Out of Bound", .{});
 
                 string.items[@intCast(i)] = value.char;
                 return try vm.push(.null);
             },
 
             .array => |array| {
-                if (index != .integer) return vm.newError("Invalid Index Type", .{});
+                if (index != .integer) return vm.newError(gpa, "Invalid Index Type", .{});
 
                 const i = index.integer;
                 const len = array.items.len;
@@ -215,7 +215,7 @@ pub fn setIndex(vm: *Vm, left: *Value, index: Value, value: Value) !void {
                     array.items[@intCast(i)] = value;
                     return vm.push(.null);
                 }
-                return vm.newError("Index Out of Bound", .{});
+                return vm.newError(gpa, "Index Out of Bound", .{});
             },
 
             .hash => |*hash| {
@@ -228,18 +228,18 @@ pub fn setIndex(vm: *Vm, left: *Value, index: Value, value: Value) !void {
                 // WARN: potential bug? need to generate a new key?
                 pair.value = value;
             },
-            else => return vm.newError("Invalid Index Operation: type {s} dont support filed assess", .{left.name()}),
+            else => return vm.newError(gpa, "Invalid Index Operation: type {s} dont support filed assess", .{left.name()}),
         },
 
         else => {
-            return vm.newError("Invalid Index Operation: type {s} dont support filed assess", .{left.name()});
+            return vm.newError(gpa, "Invalid Index Operation: type {s} dont support filed assess", .{left.name()});
         },
     }
 
     return try vm.push(.null);
 }
 
-pub fn executePrefix(vm: *Vm, op: code.Opcode) !void {
+pub fn executePrefix(gpa: std.mem.Allocator, vm: *Vm, op: code.Opcode) !void {
     const obj = vm.pop();
     switch (obj) {
         .integer => |integer| if (op == .min) return try vm.push(.{ .integer = -integer }),
@@ -248,10 +248,11 @@ pub fn executePrefix(vm: *Vm, op: code.Opcode) !void {
         .null => if (op == .not) return try vm.push(.null),
         else => {},
     }
-    return vm.newError("Invalid Prefix Operation", .{});
+    return vm.newError(gpa, "Invalid Prefix Operation", .{});
 }
 
-fn isString(value: *const Value) bool {
+fn isString(gpa: std.mem.Allocator, value: *const Value) bool {
+    _ = gpa; // autofix
     switch (value.*) {
         .obj => |ob| switch (ob.type) {
             .string => return true,
@@ -263,12 +264,13 @@ fn isString(value: *const Value) bool {
     return false;
 }
 
-fn isNumber(v: *Value) bool {
+fn isNumber(gpa: std.mem.Allocator, v: *Value) bool {
+    _ = gpa; // autofix
     return if (v.* == .integer or v.* == .float) true else false;
 }
 
 /// optimizar essa merda!!!!!!
-pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
+pub fn executeBinary(gpa: std.mem.Allocator, vm: *Vm, op: code.Opcode) !void {
     const right = vm.pop();
     const left = vm.pop();
 
@@ -422,40 +424,40 @@ pub fn executeBinary(vm: *Vm, op: code.Opcode) !void {
     if (right == .obj and left == .obj) {
         if (right.obj.type == .array and left.obj.type == .array) {
             if (op != .add) {
-                return vm.newError("Invalid String Operation", .{});
+                return vm.newError(gpa, "Invalid String Operation", .{});
             }
             const left_val = left.obj.type.array;
             const right_val = right.obj.type.array;
-            var array = try std.ArrayList(Value).initCapacity(vm.allocator, left_val.items.len + right_val.items.len);
-            errdefer array.deinit();
+            var array = try std.ArrayList(Value).initCapacity(gpa, left_val.items.len + right_val.items.len);
+            errdefer array.deinit(gpa);
 
-            try array.appendSlice(left_val.items);
-            try array.appendSlice(right_val.items);
+            try array.appendSlice(gpa, left_val.items);
+            try array.appendSlice(gpa, right_val.items);
 
-            const obj = try memory.allocateObject(vm, .{ .array = array });
+            const obj = try gc.allocObject(gpa, vm, .{ .array = array });
             return try vm.push(.{ .obj = obj });
         }
         if (right.obj.type == .string and left.obj.type == .string) {
             const left_val = left.obj.type.string;
             const right_val = right.obj.type.string;
             if (op != .add) {
-                return vm.newError("Invalid String Operation", .{});
+                return vm.newError(gpa, "Invalid String Operation", .{});
             }
-            var string = try std.ArrayList(u8).initCapacity(vm.allocator, left_val.items.len + right_val.items.len);
-            errdefer string.deinit();
+            var string = try std.ArrayList(u8).initCapacity(gpa, left_val.items.len + right_val.items.len);
+            errdefer string.deinit(gpa);
 
-            try string.appendSlice(left_val.items);
-            try string.appendSlice(right_val.items);
+            try string.appendSlice(gpa, left_val.items);
+            try string.appendSlice(gpa, right_val.items);
 
-            const obj = try memory.allocateObject(vm, .{ .string = string });
+            const obj = try gc.allocObject(gpa, vm, .{ .string = string });
             return try vm.push(.{ .obj = obj });
         }
     }
 
-    return vm.newError("Invalid operation '{s}' between {s} and {s}", .{ @tagName(op), left.name(), right.name() });
+    return vm.newError(gpa, "Invalid operation '{s}' between {s} and {s}", .{ @tagName(op), left.name(), right.name() });
 }
 
-pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
+pub fn executeComparison(gpa: std.mem.Allocator, vm: *Vm, op: code.Opcode) !void {
     const right = vm.pop();
     const left = vm.pop();
 
@@ -470,7 +472,7 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                 const result = switch (op) {
                     .eq => eql,
                     .neq => !eql,
-                    else => return vm.newError("Invalid operation!", .{}),
+                    else => return vm.newError(gpa, "Invalid operation!", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
@@ -486,7 +488,7 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val.id != right_val.id,
                     .gt => left_val.id > right_val.id,
                     .gte => left_val.id >= right_val.id,
-                    else => return vm.newError("Invalid operation!", .{}),
+                    else => return vm.newError(gpa, "Invalid operation!", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
@@ -498,7 +500,7 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val.id != right_val.id,
                     .gt => left_val.id > right_val.id,
                     .gte => left_val.id >= right_val.id,
-                    else => return vm.newError("Invalid operation!", .{}),
+                    else => return vm.newError(gpa, "Invalid operation!", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
@@ -511,7 +513,7 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val != right_val,
                     .land => left_val and right_val,
                     .lor => left_val or right_val,
-                    else => return vm.newError("Invalid operation", .{}),
+                    else => return vm.newError(gpa, "Invalid operation", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
@@ -525,7 +527,7 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val != right_val,
                     .gt => left_val > right_val,
                     .gte => left_val >= right_val,
-                    else => return vm.newError("Invalid operation 1", .{}),
+                    else => return vm.newError(gpa, "Invalid operation 1", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
@@ -537,7 +539,7 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val != right_val0,
                     .gt => left_val > right_val0,
                     .gte => left_val >= right_val0,
-                    else => return vm.newError("Invalid operation", .{}),
+                    else => return vm.newError(gpa, "Invalid operation", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
@@ -552,7 +554,7 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val != right_val,
                     .gt => left_val > right_val,
                     .gte => left_val >= right_val,
-                    else => return vm.newError("Invalid operation", .{}),
+                    else => return vm.newError(gpa, "Invalid operation", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
@@ -566,7 +568,7 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val != right_val,
                     .gt => left_val > right_val,
                     .gte => left_val >= right_val,
-                    else => return vm.newError("Invalid operation", .{}),
+                    else => return vm.newError(gpa, "Invalid operation", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
@@ -578,11 +580,11 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                     .neq => left_val != right_val0,
                     .gt => left_val > right_val0,
                     .gte => left_val >= right_val0,
-                    else => return vm.newError("Invalid operation", .{}),
+                    else => return vm.newError(gpa, "Invalid operation", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
-            else => {}, //return vm.newError("Invalid operation", .{}),
+            else => {}, //return vm.newError(gpa, "Invalid operation", .{}),
         },
 
         .null => switch (right) {
@@ -590,11 +592,11 @@ pub fn executeComparison(vm: *Vm, op: code.Opcode) !void {
                 const result = switch (op) {
                     .eq => right == .null and left == .null,
                     .neq => right != .null or left != .null,
-                    else => return vm.newError("Invalid operation", .{}),
+                    else => return vm.newError(gpa, "Invalid operation", .{}),
                 };
                 return try vm.push(.{ .boolean = result });
             },
-            else => {}, //return vm.newError("Invalid operation", .{}),
+            else => {}, //return vm.newError(gpa, "Invalid operation", .{}),
         },
 
         .obj => |left_val_obj| switch (right) {

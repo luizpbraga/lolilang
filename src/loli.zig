@@ -4,56 +4,53 @@ const Parser = @import("Parser.zig");
 const Compiler = @import("Compiler.zig");
 const Vm = @import("Vm.zig");
 const Error = @import("Error.zig");
+const gc = @import("gc.zig");
 
 pub var emitbytecode = false;
 
-pub fn runVm(allocator: std.mem.Allocator, input: []const u8, err: *Error) !void {
-    var lexer: Lexer = .init(input);
-    var parser: Parser = .init(allocator, &lexer, err);
-    defer parser.deinit();
-    var stderr = std.fs.File.stderr();
+pub fn runVm(gpa: std.mem.Allocator, input: []const u8) !void {
+    var stderr: std.fs.File = .stderr();
     defer stderr.close();
 
-    const node = try parser.parse();
+    var errors: Error = .{};
+    var lexer: Lexer = .init(input);
+    var parser: Parser = .init(&lexer, &errors);
 
-    if (parser.errors.msg.items.len != 0) {
-        try stderr.writeAll(
-            parser.errors.msg.items,
-        );
-        return;
+    var arena_allocator: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_allocator.deinit();
+    const arena = arena_allocator.allocator();
+
+    const node = try parser.parse(arena);
+    if (!errors.check()) {
+        return try errors.writeError(stderr);
     }
 
-    var compiler: Compiler = try .init(allocator, err);
-    defer compiler.deinit();
+    var compiler: Compiler = try .init(gpa, &errors);
+    defer compiler.deinit(gpa);
 
-    compiler.compile(node) catch |comp_err|
+    compiler.compile(gpa, node) catch |comp_err|
         return switch (comp_err) {
-            error.Compilation => try stderr.writeAll(
-                compiler.errors.msg.items,
-            ),
+            error.Compilation => try errors.writeError(stderr),
             else => comp_err,
         };
 
-    // // assert the bytecodes
-    var code = try compiler.bytecode();
-    defer code.deinit(&compiler);
+    var code = try compiler.bytecode(gpa);
+    defer code.deinit(gpa);
 
-    if (emitbytecode) {
-        const fmt = try @import("code.zig").formatInstruction(allocator, code.instructions);
-        defer allocator.free(fmt);
-        std.log.info("token postion:\n{any}", .{code.positions});
-        std.log.info("bytecode instructions:\n{s}", .{fmt});
-    }
+    // if (emitbytecode) {
+    //     const fmt = try @import("code.zig").formatInstruction(gpa, code.instructions);
+    //     defer gpa.free(fmt);
+    //     std.log.info("token postion:\n{any}", .{code.positions});
+    //     std.log.info("bytecode instructions:\n{s}", .{fmt});
+    // }
 
-    var vm: Vm = try .init(allocator, &code, err);
-    defer vm.deinit();
+    var vm: Vm = try .init(gpa, &code, &errors);
+    defer vm.deinit(gpa);
 
-    vm.run() catch |vm_err| {
-        try @import("memory.zig").collectGarbage(&vm);
+    vm.run(gpa) catch |vm_err| {
+        try gc.collectGarbage(gpa, &vm);
         return switch (vm_err) {
-            error.Runtime => try stderr.writeAll(
-                vm.errors.msg.items,
-            ),
+            error.Runtime => try errors.writeError(stderr),
             else => vm_err,
         };
     };

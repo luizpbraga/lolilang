@@ -1,10 +1,11 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 
 const Error = @This();
 
-msg: std.ArrayList(u8),
-input: []const u8,
-file: []const u8,
+msg: std.ArrayList(u8) = .{},
+input: []const u8 = "",
+file: []const u8 = "",
 
 pub const BOLD = "\x1b[1m";
 pub const RED = "\x1b[31m";
@@ -25,10 +26,18 @@ const Type = enum {
     }
 };
 
-pub fn deinit(err: *Error) void {
-    err.msg.deinit();
+pub fn deinit(err: *Error, arena: Allocator) void {
+    err.msg.deinit(arena);
 }
 
-pub fn append(err: *Error, comptime fmt: []const u8, args: anytype) !void {
-    try err.msg.writer().print(fmt, args);
+pub fn append(err: *Error, arena: Allocator, comptime fmt: []const u8, args: anytype) !void {
+    try err.msg.print(arena, fmt, args);
+}
+
+pub fn check(err: *Error) bool {
+    return err.msg.items.len == 0;
+}
+
+pub fn writeError(err: *Error, stderr: std.fs.File) !void {
+    try stderr.writeAll(err.msg.items);
 }

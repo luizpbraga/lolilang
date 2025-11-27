@@ -12,6 +12,10 @@ pub fn init(cl: Object.Closure, bp: isize) Frame {
     return .{ .cl = cl, .ip = -1, .bp = bp };
 }
 
+pub fn initMain(frames: []Frame, instruc: []u8) void {
+    frames[0] = .init(.{ .func = .{ .instructions = instruc } }, 0);
+}
+
 pub fn instructions(f: *Frame) []u8 {
     return f.cl.func.instructions;
 }

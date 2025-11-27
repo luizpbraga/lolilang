@@ -1,9 +1,0 @@
-x := "ola mundo!"
-
-map := {
-  .x: 10
-}
-
-map.x += 1
-
-@print(x, 123, 3.333, map)

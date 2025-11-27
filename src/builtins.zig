@@ -1,52 +1,53 @@
 const std = @import("std");
+const Vm = @import("Vm.zig");
+const gc = @import("gc.zig");
 const Object = @import("Object.zig");
 const Value = Object.Value;
-const memory = @import("memory.zig");
-const Vm = @import("Vm.zig");
+const Allocator = std.mem.Allocator;
 
 pub const builtin_functions = [_]Object.Builtin{
-    .{ .name = "@print", .function = Builtin.print },
-    .{ .name = "@length", .function = Builtin.length },
-    .{ .name = "@append", .function = Builtin.append },
-    .{ .name = "@pop", .function = Builtin.pop },
-    .{ .name = "@read", .function = Builtin.read },
-    .{ .name = "@write", .function = Builtin.write },
-    .{ .name = "@typeOf", .function = Builtin.typeOf },
-    .{ .name = "@asChar", .function = Builtin.asChar },
-    .{ .name = "@as", .function = Builtin.as },
-    .{ .name = "@panic", .function = Builtin.panic },
-    .{ .name = "@import", .function = Builtin.import },
-    .{ .name = "@new", .function = Builtin.new },
-    .{ .name = "@parse", .function = Builtin.parse },
     .{ .name = "@abs", .function = Builtin.abs },
-    .{ .name = "@complex", .function = Builtin.complex },
-    .{ .name = "@fetch", .function = Builtin.fetch },
+    .{ .name = "@append", .function = Builtin.append },
+    .{ .name = "@args", .function = Builtin.cmdLineArgs },
+    .{ .name = "@as", .function = Builtin.as },
+    .{ .name = "@asChar", .function = Builtin.asChar },
     .{ .name = "@assert", .function = Builtin.assert },
-    .{ .name = "@time", .function = Builtin.time },
-    .{ .name = "@rand", .function = Builtin.rand },
-    .{ .name = "@tagName", .function = Builtin.tagName },
+    .{ .name = "@complex", .function = Builtin.complex },
+    .{ .name = "@cos", .function = Builtin.cos },
+    .{ .name = "@fetch", .function = Builtin.fetch },
     .{ .name = "@frame", .function = Builtin.frameF },
+    .{ .name = "@import", .function = Builtin.import },
+    .{ .name = "@length", .function = Builtin.length },
+    .{ .name = "@new", .function = Builtin.new },
+    .{ .name = "@panic", .function = Builtin.panic },
+    .{ .name = "@parse", .function = Builtin.parse },
+    .{ .name = "@pop", .function = Builtin.pop },
+    .{ .name = "@print", .function = Builtin.print },
+    .{ .name = "@rand", .function = Builtin.rand },
+    .{ .name = "@read", .function = Builtin.read },
     .{ .name = "@resume", .function = Builtin.resumeF },
+    .{ .name = "@sin", .function = Builtin.sin },
     .{ .name = "@suspend", .function = Builtin.suspendF },
     .{ .name = "@syscall", .function = Builtin.syscall },
-    .{ .name = "@sin", .function = Builtin.sin },
-    .{ .name = "@cos", .function = Builtin.cos },
+    .{ .name = "@tagName", .function = Builtin.tagName },
     .{ .name = "@tan", .function = Builtin.tan },
-    .{ .name = "@args", .function = Builtin.cmdLineArgs },
+    .{ .name = "@time", .function = Builtin.time },
+    .{ .name = "@typeOf", .function = Builtin.typeOf },
+    .{ .name = "@write", .function = Builtin.write },
 };
 
 const LoliType = enum {
-    int,
-    float,
     bool,
     char,
+    float,
+    int,
 };
 
 const tagtype = std.StaticStringMap(LoliType).initComptime(.{
-    .{ "int", .int },
-    .{ "float", .float },
     .{ "bool", .bool },
     .{ "char", .char },
+    .{ "float", .float },
+    .{ "int", .int },
 });
 
 fn defaultValue(ty: LoliType) Value {
@@ -55,41 +56,40 @@ fn defaultValue(ty: LoliType) Value {
         .float => .{ .float = 0 },
         .char => .{ .char = 0 },
         .bool => .{ .boolean = true },
-        // .string => try newString(vm, null),
+        // .string => try newString(gpa,vm, null),
     };
 }
 
-pub fn newString(vm: *Vm, value: ?[]const u8) !Value {
+pub fn newString(gpa: Allocator, vm: *Vm, value: ?[]const u8) !Value {
     const bytes = value orelse "";
-
-    var string = try std.ArrayList(u8).initCapacity(vm.allocator, bytes.len);
-    errdefer string.deinit();
-    try string.appendSlice(bytes);
-
-    const obj = try memory.allocateObject(vm, .{ .string = string });
+    var string: std.ArrayList(u8) = try .initCapacity(gpa, bytes.len);
+    errdefer string.deinit(gpa);
+    try string.appendSlice(gpa, bytes);
+    const obj = try gc.allocObject(gpa, vm, .{ .string = string });
     return .{ .obj = obj };
 }
 
 /// TODO: THIS NEED A BIIIIG REWRITE
 const Builtin = struct {
-    pub fn printf(vm: *Vm, values: []const Value) !Value {
+    pub fn printf(gpa: Allocator, vm: *Vm, values: []const Value) !Value {
+        _ = gpa; // autofix
         _ = vm;
         _ = values;
         return .null;
     }
 
-    pub fn cmdLineArgs(vm: *Vm, _: []const Value) !Value {
+    pub fn cmdLineArgs(gpa: Allocator, vm: *Vm, _: []const Value) !Value {
         var iter = std.process.args();
         // skip path and file name
         _ = iter.next();
         _ = iter.next();
 
-        var array: std.ArrayList(Value) = .init(vm.allocator);
-        errdefer array.deinit();
+        var array: std.ArrayList(Value) = .empty;
+        errdefer array.deinit(gpa);
 
         while (iter.next()) |item| {
-            const string = try newString(vm, item);
-            try array.append(string);
+            const string = try newString(gpa, vm, item);
+            try array.append(gpa, string);
         }
 
         // we can not iterate over nulls, right?
@@ -98,78 +98,81 @@ const Builtin = struct {
             return .null;
         }
 
-        const obj = try memory.allocateObject(vm, .{ .array = array });
+        const obj = try gc.allocObject(gpa, vm, .{ .array = array });
         return .{ .obj = obj };
     }
 
-    pub fn cos(vm: *Vm, args: []const Value) !Value {
+    pub fn cos(gpa: Allocator, vm: *Vm, args: []const Value) !Value {
         const arg: f32 = switch (args[0]) {
             .float => |f| f,
             .integer => |i| @floatFromInt(i),
             .char => |c| @floatFromInt(c),
-            else => return vm.newError("Invalid Argument; ", .{}),
+            else => return vm.newError(gpa, "Invalid Argument; ", .{}),
         };
         return .{ .float = @cos(arg) };
     }
 
-    pub fn sin(vm: *Vm, args: []const Value) !Value {
+    pub fn sin(gpa: Allocator, vm: *Vm, args: []const Value) !Value {
         const arg: f32 = switch (args[0]) {
             .float => |f| f,
             .integer => |i| @floatFromInt(i),
             .char => |c| @floatFromInt(c),
-            else => return vm.newError("Invalid Argument; ", .{}),
+            else => return vm.newError(gpa, "Invalid Argument; ", .{}),
         };
         return .{ .float = @sin(arg) };
     }
 
-    pub fn tan(vm: *Vm, args: []const Value) !Value {
+    pub fn tan(gpa: Allocator, vm: *Vm, args: []const Value) !Value {
         const arg: f32 = switch (args[0]) {
             .float => |f| f,
             .integer => |i| @floatFromInt(i),
             .char => |c| @floatFromInt(c),
-            else => return vm.newError("Invalid Argument; ", .{}),
+            else => return vm.newError(gpa, "Invalid Argument; ", .{}),
         };
         return .{ .float = @tan(arg) };
     }
 
     /// FIX: segfault
-    pub fn syscall(vm: *Vm, args: []const Value) !Value {
-        const argv = try vm.allocator.alloc([]const u8, args.len);
-        defer vm.allocator.free(argv);
+    pub fn syscall(gpa: Allocator, vm: *Vm, args: []const Value) !Value {
+        const argv = try gpa.alloc([]const u8, args.len);
+        defer gpa.free(argv);
 
         for (args, 0..) |value, i| {
             argv[i] = value.obj.type.string.items;
         }
 
         const result = try std.process.Child.run(
-            .{ .allocator = vm.allocator, .argv = argv },
+            .{ .allocator = gpa, .argv = argv },
         );
         std.debug.print("{s}\n\n\n{s}", .{ result.stdout, result.stderr });
-        defer vm.allocator.free(result.stdout);
-        defer vm.allocator.free(result.stderr);
+        defer gpa.free(result.stdout);
+        defer gpa.free(result.stderr);
 
-        const stdout = if (result.stdout.len == 0) .null else try newString(vm, result.stdout);
-        const stderr = if (result.stderr.len == 0) .null else try newString(vm, result.stderr);
+        const stdout = if (result.stdout.len == 0) .null else try newString(gpa, vm, result.stdout);
+        const stderr = if (result.stderr.len == 0) .null else try newString(gpa, vm, result.stderr);
 
-        var array = try std.ArrayList(Value).initCapacity(vm.allocator, 2);
-        errdefer array.deinit();
+        var array = try std.ArrayList(Value).initCapacity(gpa, 2);
+        errdefer array.deinit(gpa);
 
-        try array.append(stdout);
-        try array.append(stderr);
+        try array.append(gpa, stdout);
+        try array.append(gpa, stderr);
 
-        const obj = try memory.allocateObject(vm, .{ .array = array });
+        const obj = try gc.allocObject(gpa, vm, .{ .array = array });
         return .{ .obj = obj };
     }
 
-    pub fn resumeF(_: *Vm, args: []const Value) !Value {
+    pub fn resumeF(gpa: Allocator, _: *Vm, args: []const Value) !Value {
+        _ = gpa; // autofix
         return .{ .frame = args[0].frame };
     }
 
-    pub fn frameF(vm: *Vm, _: []const Value) !Value {
+    pub fn frameF(gpa: Allocator, vm: *Vm, _: []const Value) !Value {
+        _ = gpa; // autofix
         return .{ .frame = vm.currentFrame() };
     }
 
-    pub fn suspendF(vm: *Vm, _: []const Value) !Value {
+    pub fn suspendF(gpa: Allocator, vm: *Vm, _: []const Value) !Value {
+        _ = gpa; // autofix
         const frame = vm.popFrame(); // return to the callee frame
         vm.fm = vm.currentFrame(); // ?
         vm.sp = @intCast(frame.bp); // pop the fn
@@ -177,20 +180,24 @@ const Builtin = struct {
         return .{ .frame = frame };
     }
 
-    pub fn tagName(vm: *Vm, args: []const Value) !Value {
+    pub fn tagName(gpa: Allocator, vm: *Vm, args: []const Value) !Value {
         const name = switch (args[0]) {
             .enumtag => |t| t.tag,
             .tag => |t| t,
-            else => return vm.newError("Invalid Argument", .{}),
+            else => return vm.newError(gpa, "Invalid Argument", .{}),
         };
-        return newString(vm, name);
+        return newString(gpa, vm, name);
     }
 
-    pub fn time(_: *Vm, _: []const Value) !Value {
-        return .{ .long_int = std.time.nanoTimestamp() };
+    pub fn time(gpa: Allocator, _: *Vm, _: []const Value) !Value {
+        _ = gpa; // autofix
+        // TODO
+        // return .{ .long_int = @intCast(@as(u64, (std.time.Instant.now() catch return .null).timestamp)) };
+        return .null;
     }
 
-    pub fn rand(_: *Vm, args: []const Value) !Value {
+    pub fn rand(gpa: Allocator, _: *Vm, args: []const Value) !Value {
+        _ = gpa; // autofix
         var prng = std.Random.DefaultPrng.init(blk: {
             var seed: u64 = undefined;
             try std.posix.getrandom(std.mem.asBytes(&seed));
@@ -207,42 +214,44 @@ const Builtin = struct {
         return .{ .integer = r.int(i32) };
     }
 
-    pub fn assert(vm: *Vm, arg: []const Value) !Value {
+    pub fn assert(gpa: Allocator, vm: *Vm, arg: []const Value) !Value {
         const len = arg.len;
-        if (len == 0 or len > 2) return vm.newError("Argument Mismatch; expect 1 or 2 got {}", .{len});
-
+        if (len == 0 or len > 2) return vm.newError(gpa, "Argument Mismatch; expect 1 or 2 got {}", .{len});
         const boolean = arg[0].boolean;
         if (boolean) return .null;
-
         const string = if (len == 2) arg[1].obj.type.string.items else "Failed Assert";
-        return vm.newError("{s}", .{string});
+        return vm.newError(gpa, "{s}", .{string});
     }
 
-    pub fn fetch(vm: *Vm, arg: []const Value) !Value {
-        var cli: std.http.Client = .{ .allocator = vm.allocator };
-        defer cli.deinit();
-
-        var string: std.ArrayList(u8) = .init(vm.allocator);
-        errdefer string.deinit();
-
-        const res = try cli.fetch(.{
-            .location = .{ .url = arg[0].obj.type.string.items },
-            .response_storage = .{ .dynamic = &string },
-            .max_append_size = std.math.maxInt(usize),
-        });
-
-        if (res.status != .ok) {
-            string.deinit();
-            return .null;
-        }
-
-        const obj = try memory.allocateObject(vm, .{ .string = string });
-        return .{ .obj = obj };
+    pub fn fetch(gpa: Allocator, vm: *Vm, arg: []const Value) !Value {
+        _ = gpa; // autofix
+        _ = vm; // autofix
+        _ = arg; // autofix
+        // var cli: std.http.Client = .{ .allocator = gpa };
+        // defer cli.deinit();
+        //
+        // var string: std.ArrayList(u8) = .empty;
+        // errdefer string.deinit(gpa);
+        //
+        // const res = try cli.fetch(.{
+        //     .location = .{ .url = arg[0].obj.type.string.items },
+        //     .response_storage = .{ .dynamic = &string },
+        //     .max_append_size = std.math.maxInt(usize),
+        // });
+        //
+        // if (res.status != .ok) {
+        //     string.deinit(gpa);
+        //     return .null;
+        // }
+        //
+        // const obj = try gc.allocObject(gpa, vm, .{ .string = string });
+        // return .{ .obj = obj };
+        return .null;
     }
 
-    pub fn complex(vm: *Vm, arg: []const Value) !Value {
+    pub fn complex(gpa: Allocator, vm: *Vm, arg: []const Value) !Value {
         const len = arg.len;
-        if (len == 0 or len > 2) return vm.newError("Argument Mismatch; expect 1 or 2 got {}", .{len});
+        if (len == 0 or len > 2) return vm.newError(gpa, "Argument Mismatch; expect 1 or 2 got {}", .{len});
 
         const real: f32 = switch (arg[0]) {
             .integer => |i| @floatFromInt(i),
@@ -259,86 +268,89 @@ const Builtin = struct {
         return .{ .complex = .{ .real = real, .imag = imag } };
     }
 
-    pub fn abs(vm: *Vm, arg: []const Value) !Value {
+    pub fn abs(gpa: Allocator, vm: *Vm, arg: []const Value) !Value {
         const len = arg.len;
-        if (len != 1) return vm.newError("Argument Mismatch; expect 1 got {}", .{len});
+        if (len != 1) return vm.newError(gpa, "Argument Mismatch; expect 1 got {}", .{len});
 
         return switch (arg[0]) {
             .integer => |i| .{ .integer = @intCast(@abs(i)) },
             .float => |i| .{ .float = @abs(i) },
             .complex => |z| .{ .float = @sqrt(z.real * z.real + z.imag * z.imag) },
-            else => |t| vm.newError("Type Mismatch; expect integer or float, got {s}", .{t.name()}),
+            else => |t| vm.newError(gpa, "Type Mismatch; expect integer or float, got {s}", .{t.name()}),
         };
     }
 
-    pub fn parse(vm: *Vm, arg: []const Value) !Value {
+    pub fn parse(gpa: Allocator, vm: *Vm, arg: []const Value) !Value {
         const len = arg.len;
-        if (len != 2) return vm.newError("Argument Mismatch; expect 2", .{});
+        if (len != 2) return vm.newError(gpa, "Argument Mismatch; expect 2", .{});
 
         if (arg[0] != .tag) {
-            return vm.newError("Expect type/tag, found {s}", .{arg[0].name()});
+            return vm.newError(gpa, "Expect type/tag, found {s}", .{arg[0].name()});
         }
 
         const tag = arg[0].tag;
-        const ty = tagtype.get(tag) orelse return vm.newError("Invalid Type '{s}'", .{tag});
+        const ty = tagtype.get(tag) orelse return vm.newError(gpa, "Invalid Type '{s}'", .{tag});
 
         const string = arg[1].obj.type.string.items;
 
         return switch (ty) {
             .int => .{ .integer = try std.fmt.parseInt(i32, string, 10) },
             .float => .{ .float = try std.fmt.parseFloat(f32, string) },
-            else => vm.newError("Invalid type {}", .{ty}),
+            else => vm.newError(gpa, "Invalid type {}", .{ty}),
         };
     }
 
-    pub fn new(vm: *Vm, arg: []const Value) !Value {
+    pub fn new(gpa: Allocator, vm: *Vm, arg: []const Value) !Value {
         const len = arg.len;
-        if (len == 0 or len > 3) return vm.newError("Argument Mismatch; expect at least 3", .{});
+        if (len == 0 or len > 3) return vm.newError(gpa, "Argument Mismatch; expect at least 3", .{});
 
         if (arg[0] != .tag) {
-            return vm.newError("Expect type/tag, found {s}", .{arg[0].name()});
+            return vm.newError(gpa, "Expect type/tag, found {s}", .{arg[0].name()});
         }
 
         const tag = arg[0].tag;
-        const ty = tagtype.get(tag) orelse return vm.newError("Invalid Type '{s}'", .{tag});
+        const ty = tagtype.get(tag) orelse return vm.newError(gpa, "Invalid Type '{s}'", .{tag});
         var default = defaultValue(ty);
         const capacity: usize = if (len == 2 or len == 3) @intCast(arg[1].integer) else return default;
 
-        var array = try std.ArrayList(Value).initCapacity(vm.allocator, capacity);
-        errdefer array.deinit();
+        var array = try std.ArrayList(Value).initCapacity(gpa, capacity);
+        errdefer array.deinit(gpa);
 
         if (arg.len == 3) default = arg[2];
-        for (0..capacity) |_| try array.append(default);
+        for (0..capacity) |_| try array.append(gpa, default);
 
-        const obj = try memory.allocateObject(vm, .{ .array = array });
+        const obj = try gc.allocObject(gpa, vm, .{ .array = array });
         return .{ .obj = obj };
     }
 
-    pub fn import(vm: *Vm, arg: []const Value) !Value {
-        const filename = arg[0].obj.type.string.items;
-        var l: @import("Lexer.zig") = .init(filename);
-        var p: @import("Parser.zig") = .init(vm.allocator, &l, vm.errors);
-        defer p.deinit();
-        const node = try p.parse();
-        _ = node;
+    pub fn import(gpa: Allocator, vm: *Vm, arg: []const Value) !Value {
+        _ = gpa; // autofix
+        _ = vm; // autofix
+        _ = arg; // autofix
+        // const filename = arg[0].obj.type.string.items;
+        // var l: @import("Lexer.zig") = .init(filename);
+        // var p: @import("Parser.zig") = .init(gpa, &l, vm.errors);
+        // defer p.deinit();
+        // const node = try p.parse();
+        // _ = node;
         // errdefer std.debug.print("-->> {s}\n\n", .{vm.compiler.errors.msg.items});
         // errdefer std.debug.print("-->> {s}\n\n", .{vm.errors.msg.items});
         // try vm.compiler.compile(node);
         // const code = try vm.compiler.bytecode();
         // // defer code.deinit;
-        // vm.constants = try std.mem.concat(vm.allocator, Value, &.{ vm.constants, code.constants });
-        // vm.positions = try std.mem.concat(vm.allocator, usize, &.{ vm.positions, code.positions });
+        // vm.constants = try std.mem.concat(gpa, Value, &.{ vm.constants, code.constants });
+        // vm.positions = try std.mem.concat(gpa, usize, &.{ vm.positions, code.positions });
         return .null;
     }
 
-    pub fn panic(vm: *Vm, arg: []const Value) !Value {
-        if (arg.len != 1) return vm.newError("Argument Mismatch; expect 1, got {}", .{arg.len});
-        if (arg[0] != .obj) return vm.newError("Invalid Argument type {s}", .{arg[0].name()});
-        return vm.newError("panic: {s}", .{arg[0].obj.type.string.items});
+    pub fn panic(gpa: Allocator, vm: *Vm, arg: []const Value) !Value {
+        if (arg.len != 1) return vm.newError(gpa, "Argument Mismatch; expect 1, got {}", .{arg.len});
+        if (arg[0] != .obj) return vm.newError(gpa, "Invalid Argument type {s}", .{arg[0].name()});
+        return vm.newError(gpa, "panic: {s}", .{arg[0].obj.type.string.items});
     }
 
-    pub fn typeOf(vm: *Vm, arg: []const Value) !Value {
-        if (arg.len != 1) return vm.newError("Argument Mismatch; expect 1, got {}", .{arg.len});
+    pub fn typeOf(gpa: Allocator, vm: *Vm, arg: []const Value) !Value {
+        if (arg.len != 1) return vm.newError(gpa, "Argument Mismatch; expect 1, got {}", .{arg.len});
 
         return switch (arg[0]) {
             .obj => |ob| switch (ob.type) {
@@ -349,10 +361,10 @@ const Builtin = struct {
         };
     }
 
-    pub fn as(vm: *Vm, arg: []const Value) !Value {
-        if (arg.len != 2) return vm.newError("Argument Mismatch; expect 2, got {}", .{arg.len});
+    pub fn as(gpa: Allocator, vm: *Vm, arg: []const Value) !Value {
+        if (arg.len != 2) return vm.newError(gpa, "Argument Mismatch; expect 2, got {}", .{arg.len});
 
-        const ty = tagtype.get(arg[0].tag) orelse return vm.newError("Invalid Type", .{});
+        const ty = tagtype.get(arg[0].tag) orelse return vm.newError(gpa, "Invalid Type", .{});
         const value = arg[1];
 
         switch (ty) {
@@ -379,11 +391,11 @@ const Builtin = struct {
             else => {},
         }
 
-        return vm.newError("Invalid {s} to Char coercion", .{value.name()});
+        return vm.newError(gpa, "Invalid {s} to Char coercion", .{value.name()});
     }
 
-    pub fn asChar(vm: *Vm, arg: []const Value) !Value {
-        if (arg.len != 1) return vm.newError("Argument Mismatch; expect 1, got {}", .{arg.len});
+    pub fn asChar(gpa: Allocator, vm: *Vm, arg: []const Value) !Value {
+        if (arg.len != 1) return vm.newError(gpa, "Argument Mismatch; expect 1, got {}", .{arg.len});
 
         const value = arg[0];
 
@@ -405,19 +417,21 @@ const Builtin = struct {
             }
         }
 
-        return vm.newError("Invalid {s} to Char coercion", .{value.name()});
+        return vm.newError(gpa, "Invalid {s} to Char coercion", .{value.name()});
     }
 
-    pub fn read(vm: *Vm, arg: []const Value) anyerror!Value {
+    pub fn read(gpa: Allocator, vm: *Vm, arg: []const Value) anyerror!Value {
         if (arg.len == 0) {
-            const buff = try vm.allocator.alloc(u8, 10000);
-            defer vm.allocator.free(buff);
-            // const bytes = try std.fs.File.stdin().reader(buff).readUntilDelimiterAlloc(vm.allocator, '\n', 10000);
+            const buff = try gpa.alloc(u8, 1024);
+            defer gpa.free(buff);
+            // const bytes = try std.fs.File.stdin().reader(buff).readUntilDelimiterAlloc(gpa, '\n', 10000);
             var stdin = std.fs.File.stdin();
             defer stdin.close();
-            var r = stdin.reader(buff);
+            var theaded: std.Io.Threaded = .init(gpa);
+            defer theaded.deinit();
+            var r = stdin.reader(theaded.io(), buff);
             const bytes = try r.interface.peekDelimiterExclusive('\n');
-            return try newString(vm, bytes);
+            return try newString(gpa, vm, bytes);
         }
 
         if (arg[0] != .obj) return .null;
@@ -425,51 +439,43 @@ const Builtin = struct {
         switch (arg[0].obj.type) {
             .string => |str| {
                 const file = str.items;
-                const bytes = std.fs.cwd().readFileAlloc(vm.allocator, file, std.math.maxInt(usize)) catch |err| switch (err) {
+                const bytes = std.fs.cwd().readFileAlloc(file, gpa, .unlimited) catch |err| switch (err) {
                     error.FileNotFound => return .null,
                     else => return err,
                 };
-
-                defer vm.allocator.free(bytes);
-                return try newString(vm, bytes);
+                defer gpa.free(bytes);
+                // TODO: copy
+                return try newString(gpa, vm, bytes);
             },
 
             else => return .null,
         }
     }
 
-    pub fn write(vm: *Vm, arg: []const Value) anyerror!Value {
-        if (arg.len != 2) return vm.newError("Argument Mismatch, expect 2, got {}", .{arg.len});
-
-        if (arg[0] != .obj) return .null;
-        if (arg[1] != .obj) return .null;
-
+    pub fn write(gpa: Allocator, vm: *Vm, arg: []const Value) anyerror!Value {
+        if (arg.len != 2) return vm.newError(gpa, "Argument Mismatch, expect 2, got {}", .{arg.len});
+        if (arg[0] != .obj or arg[1] != .obj) return .null;
         const filename = arg[0].obj.type.string.items;
         const content = arg[1].obj.type.string.items;
-
         var file = try std.fs.cwd().createFile(filename, .{});
         defer file.close();
         try file.writeAll(content);
-
         return .{ .integer = @intCast(content.len) };
     }
 
-    pub fn length(vm: *Vm, arg: []const Value) anyerror!Value {
-        if (arg.len != 1) return vm.newError("Argument Mismatch", .{});
-
-        if (arg[0] != .obj) return vm.newError("Type '{s}' don't have a length", .{arg[0].name()});
-
+    pub fn length(gpa: Allocator, vm: *Vm, arg: []const Value) anyerror!Value {
+        if (arg.len != 1) return vm.newError(gpa, "Argument Mismatch", .{});
+        if (arg[0] != .obj) return vm.newError(gpa, "Type '{s}' don't have a length", .{arg[0].name()});
         return switch (arg[0].obj.type) {
             .array => |arr| .{ .integer = @intCast(arr.items.len) },
             .string => |str| .{ .integer = @intCast(str.items.len) },
             .hash => |hash| .{ .integer = @intCast(hash.pairs.count()) },
-            else => vm.newError("Type '{s}' don't have a length", .{arg[0].name()}),
+            else => vm.newError(gpa, "Type '{s}' don't have a length", .{arg[0].name()}),
         };
     }
 
-    pub fn pop(vm: *Vm, arg: []const Value) anyerror!Value {
-        if (arg[0] != .obj) return vm.newError("Invalid operation: Nothing to append to type '{s}'", .{arg[0].name()});
-
+    pub fn pop(gpa: Allocator, vm: *Vm, arg: []const Value) anyerror!Value {
+        if (arg[0] != .obj) return vm.newError(gpa, "Invalid operation: Nothing to append to type '{s}'", .{arg[0].name()});
         switch (arg[0].obj.type) {
             .array => |*arr| {
                 return arr.pop() orelse .null;
@@ -478,27 +484,27 @@ const Builtin = struct {
         }
     }
 
-    pub fn append(vm: *Vm, arg: []const Value) anyerror!Value {
-        if (arg[0] != .obj) return vm.newError("Invalid operation: Nothing to append to type '{s}'", .{arg[0].name()});
-
+    pub fn append(gpa: Allocator, vm: *Vm, arg: []const Value) anyerror!Value {
+        if (arg[0] != .obj) return vm.newError(gpa, "Invalid operation: Nothing to append to type '{s}'", .{arg[0].name()});
         switch (arg[0].obj.type) {
             .array => |*arr| {
                 for (arg[1..]) |val| {
-                    try arr.append(val);
+                    try arr.append(gpa, val);
                 }
             },
-
             .string => |*str| {
                 for (arg[1..]) |val| {
                     if (val == .obj and val.obj.type == .string) {
-                        try str.appendSlice(val.obj.type.string.items);
+                        try str.appendSlice(gpa, val.obj.type.string.items);
                         continue;
                     }
-
                     switch (val) {
-                        inline .integer, .float => |x| try str.writer().print("{d}", .{x}),
-                        .char => |c| try str.append(c),
-                        .boolean => |b| try str.appendSlice(if (b) "true" else "false"),
+                        inline .integer, .float => |x| {
+                            var w: std.Io.Writer = .fromArrayList(str);
+                            try w.print("{}", .{x});
+                        },
+                        .char => |c| try str.append(gpa, c),
+                        .boolean => |b| try str.appendSlice(gpa, if (b) "true" else "false"),
                         else => {},
                     }
                 }
@@ -507,15 +513,15 @@ const Builtin = struct {
             //     for (arg[1..]) |value| {
             //         const string = switch (value) {
             //             .obj => |ob| switch (ob.type) {
-            //                 .string => |s| try std.fmt.allocPrint(vm.allocator, "{s}{s}", .{ str.*, s }),
+            //                 .string => |s| try std.fmt.allocPrint(gpa, "{s}{s}", .{ str.*, s }),
             //                 else => return .null,
             //             },
-            //             inline .integer, .float, .boolean => |val| try std.fmt.allocPrint(vm.allocator, "{s}{}", .{ str.*, val }),
-            //             .tag => |val| try std.fmt.allocPrint(vm.allocator, "{s}{s}", .{ str.*, val }),
-            //             .char => |val| try std.fmt.allocPrint(vm.allocator, "{s}{c}", .{ str.*, val }),
-            //             else => return vm.newError("Invalid string operation: Cannot concat type '{s}'", .{value.name()}),
+            //             inline .integer, .float, .boolean => |val| try std.fmt.allocPrint(gpa, "{s}{}", .{ str.*, val }),
+            //             .tag => |val| try std.fmt.allocPrint(gpa, "{s}{s}", .{ str.*, val }),
+            //             .char => |val| try std.fmt.allocPrint(gpa, "{s}{c}", .{ str.*, val }),
+            //             else => return vm.newError(gpa,"Invalid string operation: Cannot concat type '{s}'", .{value.name()}),
             //         };
-            //         // const string = std.mem.allocPrint(vm.allocator, "{s}{}", .{ str.*, val }) catch .null;
+            //         // const string = std.mem.allocPrint(gpa, "{s}{}", .{ str.*, val }) catch .null;
             //         const obj = try memory.allocateObject(vm, .{ .string = string });
             //         return .{ .obj = obj };
             //     }
@@ -525,7 +531,8 @@ const Builtin = struct {
         return .null;
     }
 
-    pub fn print(_: *Vm, args: []const Value) anyerror!Value {
+    pub fn print(gpa: Allocator, _: *Vm, args: []const Value) anyerror!Value {
+        _ = gpa; // autofix
         for (args) |arg| {
             printV(arg);
             std.debug.print(" ", .{});
