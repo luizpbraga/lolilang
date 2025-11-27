@@ -1,19 +1,20 @@
-const std = @import("std");
 const Self = @This();
+
+const std = @import("std");
+const Loc = struct { start: usize = 0, end: usize = 0 };
 
 tag: Tag,
 loc: Loc = .{},
-const Loc = struct { start: usize = 0, end: usize = 0 };
 
 pub fn literal(s: *Self) []const u8 {
     return @tagName(s.tag);
 }
 
-pub fn lookupIdentfier(ident: []const u8) Tag {
-    return if (keywords.has(ident)) keywords.get(ident).? else .identifier;
+pub fn lookUpIdentifier(ident: []const u8) Tag {
+    return keywords.get(ident) orelse .identifier;
 }
 
-pub const keywords = std.StaticStringMap(Tag).initComptime(.{
+pub const keywords: std.StaticStringMap(Tag) = .initComptime(.{
     .{ "var", .@"var" },
     .{ "pub", .@"pub" },
     .{ "con", .con },
