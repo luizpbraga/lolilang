@@ -37,12 +37,11 @@ pub fn runVm(gpa: std.mem.Allocator, input: []const u8) !void {
     var code = try compiler.bytecode(gpa);
     defer code.deinit(gpa);
 
-    // if (emitbytecode) {
-    //     const fmt = try @import("code.zig").formatInstruction(gpa, code.instructions);
-    //     defer gpa.free(fmt);
-    //     std.log.info("token postion:\n{any}", .{code.positions});
-    //     std.log.info("bytecode instructions:\n{s}", .{fmt});
-    // }
+    if (emitbytecode) {
+        const fmt = try @import("code.zig").formatInstruction(gpa, code.instructions);
+        defer gpa.free(fmt);
+        std.log.info("bytecode instructions:\n{s}", .{fmt});
+    }
 
     var vm: Vm = try .init(gpa, &code, &errors);
     defer vm.deinit(gpa);
